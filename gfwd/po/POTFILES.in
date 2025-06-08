@@ -1,0 +1,6 @@
+data/com.github.Gfwd.desktop.in.in
+data/com.github.Gfwd.gschema.xml.in
+data/com.github.Gfwd.metainfo.xml.in.in
+data/resources/ui/shortcuts.ui
+src/app.rs
+src/main.rs

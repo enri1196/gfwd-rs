@@ -1,0 +1,8 @@
+[package]
+name = "gfwd-bus"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zbus = "5.7.1"
+zbus_macros = "5.7.1"
