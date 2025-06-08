@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use zbus::{
-    zvariant::{OwnedObjectPath, Value},
     Connection, Result as ZResult,
+    zvariant::{OwnedObjectPath, Value},
 };
 use zbus_macros::proxy;
 
@@ -67,11 +67,7 @@ pub type ZoneSettings = (
 pub trait Config {
     /// Add an IPSet to the permanent configuration.
     #[zbus(name = "addIPSet")]
-    fn add_ipset(
-        &self,
-        ipset: &str,
-        settings: &IPSetSettings,
-    ) -> ZResult<OwnedObjectPath>;
+    fn add_ipset(&self, ipset: &str, settings: &IPSetSettings) -> ZResult<OwnedObjectPath>;
 
     /// Add an ICMP type to the permanent configuration.
     #[zbus(name = "addIcmpType")]
@@ -84,11 +80,7 @@ pub trait Config {
     /// Deprecated. Use `add_service2` instead.
     #[deprecated(note = "Use `add_service2` instead.")]
     #[zbus(name = "addService")]
-    fn add_service(
-        &self,
-        service: &str,
-        settings: &ServiceSettings,
-    ) -> ZResult<OwnedObjectPath>;
+    fn add_service(&self, service: &str, settings: &ServiceSettings) -> ZResult<OwnedObjectPath>;
 
     /// Add a service to the permanent configuration.
     #[zbus(name = "addService2")]
@@ -100,11 +92,7 @@ pub trait Config {
 
     /// Add a zone to the permanent configuration.
     #[zbus(name = "addZone")]
-    fn add_zone(
-        &self,
-        zone: &str,
-        settings: &ZoneSettings,
-    ) -> ZResult<OwnedObjectPath>;
+    fn add_zone(&self, zone: &str, settings: &ZoneSettings) -> ZResult<OwnedObjectPath>;
 
     /// Get the object path of a helper by name.
     #[zbus(name = "getHelperByName")]

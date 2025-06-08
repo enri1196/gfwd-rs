@@ -1,4 +1,4 @@
-use zbus::{zvariant::ObjectPath, Connection, Result as ZResult};
+use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
 use zbus_macros::proxy;
 
 #[proxy(
@@ -120,5 +120,8 @@ pub async fn new_config_icmptype_proxy(
     );
     let path = ObjectPath::try_from(path_str)?;
 
-    ConfigIcmpTypeProxy::builder(&conn).path(path)?.build().await
+    ConfigIcmpTypeProxy::builder(&conn)
+        .path(path)?
+        .build()
+        .await
 }

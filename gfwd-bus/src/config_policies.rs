@@ -3,8 +3,7 @@ use zbus_macros::proxy;
 
 /// Type alias for permanent lockdown whitelist settings.
 /// (commands, selinux contexts, users, uids)
-pub type LockdownWhitelistSettings =
-    (Vec<String>, Vec<String>, Vec<String>, Vec<i32>);
+pub type LockdownWhitelistSettings = (Vec<String>, Vec<String>, Vec<String>, Vec<i32>);
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1.config.policies",
@@ -87,10 +86,7 @@ pub trait ConfigPolicies {
 
     /// Set the permanent lockdown whitelist configuration.
     #[zbus(name = "setLockdownWhitelist")]
-    fn set_lockdown_whitelist(
-        &self,
-        settings: &LockdownWhitelistSettings,
-    ) -> ZResult<()>;
+    fn set_lockdown_whitelist(&self, settings: &LockdownWhitelistSettings) -> ZResult<()>;
 
     /// Signal: emitted when the permanent lockdown whitelist has been updated.
     #[zbus(signal, name = "LockdownWhitelistUpdated")]

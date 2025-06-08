@@ -3,8 +3,14 @@ use zbus_macros::proxy;
 
 /// Type alias for permanent helper settings.
 /// (version, name, description, family, module, ports)
-pub type HelperSettings =
-    (String, String, String, String, String, Vec<(String, String)>);
+pub type HelperSettings = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Vec<(String, String)>,
+);
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1.config.helper",

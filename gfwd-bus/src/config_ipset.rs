@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::{zvariant::ObjectPath, Connection, Result as ZResult};
+use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
 use zbus_macros::proxy;
 
 /// Type alias for permanent IPSet settings.
@@ -157,10 +157,7 @@ pub async fn new_config_ipset_proxy(
     conn: &'a Connection,
     ipset_name: &str,
 ) -> ZResult<ConfigIPSetProxy<'static>> {
-    let path_str = format!(
-        "/org/fedoraproject/FirewallD1/config/ipset/{}",
-        ipset_name
-    );
+    let path_str = format!("/org/fedoraproject/FirewallD1/config/ipset/{}", ipset_name);
     let path = ObjectPath::try_from(path_str)?;
 
     ConfigIPSetProxy::builder(conn).path(path)?.build().await

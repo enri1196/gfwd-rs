@@ -25,12 +25,12 @@ pub trait IPSet {
         &self,
         ipset: &str,
     ) -> ZResult<(
-        String,                    // version
-        String,                    // name
-        String,                    // description
-        String,                    // type
-        HashMap<String, String>,   // options
-        Vec<String>,               // entries
+        String,                  // version
+        String,                  // name
+        String,                  // description
+        String,                  // type
+        HashMap<String, String>, // options
+        Vec<String>,             // entries
     )>;
 
     /// List all runtime ipsets.

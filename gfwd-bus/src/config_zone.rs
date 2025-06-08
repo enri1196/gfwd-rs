@@ -1,4 +1,4 @@
-use zbus::{zvariant::ObjectPath, Connection, Result as ZResult};
+use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
 use zbus_macros::proxy;
 
 /// Type alias for permanent zone settings.
@@ -88,9 +88,7 @@ pub trait ConfigZone {
 
     /// Get the list of forward ports defined in the zone.
     #[zbus(name = "getForwardPorts")]
-    fn get_forward_ports(
-        &self,
-    ) -> ZResult<Vec<(String, String, String, String)>>;
+    fn get_forward_ports(&self) -> ZResult<Vec<(String, String, String, String)>>;
 
     /// Get the ICMP block inversion flag of the zone.
     #[zbus(name = "getIcmpBlockInversion")]
@@ -266,10 +264,7 @@ pub trait ConfigZone {
 
     /// Permanently set the forward ports of the zone.
     #[zbus(name = "setForwardPorts")]
-    fn set_forward_ports(
-        &self,
-        ports: &[(String, String, String, String)],
-    ) -> ZResult<()>;
+    fn set_forward_ports(&self, ports: &[(String, String, String, String)]) -> ZResult<()>;
 
     /// Permanently set the ICMP block inversion flag of the zone.
     #[zbus(name = "setIcmpBlockInversion")]
@@ -366,14 +361,9 @@ pub trait ConfigZone {
 ///
 /// * `conn` - An active zbus connection.
 /// * `zone_name` - The name of the zone to configure (e.g., "public").
-pub async fn new_config_zone_proxy(
-    zone_name: &str,
-) -> ZResult<ConfigZoneProxy<'static>> {
+pub async fn new_config_zone_proxy(zone_name: &str) -> ZResult<ConfigZoneProxy<'static>> {
     let conn = Connection::system().await?;
-    let path_str = format!(
-        "/org/fedoraproject/FirewallD1/config/zone/{}",
-        zone_name
-    );
+    let path_str = format!("/org/fedoraproject/FirewallD1/config/zone/{}", zone_name);
     let path = ObjectPath::try_from(path_str)?;
 
     ConfigZoneProxy::builder(conn).path(path)?.build().await

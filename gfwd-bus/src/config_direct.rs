@@ -14,8 +14,7 @@ pub type DirectPassthrough = (String, Vec<String>);
 pub type DirectRuleDetails = (i32, Vec<String>);
 
 /// Type alias for all direct settings: (chains, rules, passthroughs).
-pub type DirectSettings =
-    (Vec<DirectChain>, Vec<DirectRule>, Vec<DirectPassthrough>);
+pub type DirectSettings = (Vec<DirectChain>, Vec<DirectRule>, Vec<DirectPassthrough>);
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1.config.direct",
@@ -30,12 +29,7 @@ pub type DirectSettings =
 pub trait ConfigDirect {
     /// Add a new chain to a table.
     #[zbus(name = "addChain")]
-    fn add_chain(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<()>;
+    fn add_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
     /// Add a passthrough rule.
     #[zbus(name = "addPassthrough")]
@@ -74,12 +68,7 @@ pub trait ConfigDirect {
 
     /// Get all rules added to a chain in a table.
     #[zbus(name = "getRules")]
-    fn get_rules(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<Vec<DirectRuleDetails>>;
+    fn get_rules(&self, ipv: &str, table: &str, chain: &str) -> ZResult<Vec<DirectRuleDetails>>;
 
     /// Get all settings of the permanent direct configuration.
     #[zbus(name = "getSettings")]
@@ -87,12 +76,7 @@ pub trait ConfigDirect {
 
     /// Return whether a chain exists in a table.
     #[zbus(name = "queryChain")]
-    fn query_chain(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<bool>;
+    fn query_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<bool>;
 
     /// Return whether a tracked passthrough rule exists.
     #[zbus(name = "queryPassthrough")]
@@ -111,12 +95,7 @@ pub trait ConfigDirect {
 
     /// Remove a chain from a table.
     #[zbus(name = "removeChain")]
-    fn remove_chain(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<()>;
+    fn remove_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
     /// Remove a passthrough rule.
     #[zbus(name = "removePassthrough")]
@@ -135,12 +114,7 @@ pub trait ConfigDirect {
 
     /// Remove all rules from a chain in a table.
     #[zbus(name = "removeRules")]
-    fn remove_rules(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<()>;
+    fn remove_rules(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
     /// Update the permanent direct configuration with the given settings.
     #[zbus(name = "update")]

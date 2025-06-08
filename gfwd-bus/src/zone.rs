@@ -28,12 +28,7 @@ pub trait Zone {
 
     /// Add an ICMP block to a zone.
     #[zbus(name = "addIcmpBlock")]
-    fn add_icmp_block(
-        &self,
-        zone: &str,
-        icmp: &str,
-        timeout: i32,
-    ) -> ZResult<String>;
+    fn add_icmp_block(&self, zone: &str, icmp: &str, timeout: i32) -> ZResult<String>;
 
     /// Add ICMP block inversion to a zone.
     #[zbus(name = "addIcmpBlockInversion")]
@@ -49,40 +44,19 @@ pub trait Zone {
 
     /// Add a port to a zone.
     #[zbus(name = "addPort")]
-    fn add_port(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-        timeout: i32,
-    ) -> ZResult<String>;
+    fn add_port(&self, zone: &str, port: &str, protocol: &str, timeout: i32) -> ZResult<String>;
 
     /// Add a protocol to a zone.
     #[zbus(name = "addProtocol")]
-    fn add_protocol(
-        &self,
-        zone: &str,
-        protocol: &str,
-        timeout: i32,
-    ) -> ZResult<String>;
+    fn add_protocol(&self, zone: &str, protocol: &str, timeout: i32) -> ZResult<String>;
 
     /// Add a rich language rule to a zone.
     #[zbus(name = "addRichRule")]
-    fn add_rich_rule(
-        &self,
-        zone: &str,
-        rule: &str,
-        timeout: i32,
-    ) -> ZResult<String>;
+    fn add_rich_rule(&self, zone: &str, rule: &str, timeout: i32) -> ZResult<String>;
 
     /// Add a service to a zone.
     #[zbus(name = "addService")]
-    fn add_service(
-        &self,
-        zone: &str,
-        service: &str,
-        timeout: i32,
-    ) -> ZResult<String>;
+    fn add_service(&self, zone: &str, service: &str, timeout: i32) -> ZResult<String>;
 
     /// Bind a source to a zone.
     #[zbus(name = "addSource")]
@@ -105,32 +79,19 @@ pub trait Zone {
 
     /// Change the zone an interface is bound to.
     #[zbus(name = "changeZoneOfInterface")]
-    fn change_zone_of_interface(
-        &self,
-        zone: &str,
-        interface: &str,
-    ) -> ZResult<String>;
+    fn change_zone_of_interface(&self, zone: &str, interface: &str) -> ZResult<String>;
 
     /// Change the zone a source is bound to.
     #[zbus(name = "changeZoneOfSource")]
-    fn change_zone_of_source(
-        &self,
-        zone: &str,
-        source: &str,
-    ) -> ZResult<String>;
+    fn change_zone_of_source(&self, zone: &str, source: &str) -> ZResult<String>;
 
     /// Get all currently active zones.
     #[zbus(name = "getActiveZones")]
-    fn get_active_zones(
-        &self,
-    ) -> ZResult<HashMap<String, HashMap<String, Vec<String>>>>;
+    fn get_active_zones(&self) -> ZResult<HashMap<String, HashMap<String, Vec<String>>>>;
 
     /// Get the IPv4 forward ports for a zone.
     #[zbus(name = "getForwardPorts")]
-    fn get_forward_ports(
-        &self,
-        zone: &str,
-    ) -> ZResult<Vec<(String, String, String, String)>>;
+    fn get_forward_ports(&self, zone: &str) -> ZResult<Vec<(String, String, String, String)>>;
 
     /// Get the ICMP blocks for a zone.
     #[zbus(name = "getIcmpBlocks")]
@@ -214,12 +175,7 @@ pub trait Zone {
 
     /// Query whether a port has been added to a zone.
     #[zbus(name = "queryPort")]
-    fn query_port(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<bool>;
+    fn query_port(&self, zone: &str, port: &str, protocol: &str) -> ZResult<bool>;
 
     /// Query whether a protocol has been added to a zone.
     #[zbus(name = "queryProtocol")]
@@ -239,12 +195,7 @@ pub trait Zone {
 
     /// Query whether a source port has been added to a zone.
     #[zbus(name = "querySourcePort")]
-    fn query_source_port(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<bool>;
+    fn query_source_port(&self, zone: &str, port: &str, protocol: &str) -> ZResult<bool>;
 
     /// Remove an IPv4 forward port from a zone.
     #[zbus(name = "removeForwardPort")]
@@ -275,12 +226,7 @@ pub trait Zone {
 
     /// Remove a port from a zone.
     #[zbus(name = "removePort")]
-    fn remove_port(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<String>;
+    fn remove_port(&self, zone: &str, port: &str, protocol: &str) -> ZResult<String>;
 
     /// Remove a protocol from a zone.
     #[zbus(name = "removeProtocol")]
@@ -300,12 +246,7 @@ pub trait Zone {
 
     /// Remove a source port from a zone.
     #[zbus(name = "removeSourcePort")]
-    fn remove_source_port(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<String>;
+    fn remove_source_port(&self, zone: &str, port: &str, protocol: &str) -> ZResult<String>;
 
     /// Signal: emitted when a forward port has been added.
     #[zbus(signal, name = "ForwardPortAdded")]
@@ -332,12 +273,7 @@ pub trait Zone {
 
     /// Signal: emitted when an ICMP block has been added.
     #[zbus(signal, name = "IcmpBlockAdded")]
-    fn icmp_block_added(
-        &self,
-        zone: &str,
-        icmp: &str,
-        timeout: i32,
-    ) -> ZResult<()>;
+    fn icmp_block_added(&self, zone: &str, icmp: &str, timeout: i32) -> ZResult<()>;
 
     /// Signal: emitted when ICMP block inversion has been added.
     #[zbus(signal, name = "IcmpBlockInversionAdded")]
@@ -369,31 +305,15 @@ pub trait Zone {
 
     /// Signal: emitted when a port has been added to a zone.
     #[zbus(signal, name = "PortAdded")]
-    fn port_added(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-        timeout: i32,
-    ) -> ZResult<()>;
+    fn port_added(&self, zone: &str, port: &str, protocol: &str, timeout: i32) -> ZResult<()>;
 
     /// Signal: emitted when a port has been removed from a zone.
     #[zbus(signal, name = "PortRemoved")]
-    fn port_removed(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<()>;
+    fn port_removed(&self, zone: &str, port: &str, protocol: &str) -> ZResult<()>;
 
     /// Signal: emitted when a protocol has been added to a zone.
     #[zbus(signal, name = "ProtocolAdded")]
-    fn protocol_added(
-        &self,
-        zone: &str,
-        protocol: &str,
-        timeout: i32,
-    ) -> ZResult<()>;
+    fn protocol_added(&self, zone: &str, protocol: &str, timeout: i32) -> ZResult<()>;
 
     /// Signal: emitted when a protocol has been removed from a zone.
     #[zbus(signal, name = "ProtocolRemoved")]
@@ -401,12 +321,7 @@ pub trait Zone {
 
     /// Signal: emitted when a rich rule has been added to a zone.
     #[zbus(signal, name = "RichRuleAdded")]
-    fn rich_rule_added(
-        &self,
-        zone: &str,
-        rule: &str,
-        timeout: i32,
-    ) -> ZResult<()>;
+    fn rich_rule_added(&self, zone: &str, rule: &str, timeout: i32) -> ZResult<()>;
 
     /// Signal: emitted when a rich rule has been removed from a zone.
     #[zbus(signal, name = "RichRuleRemoved")]
@@ -414,12 +329,7 @@ pub trait Zone {
 
     /// Signal: emitted when a service has been added to a zone.
     #[zbus(signal, name = "ServiceAdded")]
-    fn service_added(
-        &self,
-        zone: &str,
-        service: &str,
-        timeout: i32,
-    ) -> ZResult<()>;
+    fn service_added(&self, zone: &str, service: &str, timeout: i32) -> ZResult<()>;
 
     /// Signal: emitted when a service has been removed from a zone.
     #[zbus(signal, name = "ServiceRemoved")]
@@ -441,12 +351,7 @@ pub trait Zone {
 
     /// Signal: emitted when a source port has been removed from a zone.
     #[zbus(signal, name = "SourcePortRemoved")]
-    fn source_port_removed(
-        &self,
-        zone: &str,
-        port: &str,
-        protocol: &str,
-    ) -> ZResult<()>;
+    fn source_port_removed(&self, zone: &str, port: &str, protocol: &str) -> ZResult<()>;
 
     /// Signal: emitted when a source has been removed from a zone.
     #[zbus(signal, name = "SourceRemoved")]
@@ -459,11 +364,7 @@ pub trait Zone {
 
     /// Signal: emitted when an interface's zone has changed.
     #[zbus(signal, name = "ZoneOfInterfaceChanged")]
-    fn zone_of_interface_changed(
-        &self,
-        zone: &str,
-        interface: &str,
-    ) -> ZResult<()>;
+    fn zone_of_interface_changed(&self, zone: &str, interface: &str) -> ZResult<()>;
 
     /// Signal: emitted when a source's zone has changed.
     #[zbus(signal, name = "ZoneOfSourceChanged")]

@@ -1,7 +1,5 @@
 use std::collections::HashMap;
-use zbus::{
-    Connection, Result as ZResult,
-};
+use zbus::{Connection, Result as ZResult};
 use zbus_macros::proxy;
 use zvariant::OwnedValue;
 
@@ -96,11 +94,7 @@ pub trait ConfigService {
 
     /// Return whether a destination is in the dictionary of destinations.
     #[zbus(name = "queryDestination")]
-    fn query_destination(
-        &self,
-        family: &str,
-        address: &str,
-    ) -> ZResult<bool>;
+    fn query_destination(&self, family: &str, address: &str) -> ZResult<bool>;
 
     /// Deprecated. Use `helpers` in `get_settings2` instead.
     #[deprecated(note = "Use `helpers` in `get_settings2` instead.")]
@@ -158,10 +152,7 @@ pub trait ConfigService {
 
     /// Permanently set the destinations of the service.
     #[zbus(name = "setDestinations")]
-    fn set_destinations(
-        &self,
-        destinations: &HashMap<String, String>,
-    ) -> ZResult<()>;
+    fn set_destinations(&self, destinations: &HashMap<String, String>) -> ZResult<()>;
 
     /// Deprecated. Use `helpers` in `update2` instead.
     #[deprecated(note = "Use `helpers` in `update2` instead.")]
@@ -235,9 +226,7 @@ pub trait ConfigService {
 /// # Arguments
 ///
 /// * `service_name` - The name of the service to configure (e.g., "ssh").
-pub async fn new_config_service_proxy(
-    service_name: &str,
-) -> ZResult<ConfigServiceProxy<'static>> {
+pub async fn new_config_service_proxy(service_name: &str) -> ZResult<ConfigServiceProxy<'static>> {
     let conn = Connection::system().await?;
     let path_str = format!(
         "/org/fedoraproject/FirewallD1/config/service/{}",

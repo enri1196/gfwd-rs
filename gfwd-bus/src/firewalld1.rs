@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use zbus::Result as ZResult;
 use zbus::Connection;
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 use zvariant::OwnedValue;
 
@@ -39,10 +39,7 @@ pub trait FirewallD1 {
 
     /// Restituisce le impostazioni di un servizio (chiave→variante).
     #[zbus(name = "getServiceSettings2")]
-    fn get_service_settings2(
-        &self,
-        service: &str,
-    ) -> ZResult<HashMap<String, OwnedValue>>;
+    fn get_service_settings2(&self, service: &str) -> ZResult<HashMap<String, OwnedValue>>;
 
     /// Ricarica le regole (keep state).
     #[zbus(name = "reload")]

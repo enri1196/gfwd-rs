@@ -1,5 +1,5 @@
-use zbus::Result as ZResult;
 use zbus::Connection;
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(
@@ -52,12 +52,7 @@ pub trait Direct {
 
     /// Get rules in `chain` of `table`. Returns `(priority, args)`.
     #[zbus(name = "getRules")]
-    fn get_rules(
-        &self,
-        ipv: &str,
-        table: &str,
-        chain: &str,
-    ) -> ZResult<Vec<(i32, Vec<String>)>>;
+    fn get_rules(&self, ipv: &str, table: &str, chain: &str) -> ZResult<Vec<(i32, Vec<String>)>>;
 
     /// Send an untracked passthrough command. Returns the raw output.
     #[zbus(name = "passthrough")]
