@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use zbus::Result as ZResult;
 use zbus::Connection;
 use zbus_macros::proxy;
+use zvariant::OwnedValue;
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1",
@@ -10,8 +13,6 @@ use zbus_macros::proxy;
 )]
 /// Proxy for the `org.fedoraproject.FirewallD1` interface
 pub trait FirewallD1 {
-    // --- metodi “general runtime operations” ---
-
     /// Inizia l’autorizzazione completa su Firewalld (per app di configurazione).
     #[zbus(name = "authorizeAll")]
     fn authorize_all(&self) -> ZResult<()>;
@@ -37,17 +38,12 @@ pub trait FirewallD1 {
     fn list_services(&self) -> ZResult<Vec<String>>;
 
     /// Restituisce le impostazioni di un servizio (chiave→variante).
-    // #[zbus(name = "getServiceSettings2")]
-    // fn get_service_settings2(
-    //     &self,
-    //     service: &str,
-    // ) -> ZResult<HashMap<String, Value>>;
+    #[zbus(name = "getServiceSettings2")]
+    fn get_service_settings2(
+        &self,
+        service: &str,
+    ) -> ZResult<HashMap<String, OwnedValue>>;
 
-    /// Abilita un servizio nella zona di default.
-    /// Nota: questo metodo non esiste direttamente qui,  
-    /// va fatto via zona (vedi getZoneSettings + addService/removeService).
-    /// Lo implementeremo a mano nel nostro `BusClient` se serve.
-    
     /// Ricarica le regole (keep state).
     #[zbus(name = "reload")]
     fn reload(&self) -> ZResult<()>;
@@ -68,8 +64,6 @@ pub trait FirewallD1 {
     #[zbus(name = "setLogDenied")]
     fn set_log_denied(&self, value: &str) -> ZResult<()>;
 
-    // --- segnali ---
-
     /// Emesso quando cambia la default zone.
     #[zbus(signal, name = "DefaultZoneChanged")]
     fn default_zone_changed(&self, zone: &str) -> ZResult<()>;
@@ -89,8 +83,6 @@ pub trait FirewallD1 {
     /// Emesso su ogni reload (incluso completeReload).
     #[zbus(signal, name = "Reloaded")]
     fn reloaded(&self) -> ZResult<()>;
-
-    // --- proprietà (readonly) ---
 
     #[zbus(property, name = "BRIDGE")]
     fn bridge(&self) -> ZResult<bool>;

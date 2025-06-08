@@ -15,20 +15,20 @@ pub trait Direct {
     #[zbus(name = "addChain")]
     fn add_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
-    // /// Add a tracked passthrough rule. `args` are the iptables/ip6tables/ebtables arguments.
-    // #[zbus(name = "addPassthrough")]
-    // fn add_passthrough(&self, ipv: &str, args: &[String]) -> ZResult<()>;
+    /// Add a tracked passthrough rule. `args` are the iptables/ip6tables/ebtables arguments.
+    #[zbus(name = "addPassthrough")]
+    fn add_passthrough(&self, ipv: &str, args: Vec<String>) -> ZResult<()>;
 
-    // /// Add a rule with `args` to `chain` in `table` at `priority`.
-    // #[zbus(name = "addRule")]
-    // fn add_rule(
-    //     &self,
-    //     ipv: &str,
-    //     table: &str,
-    //     chain: &str,
-    //     priority: i32,
-    //     args: &[String],
-    // ) -> ZResult<()>;
+    /// Add a rule with `args` to `chain` in `table` at `priority`.
+    #[zbus(name = "addRule")]
+    fn add_rule(
+        &self,
+        ipv: &str,
+        table: &str,
+        chain: &str,
+        priority: i32,
+        args: Vec<String>,
+    ) -> ZResult<()>;
 
     /// Get all chains previously added. Returns `(ipv, table, chain)`.
     #[zbus(name = "getAllChains")]
@@ -59,28 +59,28 @@ pub trait Direct {
         chain: &str,
     ) -> ZResult<Vec<(i32, Vec<String>)>>;
 
-    // /// Send an untracked passthrough command. Returns the raw output.
-    // #[zbus(name = "passthrough")]
-    // fn passthrough(&self, ipv: &str, args: &[String]) -> ZResult<String>;
+    /// Send an untracked passthrough command. Returns the raw output.
+    #[zbus(name = "passthrough")]
+    fn passthrough(&self, ipv: &str, args: Vec<String>) -> ZResult<String>;
 
     /// Return whether a chain exists.
     #[zbus(name = "queryChain")]
     fn query_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<bool>;
 
-    // /// Return whether a tracked passthrough rule exists.
-    // #[zbus(name = "queryPassthrough")]
-    // fn query_passthrough(&self, ipv: &str, args: &[String]) -> ZResult<bool>;
+    /// Return whether a tracked passthrough rule exists.
+    #[zbus(name = "queryPassthrough")]
+    fn query_passthrough(&self, ipv: &str, args: Vec<String>) -> ZResult<bool>;
 
-    // /// Return whether a rule exists.
-    // #[zbus(name = "queryRule")]
-    // fn query_rule(
-    //     &self,
-    //     ipv: &str,
-    //     table: &str,
-    //     chain: &str,
-    //     priority: i32,
-    //     args: &[String],
-    // ) -> ZResult<bool>;
+    /// Return whether a rule exists.
+    #[zbus(name = "queryRule")]
+    fn query_rule(
+        &self,
+        ipv: &str,
+        table: &str,
+        chain: &str,
+        priority: i32,
+        args: Vec<String>,
+    ) -> ZResult<bool>;
 
     /// Remove all tracked passthrough rules.
     #[zbus(name = "removeAllPassthroughs")]
@@ -90,20 +90,20 @@ pub trait Direct {
     #[zbus(name = "removeChain")]
     fn remove_chain(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
-    // /// Remove a tracked passthrough rule.
-    // #[zbus(name = "removePassthrough")]
-    // fn remove_passthrough(&self, ipv: &str, args: &[String]) -> ZResult<()>;
+    /// Remove a tracked passthrough rule.
+    #[zbus(name = "removePassthrough")]
+    fn remove_passthrough(&self, ipv: &str, args: Vec<String>) -> ZResult<()>;
 
-    // /// Remove a rule.
-    // #[zbus(name = "removeRule")]
-    // fn remove_rule(
-    //     &self,
-    //     ipv: &str,
-    //     table: &str,
-    //     chain: &str,
-    //     priority: i32,
-    //     args: &[String],
-    // ) -> ZResult<()>;
+    /// Remove a rule.
+    #[zbus(name = "removeRule")]
+    fn remove_rule(
+        &self,
+        ipv: &str,
+        table: &str,
+        chain: &str,
+        priority: i32,
+        args: Vec<String>,
+    ) -> ZResult<()>;
 
     /// Remove all rules from a chain.
     #[zbus(name = "removeRules")]
@@ -119,35 +119,35 @@ pub trait Direct {
     #[zbus(signal, name = "ChainRemoved")]
     fn chain_removed(&self, ipv: &str, table: &str, chain: &str) -> ZResult<()>;
 
-    // /// Emitted when a tracked passthrough rule has been added.
-    // #[zbus(signal, name = "PassthroughAdded")]
-    // fn passthrough_added(&self, ipv: &str, args: &[String]) -> ZResult<()>;
+    /// Emitted when a tracked passthrough rule has been added.
+    #[zbus(signal, name = "PassthroughAdded")]
+    fn passthrough_added(&self, ipv: &str, args: Vec<String>) -> ZResult<()>;
 
-    // /// Emitted when a tracked passthrough rule has been removed.
-    // #[zbus(signal, name = "PassthroughRemoved")]
-    // fn passthrough_removed(&self, ipv: &str, args: &[String]) -> ZResult<()>;
+    /// Emitted when a tracked passthrough rule has been removed.
+    #[zbus(signal, name = "PassthroughRemoved")]
+    fn passthrough_removed(&self, ipv: &str, args: Vec<String>) -> ZResult<()>;
 
-    // /// Emitted when a rule has been added.
-    // #[zbus(signal, name = "RuleAdded")]
-    // fn rule_added(
-    //     &self,
-    //     ipv: &str,
-    //     table: &str,
-    //     chain: &str,
-    //     priority: i32,
-    //     args: &[String],
-    // ) -> ZResult<()>;
+    /// Emitted when a rule has been added.
+    #[zbus(signal, name = "RuleAdded")]
+    fn rule_added(
+        &self,
+        ipv: &str,
+        table: &str,
+        chain: &str,
+        priority: i32,
+        args: Vec<String>,
+    ) -> ZResult<()>;
 
-    // /// Emitted when a rule has been removed.
-    // #[zbus(signal, name = "RuleRemoved")]
-    // fn rule_removed(
-    //     &self,
-    //     ipv: &str,
-    //     table: &str,
-    //     chain: &str,
-    //     priority: i32,
-    //     args: &[&str],
-    // ) -> ZResult<()>;
+    /// Emitted when a rule has been removed.
+    #[zbus(signal, name = "RuleRemoved")]
+    fn rule_removed(
+        &self,
+        ipv: &str,
+        table: &str,
+        chain: &str,
+        priority: i32,
+        args: Vec<String>,
+    ) -> ZResult<()>;
 }
 
 pub async fn new_firewalld_proxy() -> Result<DirectProxy<'static>, zbus::Error> {

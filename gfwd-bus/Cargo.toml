@@ -6,3 +6,19 @@ edition = "2024"
 [dependencies]
 zbus = "5.7.1"
 zbus_macros = "5.7.1"
+zvariant = "5.5.3"
+
+[features]
+config_direct = []
+config_firewalld1 = []
+config_helpers = []
+config_icmptype = []
+config_ipset = []
+config_policies = []
+config_service = []
+config_zone = []
+direct = []
+firewalld1 = []
+ipset = []
+policies = []
+zone = []
