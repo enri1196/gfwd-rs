@@ -1,6 +1,8 @@
 use relm4::{
     actions::{RelmAction, RelmActionGroup},
-    adw, gtk, main_application, Component, ComponentParts, ComponentSender, SimpleComponent,
+    adw, gtk,
+    gtk::prelude::*,
+    main_application, Component, ComponentParts, ComponentSender, SimpleComponent,
 };
 
 use gtk::prelude::{
@@ -65,20 +67,34 @@ impl SimpleComponent for App {
                     None
                 },
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
-                    pack_end = &gtk::MenuButton {
-                        set_icon_name: "open-menu-symbolic",
-                        set_menu_model: Some(&primary_menu),
+            adw::NavigationSplitView {
+                #[wrap(Some)]
+                set_sidebar = &adw::NavigationPage::new(&gtk::Box::default(), "Zones") {
+                    // The sidebar where the zone list will go.
+                    // You would replace this Box with your ZoneList component.
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 5,
+                        // This is where you'd iterate over model.zones
+                        // to create list rows.
+                        gtk::Label {
+                            set_label: "Zone List Placeholder",
+                        }
                     }
                 },
 
-                gtk::Label {
-                    set_label: "Hello world!",
-                    add_css_class: "title-header",
-                    set_vexpand: true,
+                #[wrap(Some)]
+                set_content = &adw::NavigationPage::new(&gtk::Box::default(), "Details") {
+                    // The content area for zone details.
+                    // You would replace this Box with your ZoneDetails component.
+                    adw::HeaderBar {},
+                    gtk::Box {
+                        set_vexpand: true,
+                        gtk::Label {
+                            set_label: "Select a zone to see its details.",
+                            add_css_class: "title-2",
+                        }
+                    }
                 }
             }
 

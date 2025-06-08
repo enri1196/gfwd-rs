@@ -57,10 +57,7 @@ fn main() {
     let app = RelmApp::from_app(app);
 
     let data = res
-        .lookup_data(
-            "/com/github/Gfwd/style.css",
-            gio::ResourceLookupFlags::NONE,
-        )
+        .lookup_data("/com/github/Gfwd/style.css", gio::ResourceLookupFlags::NONE)
         .unwrap();
     relm4::set_global_css(&glib::GString::from_utf8_checked(data.to_vec()).unwrap());
     app.visible_on_activate(false).run::<App>(());
