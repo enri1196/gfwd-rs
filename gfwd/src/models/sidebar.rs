@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use gfwd_bus::{config_firewalld1::{new_config_firewalld1_proxy, ConfigFirewalld1Proxy}, firewalld1::{new_firewalld_proxy, FirewallD1Proxy}};
+use gfwd_bus::{
+    config_firewalld1::{ConfigFirewalld1Proxy, new_config_firewalld1_proxy},
+    firewalld1::{FirewallD1Proxy, new_firewalld_proxy},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Zone {
@@ -42,7 +45,8 @@ impl SidebarModel {
     }
 
     pub async fn add_zone(&mut self, name: &str) {
-        self.zones.insert(name.to_string(), Zone::new(name.to_string()));
+        self.zones
+            .insert(name.to_string(), Zone::new(name.to_string()));
     }
 
     pub fn set_default_zone(&mut self, name: &str) -> Option<()> {
@@ -53,7 +57,7 @@ impl SidebarModel {
                     zone.is_default = false;
                 }
             }
-            
+
             // Set new default zone
             if let Some(zone) = self.zones.get_mut(name) {
                 zone.is_default = true;
@@ -84,7 +88,10 @@ impl SidebarModel {
 
     pub async fn get_zones(&self) -> Vec<Zone> {
         let zone_names = self.fwd_cfg_proxy.get_zone_names().await.unwrap();
-        let zones = zone_names.iter().map(|zone_name| Zone::new(zone_name.clone())).collect();
+        let zones = zone_names
+            .iter()
+            .map(|zone_name| Zone::new(zone_name.clone()))
+            .collect();
         zones
     }
 

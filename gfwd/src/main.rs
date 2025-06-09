@@ -1,9 +1,10 @@
-pub mod sidebar;
+pub mod dialogs;
 pub mod models;
+pub mod sidebar;
 
+use crate::sidebar::{SidebarMsg, SidebarView};
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
-use crate::sidebar::{SidebarView, SidebarMsg};
 
 #[derive(Debug)]
 pub enum AppMsg {
@@ -30,17 +31,17 @@ impl SimpleAsyncComponent for AppModel {
 
     view! {
         adw::ApplicationWindow {
-            set_default_width: 600,
-            set_default_height: 400,
+            set_default_width: 800,
+            set_default_height: 600,
 
             #[wrap(Some)]
             set_content = &adw::OverlaySplitView {
                 #[track(model.visibility.changed(Visibility::sidebar_visible()))]
                 set_show_sidebar: model.visibility.sidebar_visible,
-                
+
                 #[wrap(Some)]
                 set_sidebar = model.sidebar.widget(),
-                
+
                 #[wrap(Some)]
                 set_content = &adw::ToolbarView {
                     add_top_bar = &adw::HeaderBar {
@@ -55,7 +56,7 @@ impl SimpleAsyncComponent for AppModel {
                             set_hexpand: false,
                         },
                     },
-                    
+
                     #[wrap(Some)]
                     set_content = &gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -68,7 +69,8 @@ impl SimpleAsyncComponent for AppModel {
     async fn update(&mut self, msg: AppMsg, _sender: AsyncComponentSender<Self>) {
         match msg {
             AppMsg::ToggleSidebar => {
-                self.visibility.set_sidebar_visible(!self.visibility.sidebar_visible);
+                self.visibility
+                    .set_sidebar_visible(!self.visibility.sidebar_visible);
             }
             AppMsg::SidebarMsg(msg) => {
                 self.sidebar.emit(msg);
@@ -86,7 +88,10 @@ impl SimpleAsyncComponent for AppModel {
             .forward(sender.command_sender(), |msg| msg);
 
         let model = AppModel {
-            visibility: Visibility { sidebar_visible: false, tracker: 0 },
+            visibility: Visibility {
+                sidebar_visible: false,
+                tracker: 0,
+            },
             sidebar,
         };
 
