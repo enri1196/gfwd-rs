@@ -1,64 +1,109 @@
-#[rustfmt::skip]
-mod config;
-mod app;
-mod modals;
+use relm4::adw::prelude::*;
+use relm4::prelude::*;
 
-use config::{APP_ID, GETTEXT_PACKAGE, LOCALEDIR, RESOURCES_FILE};
-use gettextrs::{gettext, LocaleCategory};
-use gtk::prelude::ApplicationExt;
-use gtk::{gio, glib};
-use relm4::{
-    actions::{AccelsPlus, RelmAction, RelmActionGroup},
-    gtk, main_application, RelmApp,
-};
+#[derive(Debug)]
+enum AppMsg {
+    ToggleSidebar,
+    SetVisibleSidebar,
+}
 
-use app::App;
+#[tracker::track]
+struct AppModel {
+    sidebar_width: i32,
+    sidebar_visible: bool,
+}
 
-relm4::new_action_group!(AppActionGroup, "app");
-relm4::new_stateless_action!(QuitAction, AppActionGroup, "quit");
+#[relm4::component]
+impl SimpleComponent for AppModel {
+    type Init = ();
+    type Input = AppMsg;
+    type Output = ();
+
+    view! {
+        adw::ApplicationWindow {
+            set_default_width: 600,
+            set_default_height: 400,
+
+            #[wrap(Some)]
+            set_content = &adw::OverlaySplitView
+            {
+                #[track(model.changed(AppModel::sidebar_visible()))]
+                set_show_sidebar: model.sidebar_visible,
+                #[wrap(Some)]
+                set_sidebar = &gtk::Box {
+                    #[track(model.changed(AppModel::sidebar_width()))]
+                    set_width_request: model.sidebar_width,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 12,
+                    set_margin_all: 12,
+                    append = &gtk::Button
+                    {
+                        set_label: "Resize of Sidebar",
+                        connect_clicked[sender] => move |_| {
+                            sender.input(AppMsg::ToggleSidebar);
+                        }
+                    },
+                },
+                #[wrap(Some)]
+                set_content = &adw::ToolbarView
+                {
+                    add_top_bar = &adw::HeaderBar
+                    {
+                        set_show_title: false,
+                    },
+                    #[wrap(Some)]
+                    set_content = &gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        append =  &gtk::Button
+                        {
+                            set_label: "Set Visible of Sidebar",
+                            connect_clicked[sender] => move |_| {
+                                sender.input(AppMsg::SetVisibleSidebar);
+                            },
+                            set_halign: gtk::Align::Center,
+                            set_hexpand: false,
+                            set_width_request: 150,
+                        }
+                    }
+                },
+
+            }
+        }
+    }
+
+    fn update(&mut self, msg: AppMsg, _sender: ComponentSender<Self>) {
+        // reset tracker value of the model
+        self.reset();
+        match msg {
+            AppMsg::ToggleSidebar => {
+                self.set_sidebar_width(if self.sidebar_width == 200 { 50 } else { 200 });
+                // if current width is 200 -> set to 50, otherwise set to 200
+            }
+            AppMsg::SetVisibleSidebar => {
+                self.set_sidebar_visible(!self.sidebar_visible);
+                // if visible -> hide, if hidden -> show
+            }
+        }
+    }
+
+    fn init(
+        _: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = AppModel {
+            sidebar_width: 200,
+            sidebar_visible: true,
+            tracker: 0,
+        };
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+}
 
 fn main() {
-    gtk::init().unwrap();
-
-    // Enable logging
-    tracing_subscriber::fmt()
-        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::FULL)
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
-    // setup gettext
-    gettextrs::setlocale(LocaleCategory::LcAll, "");
-    gettextrs::bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR).expect("Unable to bind the text domain");
-    gettextrs::textdomain(GETTEXT_PACKAGE).expect("Unable to switch to the text domain");
-
-    glib::set_application_name(&gettext("Gfwd"));
-
-    let res = gio::Resource::load(RESOURCES_FILE).expect("Could not load gresource file");
-    gio::resources_register(&res);
-
-    gtk::Window::set_default_icon_name(APP_ID);
-
-    let app = main_application();
-    app.set_resource_base_path(Some("/com/github/Gfwd/"));
-
-    let mut actions = RelmActionGroup::<AppActionGroup>::new();
-
-    let quit_action = {
-        let app = app.clone();
-        RelmAction::<QuitAction>::new_stateless(move |_| {
-            app.quit();
-        })
-    };
-    actions.add_action(quit_action);
-    actions.register_for_main_application();
-
-    app.set_accelerators_for_action::<QuitAction>(&["<Control>q"]);
-
-    let app = RelmApp::from_app(app);
-
-    let data = res
-        .lookup_data("/com/github/Gfwd/style.css", gio::ResourceLookupFlags::NONE)
-        .unwrap();
-    relm4::set_global_css(&glib::GString::from_utf8_checked(data.to_vec()).unwrap());
-    app.visible_on_activate(false).run::<App>(());
+    let app = RelmApp::new("com.github.Gfwd");
+    app.run::<AppModel>(());
 }
