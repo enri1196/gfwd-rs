@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use zbus::{
     Connection, Result as ZResult,
-    zvariant::{OwnedObjectPath, Value},
+    zvariant::{OwnedObjectPath, OwnedValue},
 };
 use zbus_macros::proxy;
 
@@ -34,25 +34,22 @@ pub type ServiceSettings = (
 );
 
 /// Type alias for permanent zone settings.
-/// (version, name, description, UNUSED, target, services, ports, icmp-blocks,
-/// masquerade, forward-ports, interfaces, sources, rich rules, protocols,
-/// source-ports)
 pub type ZoneSettings = (
-    String,
-    String,
-    String,
-    bool,
-    String,
-    Vec<String>,
-    Vec<(String, String)>,
-    Vec<String>,
-    bool,
-    Vec<(String, String, String, String)>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-    Vec<(String, String)>,
+    String, // version
+    String, // name
+    String, // description
+    bool, // UNUSED
+    String, // target
+    Vec<String>, // services
+    Vec<(String, String)>, // ports
+    Vec<String>, // icmp-blocks
+    bool, // masquerade
+    Vec<(String, String, String, String)>, // forward-ports
+    Vec<String>, // interfaces
+    Vec<String>, // sources
+    Vec<String>, // rich rules
+    Vec<String>, // protocols
+    Vec<(String, String)>, // source-ports
 );
 
 #[proxy(
@@ -64,7 +61,7 @@ pub type ZoneSettings = (
 /// Proxy for the `org.fedoraproject.FirewallD1.config` interface.
 ///
 /// Allows to permanently add, remove and query zones, services and icmp types.
-pub trait Config {
+pub trait ConfigFirewalld1 {
     /// Add an IPSet to the permanent configuration.
     #[zbus(name = "addIPSet")]
     fn add_ipset(&self, ipset: &str, settings: &IPSetSettings) -> ZResult<OwnedObjectPath>;
@@ -87,7 +84,7 @@ pub trait Config {
     fn add_service2(
         &self,
         service: &str,
-        settings: &HashMap<String, Value>,
+        settings: &HashMap<String, OwnedValue>,
     ) -> ZResult<OwnedObjectPath>;
 
     /// Add a zone to the permanent configuration.
@@ -251,7 +248,7 @@ pub trait Config {
     fn set_rfc3964_ipv4(&self, value: &str) -> ZResult<()>;
 }
 
-pub async fn new_config_proxy() -> ZResult<ConfigProxy<'static>> {
+pub async fn new_config_firewalld1_proxy() -> ZResult<ConfigFirewalld1Proxy<'static>> {
     let conn = Connection::system().await?;
-    ConfigProxy::<'static>::new(&conn).await
+    ConfigFirewalld1Proxy::<'static>::new(&conn).await
 }

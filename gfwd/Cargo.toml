@@ -7,3 +7,5 @@ edition = "2024"
 relm4 = { version = "0.9.1", features = ["libadwaita", "gnome_47"] }
 relm4-components = { version = "0.9.1", features = ["libadwaita"] }
 tracker = "0.2.2"
+
+gfwd-bus = { path = "../gfwd-bus", features = ["firewalld1", "config_firewalld1"]}
