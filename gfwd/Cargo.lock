@@ -551,7 +551,9 @@ dependencies = [
  "gfwd-bus",
  "relm4",
  "relm4-components",
+ "tokio",
  "tracker",
+ "zbus",
 ]
 
 [[package]]

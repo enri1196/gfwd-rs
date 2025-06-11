@@ -1,6 +1,5 @@
 use crate::{
-    dialogs::add_zone::{AddZoneDialog, AddZoneDialogOutput},
-    models::sidebar::{SidebarModel, Zone},
+    components::sidebar::model::{SidebarModel, Zone}, dialogs::add_zone::{AddZoneDialog, AddZoneDialogOutput}
 };
 use relm4::adw::prelude::AdwDialogExt;
 use relm4::adw::prelude::*;
@@ -32,7 +31,6 @@ pub enum SidebarMsg {
     ZoneAdded(AddZoneDialogOutput),
 }
 
-#[derive(Debug)]
 pub struct SidebarView {
     sb_model: SidebarModel,
     pub width: i32,
@@ -105,7 +103,7 @@ impl SimpleAsyncComponent for SidebarView {
                     // .attach_to(&root)
                     .launch(())
                     .forward(sender.input_sender(), |msg| SidebarMsg::ZoneAdded(msg));
-                adw::Dialog::present(dialog.widget(), None::<&gtk::Box>);
+                dialog.widget().present(None::<&gtk::Box>);
             }
             SidebarMsg::ZoneAdded(output) => {
                 if !output.name.is_empty() {

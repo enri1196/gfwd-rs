@@ -1,15 +1,124 @@
-pub mod dialogs;
-pub mod models;
-pub mod sidebar;
+mod fwd_broker;
 
-use crate::sidebar::{SidebarMsg, SidebarView};
+mod components;
+mod dialogs;
+
+use std::convert::identity;
+
 use relm4::adw::prelude::*;
+use relm4::gtk::{self, glib};
+use relm4::MessageBroker;
 use relm4::prelude::*;
 
+use crate::components::sidebar::view::SidebarView;
+use crate::components::zone_view::ZoneView;
+
+static DIALOG_BROKER: MessageBroker<DialogMsg> = MessageBroker::new();
+
+struct Dialog {
+    visible: bool,
+}
+
 #[derive(Debug)]
-pub enum AppMsg {
+enum DialogMsg {
+    Show,
+    Hide,
+}
+
+#[relm4::component]
+impl SimpleComponent for Dialog {
+    type Init = ();
+    type Input = DialogMsg;
+    type Output = ButtonMsg;
+
+    view! {
+        dialog = gtk::AboutDialog {
+            #[watch]
+            set_visible: model.visible,
+            set_modal: true,
+
+            #[wrap(Some)]
+            set_child = &gtk::Label {
+                set_width_request: 200,
+                set_height_request: 80,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::Center,
+                #[watch]
+                set_label: if dialog.transient_for().is_some() {
+                    "I'm transient!"
+                } else {
+                    "I'm not transient..."
+                },
+            },
+
+            connect_close_request[sender] => move |_| {
+                sender.input(DialogMsg::Hide);
+                glib::Propagation::Stop
+            }
+        }
+    }
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = Dialog { visible: false };
+        let widgets = view_output!();
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
+        match msg {
+            DialogMsg::Show => self.visible = true,
+            DialogMsg::Hide => self.visible = false,
+        }
+    }
+}
+
+struct Button {
+    dialog: Controller<Dialog>,
+}
+
+#[derive(Debug)]
+enum ButtonMsg {}
+
+#[relm4::component]
+impl SimpleComponent for Button {
+    type Init = ();
+    type Input = ButtonMsg;
+    type Output = AppMsg;
+
+    view! {
+        button = &gtk::Button {
+            set_label: "Show the dialog",
+            connect_clicked => move |_| {
+                DIALOG_BROKER.send(DialogMsg::Show);
+            }
+        }
+    }
+
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let dialog = Dialog::builder()
+            .transient_for(&root)
+            .launch_with_broker((), &DIALOG_BROKER)
+            .forward(sender.input_sender(), identity);
+
+        let model = Button { dialog };
+        let widgets = view_output!();
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, _msg: Self::Input, _sender: ComponentSender<Self>) {}
+}
+
+#[derive(Debug)]
+enum AppMsg {
     ToggleSidebar,
-    SidebarMsg(SidebarMsg), // Forward sidebar messages
 }
 
 #[tracker::track]
@@ -17,22 +126,21 @@ struct Visibility {
     sidebar_visible: bool,
 }
 
-struct AppModel {
+struct App {
     visibility: Visibility,
     sidebar: AsyncController<SidebarView>,
+    zone_view: Controller<ZoneView>,
 }
 
-#[relm4::component(async)]
-impl SimpleAsyncComponent for AppModel {
+#[relm4::component(async, pub)]
+impl SimpleAsyncComponent for App {
     type Init = ();
     type Input = AppMsg;
     type Output = ();
-    type Widgets = AppWidgets;
 
     view! {
         adw::ApplicationWindow {
-            set_default_width: 800,
-            set_default_height: 600,
+            set_default_size: (1280, 720),
 
             #[wrap(Some)]
             set_content = &adw::OverlaySplitView {
@@ -43,28 +151,11 @@ impl SimpleAsyncComponent for AppModel {
                 set_sidebar = model.sidebar.widget(),
 
                 #[wrap(Some)]
-                set_content = &adw::ToolbarView {
-                    add_top_bar = &adw::HeaderBar {
-                        set_show_title: false,
-
-                        pack_start = &gtk::Button {
-                            set_icon_name: "view-refresh-symbolic",
-                            connect_clicked[sender] => move |_| {
-                                sender.input(AppMsg::ToggleSidebar);
-                            },
-                            set_halign: gtk::Align::Center,
-                            set_hexpand: false,
-                        },
-                    },
-
-                    #[wrap(Some)]
-                    set_content = &gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                    },
-                },
+                set_content = model.zone_view.widget(),
             }
         }
     }
+
 
     async fn update(&mut self, msg: AppMsg, _sender: AsyncComponentSender<Self>) {
         match msg {
@@ -72,9 +163,9 @@ impl SimpleAsyncComponent for AppModel {
                 self.visibility
                     .set_sidebar_visible(!self.visibility.sidebar_visible);
             }
-            AppMsg::SidebarMsg(msg) => {
-                self.sidebar.emit(msg);
-            }
+            // AppMsg::SidebarMsg(msg) => {
+            //     self.sidebar.emit(msg);
+            // }
         }
     }
 
@@ -85,22 +176,26 @@ impl SimpleAsyncComponent for AppModel {
     ) -> AsyncComponentParts<Self> {
         let sidebar = SidebarView::builder()
             .launch(())
-            .forward(sender.command_sender(), |msg| msg);
+            .forward(sender.command_sender(), identity);
 
-        let model = AppModel {
+        let zone_view = ZoneView::builder()
+            .launch("default".to_string())
+            .forward(sender.input_sender(), |msg| AppMsg::ToggleSidebar);
+
+        let model = App {
             visibility: Visibility {
                 sidebar_visible: false,
                 tracker: 0,
             },
             sidebar,
+            zone_view,
         };
 
         let widgets = view_output!();
         AsyncComponentParts { model, widgets }
-    }
-}
+    }}
 
 fn main() {
     let app = RelmApp::new("com.github.Gfwd");
-    app.run_async::<AppModel>(());
+    app.run_async::<App>(());
 }

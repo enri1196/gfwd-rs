@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use gfwd_bus::{
-    config_firewalld1::{ConfigFirewalld1Proxy, new_config_firewalld1_proxy},
-    firewalld1::{FirewallD1Proxy, new_firewalld_proxy},
-};
+use crate::fwd_broker::FwdBroker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Zone {
@@ -24,21 +21,16 @@ impl Zone {
     }
 }
 
-#[derive(Debug)]
 pub struct SidebarModel {
-    fwd_proxy: FirewallD1Proxy<'static>,
-    fwd_cfg_proxy: ConfigFirewalld1Proxy<'static>,
+    broker: &'static FwdBroker,
     zones: HashMap<String, Zone>,
     default_zone: Option<String>,
 }
 
 impl SidebarModel {
     pub async fn new() -> Self {
-        let fwd_proxy = new_firewalld_proxy().await.unwrap();
-        let fwd_cfg_proxy = new_config_firewalld1_proxy().await.unwrap();
         Self {
-            fwd_proxy,
-            fwd_cfg_proxy,
+            broker: FwdBroker::get_broker().await,
             zones: HashMap::new(),
             default_zone: None,
         }
@@ -87,7 +79,7 @@ impl SidebarModel {
     }
 
     pub async fn get_zones(&self) -> Vec<Zone> {
-        let zone_names = self.fwd_cfg_proxy.get_zone_names().await.unwrap();
+        let zone_names = self.broker.get_zones().await.unwrap();
         let zones = zone_names
             .iter()
             .map(|zone_name| Zone::new(zone_name.clone()))
@@ -96,8 +88,9 @@ impl SidebarModel {
     }
 
     pub async fn get_zone(&self, name: &str) -> Option<&Zone> {
-        let zone = self.fwd_cfg_proxy.get_zone_by_name(name).await.unwrap();
-        // let zone = Zone::from(&zone);
-        self.zones.get(name)
+        // let zone = self.broker.get_zones(name).await.unwrap();
+        // // let zone = Zone::from(&zone);
+        // self.zones.get(name)
+        None
     }
 }
