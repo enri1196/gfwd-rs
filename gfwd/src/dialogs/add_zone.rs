@@ -1,6 +1,5 @@
 use gfwd_bus::config_firewalld1::ZoneSettings;
 use relm4::adw::prelude::*;
-use relm4::gtk::prelude::*;
 use relm4::prelude::*;
 
 #[derive(Debug)]
@@ -46,48 +45,80 @@ impl SimpleAsyncComponent for AddZoneDialog {
     view! {
         dialog = adw::Dialog {
             set_title: "New Zone",
-            set_visible: true,
+            // set_modal: true,
+            // set_default_width: 500,
+            // set_default_height: 300,
 
             #[wrap(Some)]
-            set_child = &adw::PreferencesPage {
-                add = &adw::PreferencesGroup {
-                    set_title: "Basic Information",
+            set_child = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 12,
+                set_margin_all: 12,
 
-                    add = &adw::EntryRow {
-                        set_title: "Name",
-                        set_tooltip_text: Some("e.g., my-custom-zone"),
-                        set_text: &model.name,
-                        connect_text_notify[sender] => move |entry| {
-                            sender.input(AddZoneDialogMsg::SetName(entry.text().to_string()));
-                        }
+                // Name field
+                append = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 6,
+                    
+                    append = &gtk::Label {
+                        set_text: "Zone Name:",
+                        set_halign: gtk::Align::Start,
+                    },
+                    
+                    append = &gtk::Entry {
+                        set_hexpand: true,
+                        set_placeholder_text: Some("Enter zone name"),
+                        // connect_changed: clone!(@strong sender => move |entry| {
+                        //     if let Some(text) = entry.text().as_str() {
+                        //         sender.input(AddZoneDialogMsg::SetName(text.to_string()));
+                        //     }
+                        // }),
+                    },
+                },
+
+                // Description field
+                append = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 6,
+                    
+                    append = &gtk::Label {
+                        set_text: "Description:",
+                        set_halign: gtk::Align::Start,
+                    },
+                    
+                    append = &gtk::Entry {
+                        set_hexpand: true,
+                        set_placeholder_text: Some("Enter description"),
+                        // connect_changed: clone!(@strong sender => move |entry| {
+                        //     if let Some(text) = entry.text().as_str() {
+                        //         sender.input(AddZoneDialogMsg::SetDescription(text.to_string()));
+                        //     }
+                        // }),
+                    },
+                },
+
+                // Action buttons
+                append = &gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_halign: gtk::Align::End,
+                    set_spacing: 6,
+                    set_margin_top: 12,
+
+                    append = &gtk::Button::with_label("Cancel") {
+                        connect_clicked: move |_| {
+                            sender.input(AddZoneDialogMsg::Cancel);
+                        },
                     },
 
-                    add = &adw::EntryRow {
-                        set_title: "Description",
-                        set_tooltip_text: Some("A short description of the zone"),
-                        set_text: &model.description,
-                        connect_text_notify[sender] => move |entry| {
-                            sender.input(AddZoneDialogMsg::SetDescription(entry.text().to_string()));
-                        }
+                    append = &gtk::Button::with_label("Add") {
+                        add_css_class: "suggested-action",
+                        set_sensitive: false,
+                        // connect_clicked: move |_| {
+                        //     sender.input(AddZoneDialogMsg::Add);
+                        // },
                     },
-                }
+                },
             },
-
-            // // Add response buttons for "Cancel" and "Add"
-            // add_response: ("cancel", "Cancel"),
-            // add_response: ("add", "Add"),
-
-            // // Set the default and suggested actions
-            // set_response_enabled: ("add", false), // Initially disabled
-            // set_default_response: Some("add"),
-            // set_close_response: "cancel",
-
-            // connect_response[sender] => move |_, response| {
-            //     match response {
-            //         "add" => sender.input(AddZoneDialogMsg::Add),
-            //         _ => sender.input(AddZoneDialogMsg::Cancel),
-            //     }
-            // }
         }
     }
 

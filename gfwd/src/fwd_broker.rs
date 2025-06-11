@@ -1,5 +1,6 @@
 use std::io::Result;
 
+use gfwd_bus::config_firewalld1::ZoneSettings;
 use tokio::sync::OnceCell;
 
 pub struct FwdBroker {
@@ -24,6 +25,30 @@ impl FwdBroker {
         self.cfg_fwd.get_zone_names().await
             .map_err(|e| std::io::Error::new(get_kind(&e), e))
     }
+
+    /// Add a new zone with the given name and settings
+    pub async fn add_zone(&self, name: &str) -> Result<()> {
+        let zone_settings: ZoneSettings = (
+            String::new(), // version
+            String::new(), // name
+            String::new(), // description
+            false, // UNUSED
+            String::new(), // target
+            Vec::new(), // services
+            Vec::<(String, String)>::new(), // ports
+            Vec::<String>::new(), // icmp-blocks
+            false, // masquerade
+            Vec::<(String, String, String, String)>::new(), // forward-ports
+            Vec::<String>::new(), // interfaces
+            Vec::<String>::new(), // sources
+            Vec::<String>::new(), // rich rules
+            Vec::<String>::new(), // protocols
+            Vec::<(String, String)>::new(), // source-ports
+        );
+        self.cfg_fwd.add_zone(name, &zone_settings).await
+            .map(|_| ())
+            .map_err(|e| std::io::Error::new(get_kind(&e), e))
+    }
 }
 
 fn get_kind(zbus_error: &zbus::Error) -> std::io::ErrorKind {
@@ -38,7 +63,7 @@ fn get_kind(zbus_error: &zbus::Error) -> std::io::ErrorKind {
         zbus::Error::IncorrectEndian => std::io::ErrorKind::Other,
         zbus::Error::Handshake(_) => std::io::ErrorKind::Other,
         zbus::Error::InvalidReply => std::io::ErrorKind::Other,
-        zbus::Error::MethodError(_, _, _) => std::io::ErrorKind::Other,
+        zbus::Error::MethodError(_, _, _) => std::io::ErrorKind::InvalidInput,
         zbus::Error::MissingField => std::io::ErrorKind::Other,
         zbus::Error::InvalidGUID => std::io::ErrorKind::Other,
         zbus::Error::Unsupported => std::io::ErrorKind::Other,
@@ -48,7 +73,7 @@ fn get_kind(zbus_error: &zbus::Error) -> std::io::ErrorKind {
         zbus::Error::Failure(_) => std::io::ErrorKind::Other,
         zbus::Error::MissingParameter(_) => std::io::ErrorKind::Other,
         zbus::Error::InvalidSerial => std::io::ErrorKind::Other,
-        zbus::Error::InterfaceExists(_, _) => std::io::ErrorKind::Other,
+        zbus::Error::InterfaceExists(_, _) => std::io::ErrorKind::AlreadyExists,
         _ => std::io::ErrorKind::Other,
     }
 }

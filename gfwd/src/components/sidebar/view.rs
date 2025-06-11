@@ -100,7 +100,6 @@ impl SimpleAsyncComponent for SidebarView {
             SidebarMsg::ShowAddZoneDialog => {
                 // Use sender.dialog to launch the modal and get its output
                 let dialog = AddZoneDialog::builder()
-                    // .attach_to(&root)
                     .launch(())
                     .forward(sender.input_sender(), |msg| SidebarMsg::ZoneAdded(msg));
                 dialog.widget().present(None::<&gtk::Box>);
