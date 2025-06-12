@@ -1,11 +1,30 @@
 use std::io::Result;
 
-use gfwd_bus::config_firewalld1::ZoneSettings;
+use gfwd_bus::config_firewalld1::ZoneSettings as ZoneSettingsBus;
 use tokio::sync::OnceCell;
 
 pub struct FwdBroker {
     pub fwd: gfwd_bus::firewalld1::FirewallD1Proxy<'static>,
     pub cfg_fwd: gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy<'static>,
+}
+
+#[derive(Debug, Default)]
+pub struct ZoneSettings {
+    pub version: String,
+    pub name: String,
+    pub description: String,
+    pub unused: bool,
+    pub target: String,
+    pub services: Vec<String>,
+    pub ports: Vec<(String, String)>,
+    pub icmp_blocks: Vec<String>,
+    pub masquerade: bool,
+    pub forward_ports: Vec<(String, String, String, String)>,
+    pub interfaces: Vec<String>,
+    pub sources: Vec<String>,
+    pub rich_rules: Vec<String>,
+    pub protocols: Vec<String>,
+    pub source_ports: Vec<(String, String)>,
 }
 
 // Static object holding the sender side of the channel
@@ -21,31 +40,39 @@ impl FwdBroker {
         }).await
     }
 
+    /// Get all zones
     pub async fn get_zones(&self) -> Result<Vec<String>> {
         self.cfg_fwd.get_zone_names().await
             .map_err(|e| std::io::Error::new(get_kind(&e), e))
     }
 
-    /// Add a new zone with the given name and settings
-    pub async fn add_zone(&self, name: &str) -> Result<()> {
-        let zone_settings: ZoneSettings = (
-            String::new(), // version
-            String::new(), // name
-            String::new(), // description
-            false, // UNUSED
-            String::new(), // target
-            Vec::new(), // services
-            Vec::<(String, String)>::new(), // ports
-            Vec::<String>::new(), // icmp-blocks
-            false, // masquerade
-            Vec::<(String, String, String, String)>::new(), // forward-ports
-            Vec::<String>::new(), // interfaces
-            Vec::<String>::new(), // sources
-            Vec::<String>::new(), // rich rules
-            Vec::<String>::new(), // protocols
-            Vec::<(String, String)>::new(), // source-ports
+    /// Get the default zone
+    pub async fn get_default_zone(&self) -> Result<String> {
+        self.cfg_fwd.default_zone().await
+            .map_err(|e| std::io::Error::new(get_kind(&e), e))
+    }
+
+    /// Add a new zone with the given settings
+    pub async fn add_zone(&self, settings: ZoneSettings) -> Result<()> {
+        let name = settings.name.clone();
+        let zone_settings: ZoneSettingsBus = (
+            settings.version, // version
+            settings.name, // name
+            settings.description, // description
+            settings.unused, // UNUSED
+            settings.target, // target
+            settings.services, // services
+            settings.ports, // ports
+            settings.icmp_blocks, // icmp-blocks
+            settings.masquerade, // masquerade
+            settings.forward_ports, // forward-ports
+            settings.interfaces, // interfaces
+            settings.sources,
+            settings.rich_rules,
+            settings.protocols,
+            settings.source_ports,
         );
-        self.cfg_fwd.add_zone(name, &zone_settings).await
+        self.cfg_fwd.add_zone(name.as_str(), &zone_settings).await
             .map(|_| ())
             .map_err(|e| std::io::Error::new(get_kind(&e), e))
     }

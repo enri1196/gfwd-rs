@@ -1,6 +1,7 @@
-use gfwd_bus::config_firewalld1::ZoneSettings;
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
+
+use crate::fwd_broker::ZoneSettings;
 
 #[derive(Debug)]
 pub struct AddZoneDialog {
@@ -17,18 +18,9 @@ pub enum AddZoneDialogMsg {
     Cancel,
 }
 
+#[derive(Debug)]
 pub struct AddZoneDialogOutput {
-    pub name: String,
     pub settings: ZoneSettings,
-}
-
-impl std::fmt::Debug for AddZoneDialogOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AddZoneDialogOutput")
-            .field("name", &self.name)
-            // .field("settings", &self.settings)
-            .finish()
-    }
 }
 
 #[relm4::component(async, pub)]
@@ -105,7 +97,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
 
                     append = &gtk::Button::with_label("Add") {
                         add_css_class: "suggested-action",
-                        set_sensitive: false,
+                        // set_sensitive: false,
                         connect_clicked[sender, root] => move |_| {
                             sender.input(AddZoneDialogMsg::Add);
                             root.close();
@@ -132,24 +124,6 @@ impl SimpleAsyncComponent for AddZoneDialog {
     }
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
-        let settings: ZoneSettings = (
-            String::new(), // version
-            self.name.clone(),
-            self.description.clone(),
-            false,                 // UNUSED
-            "default".to_string(), // target
-            Vec::new(),            // services
-            Vec::new(),            // ports
-            Vec::new(),            // icmp-blocks
-            false,                 // masquerade
-            Vec::new(),            // forward-ports
-            Vec::new(),            // interfaces
-            Vec::new(),            // sources
-            Vec::new(),            // rich rules
-            Vec::new(),            // protocols
-            Vec::new(),            // source-ports
-        );
-
         match msg {
             AddZoneDialogMsg::SetName(name) => {
                 self.name = name;
@@ -161,8 +135,11 @@ impl SimpleAsyncComponent for AddZoneDialog {
                 if !self.name.is_empty() && !self.description.is_empty() {
                     sender
                     .output(AddZoneDialogOutput {
-                        name: self.name.clone(),
-                        settings,
+                        settings: ZoneSettings {
+                            name: self.name.clone(),
+                            description: self.description.clone(),
+                            ..Default::default()
+                        },
                     })
                     .unwrap();
                 }

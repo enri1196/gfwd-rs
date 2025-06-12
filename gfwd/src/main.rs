@@ -5,119 +5,18 @@ mod components;
 use std::convert::identity;
 
 use relm4::adw::prelude::*;
-use relm4::gtk::{self, glib};
-use relm4::MessageBroker;
-use relm4::prelude::*;
+use relm4::{prelude::*, MessageBroker};
 
-use crate::components::sidebar::SidebarView;
+use crate::components::sidebar::{InputSidebarMsg, SidebarView};
 use crate::components::zone_content::ZoneView;
-
-static DIALOG_BROKER: MessageBroker<DialogMsg> = MessageBroker::new();
-
-struct Dialog {
-    visible: bool,
-}
-
-#[derive(Debug)]
-enum DialogMsg {
-    Show,
-    Hide,
-}
-
-#[relm4::component]
-impl SimpleComponent for Dialog {
-    type Init = ();
-    type Input = DialogMsg;
-    type Output = ButtonMsg;
-
-    view! {
-        dialog = gtk::AboutDialog {
-            #[watch]
-            set_visible: model.visible,
-            set_modal: true,
-
-            #[wrap(Some)]
-            set_child = &gtk::Label {
-                set_width_request: 200,
-                set_height_request: 80,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::Center,
-                #[watch]
-                set_label: if dialog.transient_for().is_some() {
-                    "I'm transient!"
-                } else {
-                    "I'm not transient..."
-                },
-            },
-
-            connect_close_request[sender] => move |_| {
-                sender.input(DialogMsg::Hide);
-                glib::Propagation::Stop
-            }
-        }
-    }
-
-    fn init(
-        _init: Self::Init,
-        root: Self::Root,
-        sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let model = Dialog { visible: false };
-        let widgets = view_output!();
-        ComponentParts { model, widgets }
-    }
-
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>) {
-        match msg {
-            DialogMsg::Show => self.visible = true,
-            DialogMsg::Hide => self.visible = false,
-        }
-    }
-}
-
-struct Button {
-    dialog: Controller<Dialog>,
-}
-
-#[derive(Debug)]
-enum ButtonMsg {}
-
-#[relm4::component]
-impl SimpleComponent for Button {
-    type Init = ();
-    type Input = ButtonMsg;
-    type Output = AppMsg;
-
-    view! {
-        button = &gtk::Button {
-            set_label: "Show the dialog",
-            connect_clicked => move |_| {
-                DIALOG_BROKER.send(DialogMsg::Show);
-            }
-        }
-    }
-
-    fn init(
-        _init: Self::Init,
-        root: Self::Root,
-        sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
-        let dialog = Dialog::builder()
-            .transient_for(&root)
-            .launch_with_broker((), &DIALOG_BROKER)
-            .forward(sender.input_sender(), identity);
-
-        let model = Button { dialog };
-        let widgets = view_output!();
-        ComponentParts { model, widgets }
-    }
-
-    fn update(&mut self, _msg: Self::Input, _sender: ComponentSender<Self>) {}
-}
+use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogOutput};
+use crate::fwd_broker::FwdBroker;
 
 #[derive(Debug)]
 enum AppMsg {
     ToggleSidebar,
+    ShowAddZoneDialog,
+    ZoneAdded(AddZoneDialogOutput),
 }
 
 #[tracker::track]
@@ -126,7 +25,9 @@ struct Visibility {
 }
 
 struct App {
+    broker: &'static FwdBroker,
     visibility: Visibility,
+    dialog: AsyncController<AddZoneDialog>,
     sidebar: AsyncController<SidebarView>,
     zone_view: Controller<ZoneView>,
 }
@@ -156,16 +57,23 @@ impl SimpleAsyncComponent for App {
         }
     }
 
-
     async fn update(&mut self, msg: AppMsg, _sender: AsyncComponentSender<Self>) {
         match msg {
             AppMsg::ToggleSidebar => {
                 self.visibility
                     .set_sidebar_visible(!self.visibility.sidebar_visible);
             }
-            // AppMsg::SidebarMsg(msg) => {
-            //     self.sidebar.emit(msg);
-            // }
+            AppMsg::ShowAddZoneDialog => {
+                self.dialog.widget().present(None::<&gtk::Box>);
+            }
+            AppMsg::ZoneAdded(output) => {
+                if !output.settings.name.is_empty() {
+                    match self.broker.add_zone(output.settings).await {
+                        Ok(_) => self.sidebar.emit(InputSidebarMsg::UpdateZones),
+                        Err(e) => println!("Failed to add zone: {}", e),
+                    };
+                }
+            }
         }
     }
 
@@ -176,19 +84,23 @@ impl SimpleAsyncComponent for App {
     ) -> AsyncComponentParts<Self> {
         let sidebar = SidebarView::builder()
             .launch(())
-            .forward(sender.command_sender(), identity);
+            .forward(sender.input_sender(), |_| AppMsg::ShowAddZoneDialog);
 
         let zone_view = ZoneView::builder()
             .launch("default".to_string())
-            .forward(sender.input_sender(), |msg| AppMsg::ToggleSidebar);
+            .forward(sender.input_sender(), |_| AppMsg::ToggleSidebar);
 
         let model = App {
             visibility: Visibility {
                 sidebar_visible: false,
                 tracker: 0,
             },
+            dialog: AddZoneDialog::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| AppMsg::ZoneAdded(msg)),
             sidebar,
             zone_view,
+            broker: FwdBroker::get_broker().await,
         };
 
         let widgets = view_output!();

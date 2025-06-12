@@ -1,6 +1,5 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
-use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogOutput};
 use crate::fwd_broker::FwdBroker;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,23 +22,26 @@ impl From<String> for ZoneItem {
 }
 
 #[derive(Debug)]
-pub enum SidebarMsg {
+pub enum InputSidebarMsg {
     UpdateZones,
     ShowAddZoneDialog,
-    ZoneAdded(AddZoneDialogOutput),
+}
+
+#[derive(Debug)]
+pub enum OutputSidebarMsg {
+    ShowAddZoneDialog
 }
 
 pub struct SidebarView {
     broker: &'static FwdBroker,
-    dialog: AsyncController<AddZoneDialog>,
     zones: Vec<ZoneItem>,
 }
 
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for SidebarView {
     type Init = ();
-    type Input = SidebarMsg;
-    type Output = ();
+    type Input = InputSidebarMsg;
+    type Output = OutputSidebarMsg;
     type Widgets = SidebarWidgets;
 
     view! {
@@ -69,7 +71,7 @@ impl SimpleAsyncComponent for SidebarView {
                         set_tooltip_text: Some("New Zone"),
                         set_css_classes: &["flat"],
                         connect_clicked[sender] => move |_| {
-                            sender.input(SidebarMsg::ShowAddZoneDialog);
+                            sender.input(InputSidebarMsg::ShowAddZoneDialog);
                         }
                     }
                 },
@@ -86,19 +88,12 @@ impl SimpleAsyncComponent for SidebarView {
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
         match msg {
-            SidebarMsg::UpdateZones => {
+            InputSidebarMsg::UpdateZones => {
                 let zones_names = self.broker.get_zones().await.unwrap_or_default();
                 self.zones = zones_names.into_iter().map(ZoneItem::from).collect();
             }
-            SidebarMsg::ShowAddZoneDialog => {
-                // Use sender.dialog to launch the modal and get its output
-                self.dialog.widget().present(None::<&gtk::Box>);
-            }
-            SidebarMsg::ZoneAdded(output) => {
-                if !output.name.is_empty() {
-                    let _ = self.broker.add_zone(&output.name).await;
-                    sender.input_sender().emit(SidebarMsg::UpdateZones);
-                }
+            InputSidebarMsg::ShowAddZoneDialog => {
+                let _ = sender.output(OutputSidebarMsg::ShowAddZoneDialog);
             }
         }
     }
@@ -109,14 +104,11 @@ impl SimpleAsyncComponent for SidebarView {
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
         let broker = FwdBroker::get_broker().await;
-        let dialog = AddZoneDialog::builder()
-            .launch(())
-            .forward(sender.input_sender(), |msg| SidebarMsg::ZoneAdded(msg));
 
         let zones = broker.get_zones().await.unwrap_or_default();
+        let default_zone = broker.get_default_zone().await.unwrap_or_default();
         let model = SidebarView {
             broker,
-            dialog,
             zones: zones.into_iter().map(ZoneItem::from).collect(),
         };
 
