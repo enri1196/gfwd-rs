@@ -1,8 +1,6 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::AppMsg;
-
 #[derive(Debug)]
 pub enum ZoneViewMsg {
     ToggleSidebar,
@@ -10,7 +8,6 @@ pub enum ZoneViewMsg {
 }
 
 pub struct ZoneView {
-    model: super::model::ZoneViewModel,
 }
 
 #[relm4::component(pub)]
@@ -39,7 +36,7 @@ impl SimpleComponent for ZoneView {
                 
                 // Zone title in the center
                 #[wrap(Some)]
-                set_title_widget = &gtk::Label::new(Some(&model.zone_name)),
+                set_title_widget = &gtk::Label::new(Some(&init)),
             },
             
             // Main content area
@@ -65,13 +62,12 @@ impl SimpleComponent for ZoneView {
     }
 
     fn init(
-        zone_name: Self::Init,
+        init: Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = super::model::ZoneViewModel::new(zone_name);
         let widgets = view_output!();
-        let model = ZoneView { model };
+        let model = ZoneView {};
         ComponentParts { model, widgets }
     }
 

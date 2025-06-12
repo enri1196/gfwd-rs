@@ -1,6 +1,6 @@
-use crate::dialogs::add_zone::{AddZoneDialog, AddZoneDialogOutput};
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
+use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogOutput};
 use crate::fwd_broker::FwdBroker;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -13,14 +13,10 @@ pub struct AddZoneDialog {
 pub enum AddZoneDialogMsg {
     SetName(String),
     SetDescription(String),
-    /// User clicked "Add"
     Add,
-    /// User clicked "Cancel" or closed the dialog
     Cancel,
 }
 
-// The output of our dialog. The parent will receive this.
-// We use an Option to signify if the user confirmed or cancelled.
 pub struct AddZoneDialogOutput {
     pub name: String,
     pub settings: ZoneSettings,
@@ -68,11 +64,9 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     append = &gtk::Entry {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter zone name"),
-                        // connect_changed: clone!(@strong sender => move |entry| {
-                        //     if let Some(text) = entry.text().as_str() {
-                        //         sender.input(AddZoneDialogMsg::SetName(text.to_string()));
-                        //     }
-                        // }),
+                        connect_changed[sender] => move |entry| {
+                            sender.input(AddZoneDialogMsg::SetName(entry.text().to_string()));
+                        }
                     },
                 },
 
@@ -89,11 +83,9 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     append = &gtk::Entry {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter description"),
-                        // connect_changed: clone!(@strong sender => move |entry| {
-                        //     if let Some(text) = entry.text().as_str() {
-                        //         sender.input(AddZoneDialogMsg::SetDescription(text.to_string()));
-                        //     }
-                        // }),
+                        connect_changed[sender] => move |entry| {
+                            sender.input(AddZoneDialogMsg::SetDescription(entry.text().to_string()));
+                        }
                     },
                 },
 
@@ -105,17 +97,19 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     set_margin_top: 12,
 
                     append = &gtk::Button::with_label("Cancel") {
-                        connect_clicked: move |_| {
+                        connect_clicked[sender, root] => move |_| {
                             sender.input(AddZoneDialogMsg::Cancel);
+                            root.close();
                         },
                     },
 
                     append = &gtk::Button::with_label("Add") {
                         add_css_class: "suggested-action",
                         set_sensitive: false,
-                        // connect_clicked: move |_| {
-                        //     sender.input(AddZoneDialogMsg::Add);
-                        // },
+                        connect_clicked[sender, root] => move |_| {
+                            sender.input(AddZoneDialogMsg::Add);
+                            root.close();
+                        },
                     },
                 },
             },
@@ -132,16 +126,12 @@ impl SimpleAsyncComponent for AddZoneDialog {
             description: String::new(),
         };
 
-        println!("SOME TEXT FROM DIALOG!");
-
         let widgets = view_output!();
 
         AsyncComponentParts { model, widgets }
     }
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
-        // Construct the ZoneSettings tuple.
-        // We fill in the known values and use defaults for the rest.
         let settings: ZoneSettings = (
             String::new(), // version
             self.name.clone(),
@@ -163,30 +153,21 @@ impl SimpleAsyncComponent for AddZoneDialog {
         match msg {
             AddZoneDialogMsg::SetName(name) => {
                 self.name = name;
-                // Enable the "Add" button only if the name is not empty
-                // sender.widgets().set_response_enabled("add", !self.name.is_empty());
             }
             AddZoneDialogMsg::SetDescription(desc) => {
                 self.description = desc;
             }
             AddZoneDialogMsg::Add => {
-                // Send the data back to the parent and destroy the dialog
-                sender
+                if !self.name.is_empty() && !self.description.is_empty() {
+                    sender
                     .output(AddZoneDialogOutput {
                         name: self.name.clone(),
                         settings,
                     })
                     .unwrap();
+                }
             }
-            AddZoneDialogMsg::Cancel => {
-                // Send `None` back and destroy the dialog
-                sender
-                    .output(AddZoneDialogOutput {
-                        name: String::new(),
-                        settings,
-                    })
-                    .unwrap();
-            }
+            AddZoneDialogMsg::Cancel => {}
         }
     }
 }

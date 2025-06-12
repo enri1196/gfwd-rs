@@ -1,7 +1,6 @@
 mod fwd_broker;
 
 mod components;
-mod dialogs;
 
 use std::convert::identity;
 
@@ -11,7 +10,7 @@ use relm4::MessageBroker;
 use relm4::prelude::*;
 
 use crate::components::sidebar::SidebarView;
-use crate::components::zone_view::ZoneView;
+use crate::components::zone_content::ZoneView;
 
 static DIALOG_BROKER: MessageBroker<DialogMsg> = MessageBroker::new();
 
