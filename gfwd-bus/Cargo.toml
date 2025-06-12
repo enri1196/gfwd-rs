@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
 zbus = "5.7.1"
 zbus_macros = "5.7.1"
 zvariant = "5.5.3"

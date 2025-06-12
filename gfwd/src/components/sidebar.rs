@@ -1,9 +1,7 @@
-use crate::{
-    components::sidebar::model::{SidebarModel, Zone}, dialogs::add_zone::{AddZoneDialog, AddZoneDialogOutput}
-};
-use relm4::adw::prelude::AdwDialogExt;
+use crate::dialogs::add_zone::{AddZoneDialog, AddZoneDialogOutput};
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
+use crate::fwd_broker::FwdBroker;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZoneItem {
@@ -13,13 +11,13 @@ pub struct ZoneItem {
     pub interfaces: Vec<String>,
 }
 
-impl From<&Zone> for ZoneItem {
-    fn from(zone: &Zone) -> Self {
+impl From<String> for ZoneItem {
+    fn from(value: String) -> Self {
         Self {
-            name: zone.name.clone(),
-            is_default: zone.is_default,
-            is_active: zone.is_active,
-            interfaces: zone.interfaces.clone(),
+            name: value,
+            is_default: false,
+            is_active: false,
+            interfaces: Vec::new(),
         }
     }
 }
@@ -32,8 +30,8 @@ pub enum SidebarMsg {
 }
 
 pub struct SidebarView {
-    sb_model: SidebarModel,
-    pub width: i32,
+    broker: &'static FwdBroker,
+    dialog: AsyncController<AddZoneDialog>,
     zones: Vec<ZoneItem>,
 }
 
@@ -53,7 +51,7 @@ impl SimpleAsyncComponent for SidebarView {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 12,
                 set_margin_all: 12,
-                set_width_request: model.width,
+                set_width_request: 250,
 
                 adw::HeaderBar {
                     set_show_end_title_buttons: false,
@@ -89,24 +87,17 @@ impl SimpleAsyncComponent for SidebarView {
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
         match msg {
             SidebarMsg::UpdateZones => {
-                self.zones = self
-                    .sb_model
-                    .get_zones()
-                    .await
-                    .iter()
-                    .map(ZoneItem::from)
-                    .collect();
+                let zones_names = self.broker.get_zones().await.unwrap_or_default();
+                self.zones = zones_names.into_iter().map(ZoneItem::from).collect();
             }
             SidebarMsg::ShowAddZoneDialog => {
                 // Use sender.dialog to launch the modal and get its output
-                let dialog = AddZoneDialog::builder()
-                    .launch(())
-                    .forward(sender.input_sender(), |msg| SidebarMsg::ZoneAdded(msg));
-                dialog.widget().present(None::<&gtk::Box>);
+                self.dialog.widget().present(None::<&gtk::Box>);
             }
             SidebarMsg::ZoneAdded(output) => {
                 if !output.name.is_empty() {
-                    self.sb_model.add_zone(&output.name).await
+                    let _ = self.broker.add_zone(&output.name).await;
+                    sender.input_sender().emit(SidebarMsg::UpdateZones);
                 }
             }
         }
@@ -117,12 +108,16 @@ impl SimpleAsyncComponent for SidebarView {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        let sb_model = SidebarModel::new().await;
-        let zones = sb_model.get_zones().await;
+        let broker = FwdBroker::get_broker().await;
+        let dialog = AddZoneDialog::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| SidebarMsg::ZoneAdded(msg));
+
+        let zones = broker.get_zones().await.unwrap_or_default();
         let model = SidebarView {
-            sb_model,
-            width: 250,
-            zones: zones.iter().map(ZoneItem::from).collect(),
+            broker,
+            dialog,
+            zones: zones.into_iter().map(ZoneItem::from).collect(),
         };
 
         let widgets = view_output!();

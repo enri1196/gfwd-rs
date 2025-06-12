@@ -35,21 +35,21 @@ pub type ServiceSettings = (
 
 /// Type alias for permanent zone settings.
 pub type ZoneSettings = (
-    String, // version
-    String, // name
-    String, // description
-    bool, // UNUSED
-    String, // target
-    Vec<String>, // services
-    Vec<(String, String)>, // ports
-    Vec<String>, // icmp-blocks
-    bool, // masquerade
+    String,                                // version
+    String,                                // name
+    String,                                // description
+    bool,                                  // UNUSED
+    String,                                // target
+    Vec<String>,                           // services
+    Vec<(String, String)>,                 // ports
+    Vec<String>,                           // icmp-blocks
+    bool,                                  // masquerade
     Vec<(String, String, String, String)>, // forward-ports
-    Vec<String>, // interfaces
-    Vec<String>, // sources
-    Vec<String>, // rich rules
-    Vec<String>, // protocols
-    Vec<(String, String)>, // source-ports
+    Vec<String>,                           // interfaces
+    Vec<String>,                           // sources
+    Vec<String>,                           // rich rules
+    Vec<String>,                           // protocols
+    Vec<(String, String)>,                 // source-ports
 );
 
 #[proxy(

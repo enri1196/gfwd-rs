@@ -10,7 +10,7 @@ use relm4::gtk::{self, glib};
 use relm4::MessageBroker;
 use relm4::prelude::*;
 
-use crate::components::sidebar::view::SidebarView;
+use crate::components::sidebar::SidebarView;
 use crate::components::zone_view::ZoneView;
 
 static DIALOG_BROKER: MessageBroker<DialogMsg> = MessageBroker::new();
@@ -142,17 +142,18 @@ impl SimpleAsyncComponent for App {
         adw::ApplicationWindow {
             set_default_size: (1280, 720),
 
-            #[wrap(Some)]
-            set_content = &adw::OverlaySplitView {
-                #[track(model.visibility.changed(Visibility::sidebar_visible()))]
-                set_show_sidebar: model.visibility.sidebar_visible,
+            adw::ToastOverlay {
+                adw::OverlaySplitView {
+                    #[track(model.visibility.changed(Visibility::sidebar_visible()))]
+                    set_show_sidebar: model.visibility.sidebar_visible,
 
-                #[wrap(Some)]
-                set_sidebar = model.sidebar.widget(),
+                    #[wrap(Some)]
+                    set_sidebar = model.sidebar.widget(),
 
-                #[wrap(Some)]
-                set_content = model.zone_view.widget(),
-            }
+                    #[wrap(Some)]
+                    set_content = model.zone_view.widget(),
+                }
+            }           
         }
     }
 
