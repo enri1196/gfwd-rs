@@ -7,11 +7,10 @@ use crate::fwd_broker::ZoneSettings;
 pub struct AddZoneDialog {
     name: String,
     description: String,
-    // You can add more fields here for other settings
 }
 
 #[derive(Debug)]
-pub enum AddZoneDialogMsg {
+pub enum AddZoneDialogRequest {
     SetName(String),
     SetDescription(String),
     Add,
@@ -19,23 +18,20 @@ pub enum AddZoneDialogMsg {
 }
 
 #[derive(Debug)]
-pub struct AddZoneDialogOutput {
-    pub settings: ZoneSettings,
+pub enum AddZoneDialogResponse {
+    ZoneSettings(ZoneSettings),
 }
 
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for AddZoneDialog {
     type Init = ();
-    type Input = AddZoneDialogMsg;
-    type Output = AddZoneDialogOutput;
+    type Input = AddZoneDialogRequest;
+    type Output = AddZoneDialogResponse;
     type Widgets = AddZoneDialogWidgets;
 
     view! {
         dialog = adw::Dialog {
             set_title: "New Zone",
-            // set_modal: true,
-            // set_default_width: 500,
-            // set_default_height: 300,
 
             #[wrap(Some)]
             set_child = &gtk::Box {
@@ -57,7 +53,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter zone name"),
                         connect_changed[sender] => move |entry| {
-                            sender.input(AddZoneDialogMsg::SetName(entry.text().to_string()));
+                            sender.input(AddZoneDialogRequest::SetName(entry.text().to_string()));
                         }
                     },
                 },
@@ -76,7 +72,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter description"),
                         connect_changed[sender] => move |entry| {
-                            sender.input(AddZoneDialogMsg::SetDescription(entry.text().to_string()));
+                            sender.input(AddZoneDialogRequest::SetDescription(entry.text().to_string()));
                         }
                     },
                 },
@@ -90,16 +86,15 @@ impl SimpleAsyncComponent for AddZoneDialog {
 
                     append = &gtk::Button::with_label("Cancel") {
                         connect_clicked[sender, root] => move |_| {
-                            sender.input(AddZoneDialogMsg::Cancel);
+                            sender.input(AddZoneDialogRequest::Cancel);
                             root.close();
                         },
                     },
 
                     append = &gtk::Button::with_label("Add") {
                         add_css_class: "suggested-action",
-                        // set_sensitive: false,
                         connect_clicked[sender, root] => move |_| {
-                            sender.input(AddZoneDialogMsg::Add);
+                            sender.input(AddZoneDialogRequest::Add);
                             root.close();
                         },
                     },
@@ -125,26 +120,24 @@ impl SimpleAsyncComponent for AddZoneDialog {
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
         match msg {
-            AddZoneDialogMsg::SetName(name) => {
+            AddZoneDialogRequest::SetName(name) => {
                 self.name = name;
             }
-            AddZoneDialogMsg::SetDescription(desc) => {
+            AddZoneDialogRequest::SetDescription(desc) => {
                 self.description = desc;
             }
-            AddZoneDialogMsg::Add => {
+            AddZoneDialogRequest::Add => {
                 if !self.name.is_empty() && !self.description.is_empty() {
                     sender
-                    .output(AddZoneDialogOutput {
-                        settings: ZoneSettings {
+                        .output(AddZoneDialogResponse::ZoneSettings(ZoneSettings {
                             name: self.name.clone(),
                             description: self.description.clone(),
                             ..Default::default()
-                        },
-                    })
-                    .unwrap();
+                        }))
+                        .unwrap();
                 }
             }
-            AddZoneDialogMsg::Cancel => {}
+            AddZoneDialogRequest::Cancel => {}
         }
     }
 }

@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1.45.1", features = ["sync"] }
 zbus = "5.7.1"
 
 relm4 = { version = "0.9.1", features = ["libadwaita", "gnome_47"] }
-relm4-components = { version = "0.9.1", features = ["libadwaita"] }
-# relm4-icons = { version = "0.9.0", features = ["all"] }
 tracker = "0.2.2"
+derive_more = { version = "2.0.1", features = ["display"] }
+thiserror = "2.0.12"
 
 gfwd-bus = { path = "../gfwd-bus", features = ["firewalld1", "config_firewalld1"]}

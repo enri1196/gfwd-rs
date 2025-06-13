@@ -1,23 +1,15 @@
+mod components;
+mod error;
 mod fwd_broker;
 
-mod components;
-
-use std::convert::identity;
-
 use relm4::adw::prelude::*;
-use relm4::{prelude::*, MessageBroker};
+use relm4::gtk::glib::{self, LogLevel};
+use relm4::prelude::*;
 
-use crate::components::sidebar::{InputSidebarMsg, SidebarView};
-use crate::components::zone_content::ZoneView;
-use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogOutput};
+use crate::components::sidebar::{SidebarViewRequest, SidebarView};
+use crate::components::zone_content::{ZoneView, ZoneViewRequest};
+use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogResponse};
 use crate::fwd_broker::FwdBroker;
-
-#[derive(Debug)]
-enum AppMsg {
-    ToggleSidebar,
-    ShowAddZoneDialog,
-    ZoneAdded(AddZoneDialogOutput),
-}
 
 #[tracker::track]
 struct Visibility {
@@ -29,13 +21,21 @@ struct App {
     visibility: Visibility,
     dialog: AsyncController<AddZoneDialog>,
     sidebar: AsyncController<SidebarView>,
-    zone_view: Controller<ZoneView>,
+    zone_view: AsyncController<ZoneView>,
+}
+
+#[derive(Debug)]
+enum AppRequest {
+    ToggleSidebar,
+    ShowAddZoneDialog,
+    ZoneAdded(AddZoneDialogResponse),
+    UpdateContentWithZoneName(String),
 }
 
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for App {
     type Init = ();
-    type Input = AppMsg;
+    type Input = AppRequest;
     type Output = ();
 
     view! {
@@ -57,22 +57,29 @@ impl SimpleAsyncComponent for App {
         }
     }
 
-    async fn update(&mut self, msg: AppMsg, _sender: AsyncComponentSender<Self>) {
+    async fn update(&mut self, msg: AppRequest, _sender: AsyncComponentSender<Self>) {
         match msg {
-            AppMsg::ToggleSidebar => {
+            AppRequest::ToggleSidebar => {
                 self.visibility
                     .set_sidebar_visible(!self.visibility.sidebar_visible);
             }
-            AppMsg::ShowAddZoneDialog => {
+            AppRequest::ShowAddZoneDialog => {
                 self.dialog.widget().present(None::<&gtk::Box>);
             }
-            AppMsg::ZoneAdded(output) => {
-                if !output.settings.name.is_empty() {
-                    match self.broker.add_zone(output.settings).await {
-                        Ok(_) => self.sidebar.emit(InputSidebarMsg::UpdateZones),
+            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings)) => {
+                if !settings.name.is_empty() {
+                    let zone_name = settings.name.to_string();
+                    match self.broker.add_zone(settings).await {
+                        Ok(_) => {
+                            glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
+                            self.sidebar.emit(SidebarViewRequest::UpdateZones)
+                        },
                         Err(e) => println!("Failed to add zone: {}", e),
                     };
                 }
+            },
+            AppRequest::UpdateContentWithZoneName(zone_name) => {
+                self.zone_view.emit(ZoneViewRequest::SetZoneContent(zone_name));
             }
         }
     }
@@ -84,23 +91,30 @@ impl SimpleAsyncComponent for App {
     ) -> AsyncComponentParts<Self> {
         let sidebar = SidebarView::builder()
             .launch(())
-            .forward(sender.input_sender(), |_| AppMsg::ShowAddZoneDialog);
+            .forward(sender.input_sender(), |msg| match msg {
+                components::sidebar::SidebarViewResponse::ShowAddZoneDialog => AppRequest::ShowAddZoneDialog,
+                components::sidebar::SidebarViewResponse::SelectedZone(item_name) => AppRequest::UpdateContentWithZoneName(item_name),
+            });
 
         let zone_view = ZoneView::builder()
             .launch("default".to_string())
-            .forward(sender.input_sender(), |_| AppMsg::ToggleSidebar);
+            .forward(sender.input_sender(), |_| AppRequest::ToggleSidebar);
+
+        let dialog = AddZoneDialog::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| AppRequest::ZoneAdded(msg));
+
+        let broker = FwdBroker::get_broker().await;
 
         let model = App {
             visibility: Visibility {
                 sidebar_visible: false,
                 tracker: 0,
             },
-            dialog: AddZoneDialog::builder()
-                .launch(())
-                .forward(sender.input_sender(), |msg| AppMsg::ZoneAdded(msg)),
+            dialog,
             sidebar,
             zone_view,
-            broker: FwdBroker::get_broker().await,
+            broker,
         };
 
         let widgets = view_output!();
