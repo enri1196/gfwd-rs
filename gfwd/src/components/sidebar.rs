@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
@@ -6,7 +8,9 @@ use crate::fwd_broker::FwdBroker;
 
 pub struct SidebarView {
     broker: &'static FwdBroker,
+    active_zones: HashMap<String, HashMap<String, Vec<String>>>,
     zones: FactoryVecDeque<ZoneItem>,
+    default_zone: String,
 }
 
 #[derive(Debug)]
@@ -14,6 +18,7 @@ pub enum SidebarViewRequest {
     UpdateZones,
     ShowAddZoneDialog,
     SetDefaultZone,
+    SetActiveZones,
 }
 
 #[derive(Debug)]
@@ -86,8 +91,24 @@ impl SimpleAsyncComponent for SidebarView {
                         for zone in self.zones.guard().iter_mut() {
                             zone.set_is_default(zone.name == default_zone);
                         }
+                        self.default_zone = default_zone;
                     },
                     Err(error) => glib::g_log!(LogLevel::Error, "Default Zone Error: {}", error),
+                }
+                sender.input(SidebarViewRequest::SetActiveZones);
+            }
+            SidebarViewRequest::SetActiveZones => {
+                match self.broker.get_active_zones().await {
+                    Ok(active_zones) => {
+                        glib::g_log!(LogLevel::Message, "Active zones: {}", active_zones.len());
+                        glib::g_log!(LogLevel::Message, "{:?}", active_zones);
+                        self.active_zones = active_zones;
+                        if let Some(_zone) = self.active_zones.get(&self.default_zone) {
+                            // glib::g_log!(LogLevel::Message, "Public zone: {}", zone.len());
+                            self.zones.guard().iter_mut().for_each(|zone| zone.set_is_active(zone.name == self.default_zone));
+                        }
+                    },
+                    Err(error) => glib::g_log!(LogLevel::Error, "Active Zone Error: {}", error),
                 }
             }
             SidebarViewRequest::ShowAddZoneDialog => {
@@ -111,7 +132,9 @@ impl SimpleAsyncComponent for SidebarView {
         
         let model = SidebarView {
             broker,
-            zones
+            active_zones: HashMap::new(),
+            zones,
+            default_zone: String::new(),
         };
 
         let zones_list_box = model.zones.widget();

@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use gfwd_bus::config_firewalld1::ZoneSettings as ZoneSettingsBus;
 use relm4::tokio::sync::OnceCell;
 
 use crate::error::GfwdError;
 
 pub struct FwdBroker {
-    // fwd: gfwd_bus::firewalld1::FirewallD1Proxy<'static>,
+    fwd_zone: gfwd_bus::zone::ZoneProxy<'static>,
     cfg_fwd: gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy<'static>,
 }
 
@@ -54,7 +56,7 @@ impl FwdBroker {
     pub async fn get_broker() -> &'static FwdBroker {
         BROKER.get_or_init(|| async move {
             FwdBroker {
-                // fwd: gfwd_bus::firewalld1::new_firewalld_proxy().await.unwrap(),
+                fwd_zone: gfwd_bus::zone::new_zone_proxy().await.unwrap(),
                 cfg_fwd: gfwd_bus::config_firewalld1::new_config_firewalld1_proxy().await.unwrap(),
             }
         }).await
@@ -63,6 +65,10 @@ impl FwdBroker {
     /// Get all zones
     pub async fn get_zones(&self) -> Result<Vec<String>, GfwdError> {
         Ok(self.cfg_fwd.get_zone_names().await?)
+    }
+
+    pub async fn get_active_zones(&self) -> Result<HashMap<String, HashMap<String, Vec<String>>>, GfwdError> {
+        Ok(self.fwd_zone.get_active_zones().await?)
     }
 
     /// Get the default zone
