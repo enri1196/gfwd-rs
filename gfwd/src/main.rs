@@ -2,7 +2,9 @@ mod components;
 mod error;
 mod fwd_broker;
 
-use relm4::adw::prelude::*;
+use std::rc::Rc;
+
+use relm4::adw::{prelude::*, ApplicationWindow};
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
@@ -18,6 +20,7 @@ struct Visibility {
 
 struct App {
     broker: &'static FwdBroker,
+    root: Rc<ApplicationWindow>,
     visibility: Visibility,
     dialog: AsyncController<AddZoneDialog>,
     sidebar: AsyncController<SidebarView>,
@@ -64,7 +67,7 @@ impl SimpleAsyncComponent for App {
                     .set_sidebar_visible(!self.visibility.sidebar_visible);
             }
             AppRequest::ShowAddZoneDialog => {
-                self.dialog.widget().present(None::<&gtk::Box>);
+                self.dialog.widget().present(Some(self.root.as_ref()));
             }
             AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings)) => {
                 if !settings.name.is_empty() {
@@ -106,11 +109,14 @@ impl SimpleAsyncComponent for App {
 
         let broker = FwdBroker::get_broker().await;
 
+        let root = Rc::new(root);
+
         let model = App {
             visibility: Visibility {
                 sidebar_visible: false,
                 tracker: 0,
             },
+            root: Rc::clone(&root),
             dialog,
             sidebar,
             zone_view,

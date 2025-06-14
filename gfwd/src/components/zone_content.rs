@@ -38,7 +38,7 @@ impl SimpleAsyncComponent for ZoneView {
                 set_css_classes: &["flat"],
 
                 pack_start = &gtk::Button {
-                    set_icon_name: "open-menu-symbolic",
+                    set_icon_name: "sidebar-show-symbolic",
                     connect_clicked[sender] => move |_| {
                         sender.output(ZoneViewResponse::ToggleSidebar).unwrap();
                     },

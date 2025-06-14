@@ -65,21 +65,20 @@ impl FactoryComponent for ZoneItem {
                         #[watch]
                         set_label: &self.name,
                         set_hexpand: true,
-                        set_halign: gtk::Align::Start,
+                        set_halign: gtk::Align::Center,
                     },
     
                     // Tick on the right if is_active
                     #[name(tick)]
                     gtk::Image {
                         set_pixel_size: 16,
-                        set_icon_name: Some("emblem-ok-symbolic"),
+                        set_icon_name: Some("object-select-symbolic"),
                         #[track(self.changed(ZoneItem::is_active()))]
                         set_visible: self.is_active,
                     },
                 },
     
                 connect_clicked[sender, zone_label] => move |_| {
-                    // You can get the label from self.name directly
                     let zone_name = zone_label.label().to_string();
                     glib::g_log!(LogLevel::Message, "Selected zone {}", zone_name);
                     sender.output(ZoneItemResponse::SelectedZone(zone_name)).unwrap();
