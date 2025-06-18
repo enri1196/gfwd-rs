@@ -4,6 +4,7 @@ mod view_mode;
 
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
+use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::fwd_broker::FwdBroker;
@@ -25,6 +26,7 @@ pub struct ZoneView {
     broker: &'static FwdBroker,
     current_zone_name: String,
     active_view: ActiveView,
+    firewalld_running: bool,
     // Child components for each view mode
     #[tracker::do_not_track]
     view_mode: Controller<ZoneViewMode>,
@@ -39,6 +41,7 @@ pub struct ZoneView {
 pub enum ZoneViewRequest {
     SetZoneContent(String),
     SwitchTo(ActiveView),
+    ToggleFirewalld,
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -64,11 +67,23 @@ impl AsyncComponent for ZoneView {
             adw::HeaderBar {
                 set_css_classes: &["flat"],
 
-                pack_start = &gtk::Button {
-                    set_icon_name: "sidebar-show-symbolic",
-                    connect_clicked[sender] => move |_| {
-                        sender.output(ZoneViewResponse::ToggleSidebar).unwrap();
+                pack_start = &gtk::Box {
+                    set_spacing: 6,
+                    gtk::Button {
+                        set_icon_name: "sidebar-show-symbolic",
+                        connect_clicked[sender] => move |_| {
+                            sender.output(ZoneViewResponse::ToggleSidebar).unwrap();
+                        },
                     },
+                    gtk::Button {
+                        #[track(model.changed(ZoneView::firewalld_running()))]
+                        set_icon_name: if model.firewalld_running { "media-playback-stop-symbolic" } else { "media-playback-start-symbolic" },
+                        #[track(model.changed(ZoneView::firewalld_running()))]
+                        set_tooltip_text: Some(if model.firewalld_running { "Stop Firewalld" } else { "Start Firewalld" }),
+                        connect_clicked[sender] => move |_| {
+                            sender.input(ZoneViewRequest::ToggleFirewalld);
+                        }
+                    }
                 },
 
                 pack_end = &gtk::MenuButton {
@@ -162,6 +177,7 @@ impl AsyncComponent for ZoneView {
 
         let model = ZoneView {
             broker,
+            firewalld_running: false,
             current_zone_name: initial_zone_name,
             active_view: ActiveView::default(),
             view_mode,
@@ -201,6 +217,15 @@ impl AsyncComponent for ZoneView {
             }
             ZoneViewRequest::SwitchTo(view) => {
                 self.set_active_view(view);
+            }
+            ZoneViewRequest::ToggleFirewalld => {
+                // TODO: Connect to systemd Dbus API
+                // - check current status before creation of this component
+                // - toggle the status here with Dbus API
+                // - the button should show an intermediate loading state
+                let new_state = !self.get_firewalld_running();
+                self.set_firewalld_running(new_state);
+                glib::g_log!(LogLevel::Info, "Simulating toggling firewalld service to: {}", if new_state { "ON" } else { "OFF"});
             }
         }
     }
