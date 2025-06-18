@@ -9,22 +9,24 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::sidebar::{SidebarViewRequest, SidebarView};
-use crate::components::zone_content::{ZoneView, ZoneViewRequest};
+// use crate::components::zone_content::{ZoneView, ZoneViewRequest};
 use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogResponse};
+use crate::components::zone_view::{ZoneView, ZoneViewRequest};
 use crate::fwd_broker::FwdBroker;
 
 #[tracker::track]
-struct Visibility {
-    sidebar_visible: bool,
-}
-
 struct App {
+    #[tracker::do_not_track]
     broker: &'static FwdBroker,
+    #[tracker::do_not_track]
     root: Rc<ApplicationWindow>,
-    visibility: Visibility,
+    #[tracker::do_not_track]
     dialog: AsyncController<AddZoneDialog>,
+    #[tracker::do_not_track]
     sidebar: AsyncController<SidebarView>,
+    #[tracker::do_not_track]
     zone_view: AsyncController<ZoneView>,
+    sidebar_visible: bool,
 }
 
 #[derive(Debug)]
@@ -45,26 +47,23 @@ impl SimpleAsyncComponent for App {
         adw::ApplicationWindow {
             set_default_size: (1280, 720),
 
-            adw::ToastOverlay {
-                adw::OverlaySplitView {
-                    #[track(model.visibility.changed(Visibility::sidebar_visible()))]
-                    set_show_sidebar: model.visibility.sidebar_visible,
+            adw::OverlaySplitView {
+                #[track(model.changed(App::sidebar_visible()))]
+                set_show_sidebar: model.sidebar_visible,
 
-                    #[wrap(Some)]
-                    set_sidebar = model.sidebar.widget(),
+                #[wrap(Some)]
+                set_sidebar = model.sidebar.widget(),
 
-                    #[wrap(Some)]
-                    set_content = model.zone_view.widget(),
-                }
-            }           
+                #[wrap(Some)]
+                set_content = model.zone_view.widget(),
+            }
         }
     }
 
     async fn update(&mut self, msg: AppRequest, _sender: AsyncComponentSender<Self>) {
         match msg {
             AppRequest::ToggleSidebar => {
-                self.visibility
-                    .set_sidebar_visible(!self.visibility.sidebar_visible);
+                self.set_sidebar_visible(!self.sidebar_visible);
             }
             AppRequest::ShowAddZoneDialog => {
                 self.dialog.widget().present(Some(self.root.as_ref()));
@@ -112,10 +111,8 @@ impl SimpleAsyncComponent for App {
         let root = Rc::new(root);
 
         let model = App {
-            visibility: Visibility {
-                sidebar_visible: false,
-                tracker: 0,
-            },
+            sidebar_visible: true,
+            tracker: 0,
             root: Rc::clone(&root),
             dialog,
             sidebar,
@@ -125,7 +122,8 @@ impl SimpleAsyncComponent for App {
 
         let widgets = view_output!();
         AsyncComponentParts { model, widgets }
-    }}
+    }
+}
 
 fn main() {
     let app = RelmApp::new("com.github.Gfwd");

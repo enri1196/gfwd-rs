@@ -31,7 +31,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
 
     view! {
         dialog = adw::Dialog {
-            set_title: "New Zone",
+            set_title: "Add Zone",
 
             #[wrap(Some)]
             set_child = &gtk::Box {
@@ -48,7 +48,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                         set_text: "Zone Name:",
                         set_halign: gtk::Align::Start,
                     },
-                    
+
                     append = &gtk::Entry {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter zone name"),

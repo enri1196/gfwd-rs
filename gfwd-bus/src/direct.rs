@@ -145,7 +145,7 @@ pub trait Direct {
     ) -> ZResult<()>;
 }
 
-pub async fn new_firewalld_proxy() -> Result<DirectProxy<'static>, zbus::Error> {
+pub async fn new_firewalld_proxy() -> ZResult<DirectProxy<'static>> {
     let conn = Connection::system().await?;
     DirectProxy::<'static>::new(&conn).await
 }
