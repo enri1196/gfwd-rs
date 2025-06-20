@@ -9,7 +9,7 @@ pub struct ZoneEditMode {
 
 #[derive(Debug)]
 pub enum ZoneEditModeMsg {
-    SetName(String)
+    SetName(String),
 }
 
 #[relm4::component(pub)]
@@ -41,7 +41,10 @@ impl SimpleComponent for ZoneEditMode {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ZoneEditMode { zone_name, tracker: 0 };
+        let model = ZoneEditMode {
+            zone_name,
+            tracker: 0,
+        };
 
         let widgets = view_output!();
 

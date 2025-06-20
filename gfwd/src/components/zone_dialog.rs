@@ -43,7 +43,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                 append = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 6,
-                    
+
                     append = &gtk::Label {
                         set_text: "Zone Name:",
                         set_halign: gtk::Align::Start,
@@ -62,12 +62,12 @@ impl SimpleAsyncComponent for AddZoneDialog {
                 append = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 6,
-                    
+
                     append = &gtk::Label {
                         set_text: "Description:",
                         set_halign: gtk::Align::Start,
                     },
-                    
+
                     append = &gtk::Entry {
                         set_hexpand: true,
                         set_placeholder_text: Some("Enter description"),

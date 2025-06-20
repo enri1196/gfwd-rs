@@ -4,11 +4,11 @@ mod fwd_broker;
 
 use std::rc::Rc;
 
-use relm4::adw::{prelude::*, ApplicationWindow};
+use relm4::adw::{ApplicationWindow, prelude::*};
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
-use crate::components::sidebar::{SidebarViewRequest, SidebarView};
+use crate::components::sidebar::{SidebarView, SidebarViewRequest};
 // use crate::components::zone_content::{ZoneView, ZoneViewRequest};
 use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogResponse};
 use crate::components::zone_view::{ZoneView, ZoneViewRequest};
@@ -49,7 +49,7 @@ impl SimpleAsyncComponent for App {
 
             adw::OverlaySplitView {
                 #[track(model.changed(App::sidebar_visible()))]
-                set_show_sidebar: model.sidebar_visible,
+                set_show_sidebar: *model.get_sidebar_visible(),
 
                 #[wrap(Some)]
                 set_sidebar = model.sidebar.widget(),
@@ -76,13 +76,14 @@ impl SimpleAsyncComponent for App {
                         Ok(_) => {
                             glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
                             self.sidebar.emit(SidebarViewRequest::UpdateZones)
-                        },
+                        }
                         Err(e) => println!("Failed to add zone: {}", e),
                     };
                 }
-            },
+            }
             AppRequest::UpdateContentWithZoneName(zone_name) => {
-                self.zone_view.emit(ZoneViewRequest::SetZoneContent(zone_name));
+                self.zone_view
+                    .emit(ZoneViewRequest::SetZoneContent(zone_name));
             }
         }
     }
@@ -97,11 +98,18 @@ impl SimpleAsyncComponent for App {
         let sidebar = SidebarView::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
-                components::sidebar::SidebarViewResponse::ShowAddZoneDialog => AppRequest::ShowAddZoneDialog,
-                components::sidebar::SidebarViewResponse::SelectedZone(item_name) => AppRequest::UpdateContentWithZoneName(item_name)
+                components::sidebar::SidebarViewResponse::ShowAddZoneDialog => {
+                    AppRequest::ShowAddZoneDialog
+                }
+                components::sidebar::SidebarViewResponse::SelectedZone(item_name) => {
+                    AppRequest::UpdateContentWithZoneName(item_name)
+                }
             });
 
-        let initial_zone_name: String = broker.get_default_zone().await.unwrap_or(String::from("default"));
+        let initial_zone_name: String = broker
+            .get_default_zone()
+            .await
+            .unwrap_or(String::from("default"));
 
         let zone_view = ZoneView::builder()
             .launch(initial_zone_name)

@@ -217,9 +217,12 @@ impl AsyncComponent for ZoneView {
         match msg {
             ZoneViewRequest::SetZoneContent(zone_name) => {
                 self.set_current_zone_name(zone_name.clone());
-                self.view_mode.emit(ZoneViewModeMsg::SetName(zone_name.clone()));
-                self.edit_mode.emit(ZoneEditModeMsg::SetName(zone_name.clone()));
-                self.export_mode.emit(ZoneExportModeMsg::SetName(zone_name.clone()));
+                self.view_mode
+                    .emit(ZoneViewModeMsg::SetName(zone_name.clone()));
+                self.edit_mode
+                    .emit(ZoneEditModeMsg::SetName(zone_name.clone()));
+                self.export_mode
+                    .emit(ZoneExportModeMsg::SetName(zone_name.clone()));
                 // Potentially send updates to child components here if needed
             }
             ZoneViewRequest::SwitchTo(view) => {
@@ -232,7 +235,11 @@ impl AsyncComponent for ZoneView {
                 // - the button should show an intermediate loading state
                 let new_state = !self.get_firewalld_running();
                 self.set_firewalld_running(new_state);
-                glib::g_log!(LogLevel::Info, "Simulating toggling firewalld service to: {}", if new_state { "ON" } else { "OFF"});
+                glib::g_log!(
+                    LogLevel::Info,
+                    "Simulating toggling firewalld service to: {}",
+                    if new_state { "ON" } else { "OFF" }
+                );
             }
         }
     }

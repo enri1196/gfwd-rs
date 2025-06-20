@@ -4,12 +4,12 @@ use relm4::prelude::*;
 #[tracker::track]
 #[derive(Debug)]
 pub struct ZoneExportMode {
-    zone_name: String
+    zone_name: String,
 }
 
 #[derive(Debug)]
 pub enum ZoneExportModeMsg {
-    SetName(String)
+    SetName(String),
 }
 
 #[relm4::component(pub)]
@@ -33,7 +33,10 @@ impl SimpleComponent for ZoneExportMode {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ZoneExportMode { zone_name, tracker: 0 };
+        let model = ZoneExportMode {
+            zone_name,
+            tracker: 0,
+        };
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }

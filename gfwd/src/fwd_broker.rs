@@ -46,7 +46,7 @@ pub enum ZoneTarget {
     #[display("DROP")]
     Drop,
     #[display("REJECT")]
-    Reject
+    Reject,
 }
 
 // Static object holding the sender side of the channel
@@ -54,12 +54,16 @@ static BROKER: OnceCell<FwdBroker> = OnceCell::const_new();
 
 impl FwdBroker {
     pub async fn get_broker() -> &'static FwdBroker {
-        BROKER.get_or_init(|| async move {
-            FwdBroker {
-                fwd_zone: gfwd_bus::zone::new_zone_proxy().await.unwrap(),
-                cfg_fwd: gfwd_bus::config_firewalld1::new_config_firewalld1_proxy().await.unwrap(),
-            }
-        }).await
+        BROKER
+            .get_or_init(|| async move {
+                FwdBroker {
+                    fwd_zone: gfwd_bus::zone::new_zone_proxy().await.unwrap(),
+                    cfg_fwd: gfwd_bus::config_firewalld1::new_config_firewalld1_proxy()
+                        .await
+                        .unwrap(),
+                }
+            })
+            .await
     }
 
     /// Get all zones
@@ -67,7 +71,9 @@ impl FwdBroker {
         Ok(self.cfg_fwd.get_zone_names().await?)
     }
 
-    pub async fn get_active_zones(&self) -> Result<HashMap<String, HashMap<String, Vec<String>>>, GfwdError> {
+    pub async fn get_active_zones(
+        &self,
+    ) -> Result<HashMap<String, HashMap<String, Vec<String>>>, GfwdError> {
         Ok(self.fwd_zone.get_active_zones().await?)
     }
 
@@ -80,24 +86,28 @@ impl FwdBroker {
     pub async fn add_zone(&self, settings: ZoneSettings) -> Result<(), GfwdError> {
         let name = settings.name.clone();
         let zone_settings: ZoneSettingsBus = (
-            settings.version, // version
-            settings.name, // name
-            settings.description, // description
-            settings.unused, // UNUSED
+            settings.version,            // version
+            settings.name,               // name
+            settings.description,        // description
+            settings.unused,             // UNUSED
             settings.target.to_string(), // target
-            settings.services, // services
-            settings.ports, // ports
-            settings.icmp_blocks, // icmp-blocks
-            settings.masquerade, // masquerade
-            settings.forward_ports, // forward-ports
-            settings.interfaces, // interfaces
+            settings.services,           // services
+            settings.ports,              // ports
+            settings.icmp_blocks,        // icmp-blocks
+            settings.masquerade,         // masquerade
+            settings.forward_ports,      // forward-ports
+            settings.interfaces,         // interfaces
             settings.sources,
             settings.rich_rules,
             settings.protocols,
             settings.source_ports,
         );
-        Ok(self.cfg_fwd.add_zone(name.as_str(), &zone_settings).await.map(|_| ())?)
-    } 
+        Ok(self
+            .cfg_fwd
+            .add_zone(name.as_str(), &zone_settings)
+            .await
+            .map(|_| ())?)
+    }
 
     // pub async fn remove_zone(&self, name: &str) -> Result<(), GfwdError> {
     //     // Ok(self.cfg_fwd.remove_zone(name).await?)

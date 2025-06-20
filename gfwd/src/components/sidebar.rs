@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
+use crate::components::zone_item::ZoneItem;
+use crate::fwd_broker::FwdBroker;
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
-use crate::components::zone_item::ZoneItem;
-use crate::fwd_broker::FwdBroker;
 
 pub struct SidebarView {
     broker: &'static FwdBroker,
@@ -24,7 +24,7 @@ pub enum SidebarViewRequest {
 #[derive(Debug)]
 pub enum SidebarViewResponse {
     ShowAddZoneDialog,
-    SelectedZone(String)
+    SelectedZone(String),
 }
 
 #[relm4::component(async, pub)]
@@ -92,7 +92,7 @@ impl SimpleAsyncComponent for SidebarView {
                             zone.set_is_default(zone.name == default_zone);
                         }
                         self.default_zone = default_zone;
-                    },
+                    }
                     Err(error) => glib::g_log!(LogLevel::Error, "Default Zone Error: {}", error),
                 }
                 sender.input(SidebarViewRequest::SetActiveZones);
@@ -105,9 +105,11 @@ impl SimpleAsyncComponent for SidebarView {
                         self.active_zones = active_zones;
                         if let Some(_zone) = self.active_zones.get(&self.default_zone) {
                             // glib::g_log!(LogLevel::Message, "Public zone: {}", zone.len());
-                            self.zones.guard().iter_mut().for_each(|zone| zone.set_is_active(zone.name == self.default_zone));
+                            self.zones.guard().iter_mut().for_each(|zone| {
+                                zone.set_is_active(zone.name == self.default_zone)
+                            });
                         }
-                    },
+                    }
                     Err(error) => glib::g_log!(LogLevel::Error, "Active Zone Error: {}", error),
                 }
             }
@@ -124,12 +126,15 @@ impl SimpleAsyncComponent for SidebarView {
     ) -> AsyncComponentParts<Self> {
         let broker = FwdBroker::get_broker().await;
 
-        let zones = FactoryVecDeque::builder()
-            .launch_default()
-            .forward(sender.output_sender(), |msg| match msg {
-                crate::components::zone_item::ZoneItemResponse::SelectedZone(item_name) => SidebarViewResponse::SelectedZone(item_name),
-            });
-        
+        let zones =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.output_sender(), |msg| match msg {
+                    crate::components::zone_item::ZoneItemResponse::SelectedZone(item_name) => {
+                        SidebarViewResponse::SelectedZone(item_name)
+                    }
+                });
+
         let model = SidebarView {
             broker,
             active_zones: HashMap::new(),

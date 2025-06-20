@@ -1,6 +1,6 @@
+use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
-use relm4::adw::prelude::*;
 
 #[tracker::track]
 #[derive(Debug, Clone, PartialEq)]
@@ -26,7 +26,7 @@ impl From<String> for ZoneItem {
 #[derive(Debug)]
 pub enum ZoneItemResponse {
     /// Zone Item Name
-    SelectedZone(String)
+    SelectedZone(String),
 }
 
 #[relm4::factory(pub)]
@@ -41,15 +41,15 @@ impl FactoryComponent for ZoneItem {
         gtk::ListBoxRow {
             set_halign: gtk::Align::Fill,
             set_margin_all: 4,
-    
+
             gtk::Button {
                 set_hexpand: true,
-    
+
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 8,
                     set_hexpand: true,
-    
+
                     // Dot on the left if is_default
                     #[name(dot)]
                     gtk::Image {
@@ -58,7 +58,7 @@ impl FactoryComponent for ZoneItem {
                         #[track(self.changed(ZoneItem::is_default()))]
                         set_visible: self.is_default,
                     },
-    
+
                     // The label in the center
                     #[name(zone_label)]
                     gtk::Label {
@@ -67,7 +67,7 @@ impl FactoryComponent for ZoneItem {
                         set_hexpand: true,
                         set_halign: gtk::Align::Center,
                     },
-    
+
                     // Tick on the right if is_active
                     #[name(tick)]
                     gtk::Image {
@@ -77,7 +77,7 @@ impl FactoryComponent for ZoneItem {
                         set_visible: self.is_active,
                     },
                 },
-    
+
                 connect_clicked[sender, zone_label] => move |_| {
                     let zone_name = zone_label.label().to_string();
                     glib::g_log!(LogLevel::Message, "Selected zone {}", zone_name);
