@@ -96,4 +96,8 @@ impl FactoryComponent for ZoneItem {
             tracker: 0,
         }
     }
+
+    fn update(&mut self, _message: Self::Input, _sender: FactorySender<Self>) {
+        self.reset();
+    }
 }

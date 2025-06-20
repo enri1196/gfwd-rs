@@ -1,13 +1,16 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
+#[tracker::track]
 #[derive(Debug)]
 pub struct ZoneViewMode {
     pub(crate) zone_name: String,
 }
 
 #[derive(Debug)]
-pub enum ZoneViewModeMsg {}
+pub enum ZoneViewModeMsg {
+    SetName(String)
+}
 
 #[relm4::component(pub)]
 impl SimpleComponent for ZoneViewMode {
@@ -17,7 +20,8 @@ impl SimpleComponent for ZoneViewMode {
 
     view! {
         gtk::Label {
-            set_label: &format!("Viewing details for zone: {}", model.zone_name),
+            #[track(model.changed(ZoneViewMode::zone_name()))]
+            set_label: &format!("Viewing details for zone: {}", model.get_zone_name()),
             set_halign: gtk::Align::Center,
             set_valign: gtk::Align::Center,
             set_vexpand: true,
@@ -29,10 +33,17 @@ impl SimpleComponent for ZoneViewMode {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ZoneViewMode { zone_name };
+        let model = ZoneViewMode { zone_name, tracker: 0 };
 
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+        self.reset();
+        match message {
+            ZoneViewModeMsg::SetName(zone_name) => self.set_zone_name(zone_name),
+        }
     }
 }

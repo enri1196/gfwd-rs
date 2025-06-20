@@ -7,7 +7,10 @@ use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
-use crate::fwd_broker::FwdBroker;
+use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
+use crate::components::zone_view::export_mode::ZoneExportModeMsg;
+use crate::components::zone_view::view_mode::ZoneViewModeMsg;
+// use crate::fwd_broker::FwdBroker;
 use edit_mode::ZoneEditMode;
 use export_mode::ZoneExportMode;
 use view_mode::ZoneViewMode;
@@ -22,18 +25,19 @@ pub enum ActiveView {
 
 #[tracker::track]
 pub struct ZoneView {
-    #[tracker::do_not_track]
-    broker: &'static FwdBroker,
-    current_zone_name: String,
-    active_view: ActiveView,
-    firewalld_running: bool,
-    // Child components for each view mode
+    // #[tracker::do_not_track]
+    // broker: &'static FwdBroker,
+    // child components
     #[tracker::do_not_track]
     view_mode: Controller<ZoneViewMode>,
     #[tracker::do_not_track]
     edit_mode: Controller<ZoneEditMode>,
     #[tracker::do_not_track]
     export_mode: Controller<ZoneExportMode>,
+    // props
+    current_zone_name: String,
+    active_view: ActiveView,
+    firewalld_running: bool,
 }
 
 /// Requests that can be sent to the ZoneView component.
@@ -159,7 +163,7 @@ impl AsyncComponent for ZoneView {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        let broker = FwdBroker::get_broker().await;
+        // let broker = FwdBroker::get_broker().await;
 
         // Initialize child components
         let view_mode = ZoneViewMode::builder()
@@ -171,18 +175,17 @@ impl AsyncComponent for ZoneView {
             .forward(sender.input_sender(), |_| unimplemented!());
 
         let export_mode = ZoneExportMode::builder()
-            .launch(())
+            .launch(initial_zone_name.clone())
             .forward(sender.input_sender(), |_| unimplemented!());
 
-
         let model = ZoneView {
-            broker,
-            firewalld_running: false,
-            current_zone_name: initial_zone_name,
-            active_view: ActiveView::default(),
+            // broker,
             view_mode,
             edit_mode,
             export_mode,
+            current_zone_name: initial_zone_name,
+            firewalld_running: false,
+            active_view: ActiveView::default(),
             tracker: 0,
         };
 
@@ -210,9 +213,13 @@ impl AsyncComponent for ZoneView {
         _sender: AsyncComponentSender<Self>,
         _root: &Self::Root,
     ) {
+        self.reset();
         match msg {
             ZoneViewRequest::SetZoneContent(zone_name) => {
-                self.set_current_zone_name(zone_name);
+                self.set_current_zone_name(zone_name.clone());
+                self.view_mode.emit(ZoneViewModeMsg::SetName(zone_name.clone()));
+                self.edit_mode.emit(ZoneEditModeMsg::SetName(zone_name.clone()));
+                self.export_mode.emit(ZoneExportModeMsg::SetName(zone_name.clone()));
                 // Potentially send updates to child components here if needed
             }
             ZoneViewRequest::SwitchTo(view) => {

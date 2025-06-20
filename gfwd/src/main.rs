@@ -61,6 +61,7 @@ impl SimpleAsyncComponent for App {
     }
 
     async fn update(&mut self, msg: AppRequest, _sender: AsyncComponentSender<Self>) {
+        self.reset();
         match msg {
             AppRequest::ToggleSidebar => {
                 self.set_sidebar_visible(!self.sidebar_visible);
@@ -91,33 +92,35 @@ impl SimpleAsyncComponent for App {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        let broker = FwdBroker::get_broker().await;
+
         let sidebar = SidebarView::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 components::sidebar::SidebarViewResponse::ShowAddZoneDialog => AppRequest::ShowAddZoneDialog,
-                components::sidebar::SidebarViewResponse::SelectedZone(item_name) => AppRequest::UpdateContentWithZoneName(item_name),
+                components::sidebar::SidebarViewResponse::SelectedZone(item_name) => AppRequest::UpdateContentWithZoneName(item_name)
             });
 
+        let initial_zone_name: String = broker.get_default_zone().await.unwrap_or(String::from("default"));
+
         let zone_view = ZoneView::builder()
-            .launch("default".to_string())
+            .launch(initial_zone_name)
             .forward(sender.input_sender(), |_| AppRequest::ToggleSidebar);
 
         let dialog = AddZoneDialog::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| AppRequest::ZoneAdded(msg));
 
-        let broker = FwdBroker::get_broker().await;
-
         let root = Rc::new(root);
 
         let model = App {
-            sidebar_visible: true,
-            tracker: 0,
+            broker,
             root: Rc::clone(&root),
             dialog,
             sidebar,
             zone_view,
-            broker,
+            sidebar_visible: true,
+            tracker: 0,
         };
 
         let widgets = view_output!();
