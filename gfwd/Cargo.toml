@@ -11,4 +11,4 @@ tracker = "0.2.2"
 derive_more = { version = "2.0.1", features = ["display"] }
 thiserror = "2.0.12"
 
-gfwd-bus = { path = "../gfwd-bus", features = ["zone", "config_firewalld1"]}
+gfwd-bus = { path = "../gfwd-bus", features = ["zone", "config_firewalld1", "config_zone"]}

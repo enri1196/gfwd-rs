@@ -1,5 +1,6 @@
 mod edit_mode;
 mod export_mode;
+mod port_item;
 mod view_mode;
 
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
@@ -8,9 +9,9 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
-use crate::components::zone_view::export_mode::ZoneExportModeMsg;
+use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::view_mode::ZoneViewModeMsg;
-// use crate::fwd_broker::FwdBroker;
+use crate::fwd_broker::FwdBroker;
 use edit_mode::ZoneEditMode;
 use export_mode::ZoneExportMode;
 use view_mode::ZoneViewMode;
@@ -25,8 +26,8 @@ pub enum ActiveView {
 
 #[tracker::track]
 pub struct ZoneView {
-    // #[tracker::do_not_track]
-    // broker: &'static FwdBroker,
+    #[tracker::do_not_track]
+    broker: &'static FwdBroker,
     // child components
     #[tracker::do_not_track]
     view_mode: Controller<ZoneViewMode>,
@@ -46,6 +47,7 @@ pub enum ZoneViewRequest {
     SetZoneContent(String),
     SwitchTo(ActiveView),
     ToggleFirewalld,
+    UpdateZoneSettings(ZoneSettings),
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -163,23 +165,37 @@ impl AsyncComponent for ZoneView {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        // let broker = FwdBroker::get_broker().await;
+        let broker = FwdBroker::get_broker().await;
 
-        // Initialize child components
+        // Fetch initial zone settings
+        let initial_settings = match broker.get_zone_settings(&initial_zone_name).await {
+            Ok(settings) => Some(settings),
+            Err(e) => {
+                eprintln!("Failed to get initial zone settings: {}", e);
+                None
+            }
+        };
+
         let view_mode = ZoneViewMode::builder()
-            .launch(initial_zone_name.clone())
+            .launch(())
             .forward(sender.input_sender(), |_| unimplemented!());
 
         let edit_mode = ZoneEditMode::builder()
-            .launch(initial_zone_name.clone())
+            .launch(())
             .forward(sender.input_sender(), |_| unimplemented!());
+
+        // Only emit settings if they were successfully fetched
+        if let Some(settings) = &initial_settings {
+            view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
+            edit_mode.emit(ZoneEditModeMsg::SetSettings(settings.clone()));
+        }
 
         let export_mode = ZoneExportMode::builder()
             .launch(initial_zone_name.clone())
             .forward(sender.input_sender(), |_| unimplemented!());
 
         let model = ZoneView {
-            // broker,
+            broker,
             view_mode,
             edit_mode,
             export_mode,
@@ -207,23 +223,34 @@ impl AsyncComponent for ZoneView {
         AsyncComponentParts { model, widgets }
     }
 
+
     async fn update(
         &mut self,
         msg: Self::Input,
-        _sender: AsyncComponentSender<Self>,
+        sender: AsyncComponentSender<Self>,
         _root: &Self::Root,
     ) {
         self.reset();
         match msg {
             ZoneViewRequest::SetZoneContent(zone_name) => {
                 self.set_current_zone_name(zone_name.clone());
-                self.view_mode
-                    .emit(ZoneViewModeMsg::SetName(zone_name.clone()));
-                self.edit_mode
-                    .emit(ZoneEditModeMsg::SetName(zone_name.clone()));
-                self.export_mode
-                    .emit(ZoneExportModeMsg::SetName(zone_name.clone()));
-                // Potentially send updates to child components here if needed
+                let sender = sender.clone();
+                let broker = self.broker;
+                relm4::spawn(async move {
+                    match broker.get_zone_settings(&zone_name).await {
+                        Ok(settings) => {
+                            sender.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to update zone content: {}", e);
+                            // You could also send a message to the UI to show an error
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateZoneSettings(settings) => {
+                self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
+                self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
             }
             ZoneViewRequest::SwitchTo(view) => {
                 self.set_active_view(view);

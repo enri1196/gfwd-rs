@@ -1,5 +1,10 @@
+use std::collections::HashMap;
+
 use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
 use zbus_macros::proxy;
+use zvariant::{OwnedValue, Value};
+
+use crate::config_firewalld1::ConfigFirewalld1Proxy;
 
 /// Type alias for permanent zone settings.
 /// (version, name, description, UNUSED, target, services, ports, icmp-blocks,
@@ -125,6 +130,9 @@ pub trait ConfigZone {
     /// Get the permanent settings of the zone.
     #[zbus(name = "getSettings")]
     fn get_settings(&self) -> ZResult<ZoneSettings>;
+
+    #[zbus(name = "getSettings2")]
+    fn get_settings2(&self) -> ZResult<HashMap<String, OwnedValue>>;
 
     /// Get the short name of the zone.
     #[zbus(name = "getShort")]
@@ -361,10 +369,23 @@ pub trait ConfigZone {
 ///
 /// * `conn` - An active zbus connection.
 /// * `zone_name` - The name of the zone to configure (e.g., "public").
-pub async fn new_config_zone_proxy(zone_name: &str) -> ZResult<ConfigZoneProxy<'static>> {
+pub async fn new_config_zone_proxy(config_proxy: &ConfigFirewalld1Proxy<'_>, zone_name: &str) -> ZResult<ConfigZoneProxy<'static>> {
     let conn = Connection::system().await?;
-    let path_str = format!("/org/fedoraproject/FirewallD1/config/zone/{}", zone_name);
-    let path = ObjectPath::try_from(path_str)?;
+    let zone_paths = config_proxy.list_zones().await?;
 
-    ConfigZoneProxy::builder(conn).path(path)?.build().await
+    for path in zone_paths {
+        let temp_proxy = ConfigZoneProxy::builder(&conn)
+            .path(path.clone())?
+            .build()
+            .await?;
+        
+        if let Ok(name) = temp_proxy.get_short().await {
+            if name.trim().eq_ignore_ascii_case(zone_name) {
+                // Found it! Return the proxy for the correct path.
+                return Ok(temp_proxy);
+            }
+        }
+    }
+
+    Err(zbus::Error::Address(format!("Zone '{}' not found on D-Bus.", zone_name)))
 }
