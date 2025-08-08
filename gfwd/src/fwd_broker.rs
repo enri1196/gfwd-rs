@@ -53,25 +53,6 @@ pub enum ZoneTarget {
     Reject,
 }
 
-// Helper macro to extract a required setting from the HashMap.
-// It now uses try_into() for fallible conversion.
-macro_rules! get_setting {
-    ($settings_map:expr, $key:expr, $type:ty) => {
-        $settings_map.get($key)
-            .ok_or_else(|| GfwdError::DBusResponse($key.to_string()))
-            .and_then(|v| <$type>::try_from(v).map_err(|_| GfwdError::DBusResponse($key.to_string())))
-    };
-}
-
-// Helper macro for optional settings. It also uses try_into() and provides a default.
-macro_rules! get_setting_optional {
-    ($settings_map:expr, $key:expr, $type:ty, $default:expr) => {
-        $settings_map.get($key)
-            .and_then(|v| <$type>::try_from(v.clone()).ok())
-            .unwrap_or_else($default)
-    };
-}
-
 // Static object holding the sender side of the channel
 static BROKER: OnceCell<FwdBroker> = OnceCell::const_new();
 

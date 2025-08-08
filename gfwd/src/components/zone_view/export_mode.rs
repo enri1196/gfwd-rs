@@ -9,6 +9,7 @@ pub struct ZoneExportMode {
 
 #[derive(Debug)]
 pub enum ZoneExportModeMsg {
+    #[allow(unused)]
     SetName(String),
 }
 
