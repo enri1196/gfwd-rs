@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
+use zbus::{Connection, Result as ZResult};
 use zbus_macros::proxy;
-use zvariant::{OwnedValue, Value};
+use zvariant::OwnedValue;
 
 use crate::config_firewalld1::ConfigFirewalld1Proxy;
 
@@ -343,23 +343,23 @@ pub trait ConfigZone {
     fn updated(&self, name: &str) -> ZResult<()>;
 
     /// Property: True if the zone is built-in.
-    #[zbus(property)]
+    #[zbus(property, name = "Builtin")]
     fn builtin(&self) -> ZResult<bool>;
 
     /// Property: True if a built-in zone has default settings.
-    #[zbus(property)]
+    #[zbus(property, name = "Default")]
     fn default(&self) -> ZResult<bool>;
 
     /// Property: The name of the configuration file.
-    #[zbus(property)]
+    #[zbus(property, name = "Filename")]
     fn filename(&self) -> ZResult<String>;
 
     /// Property: The name of the zone.
-    #[zbus(property)]
+    #[zbus(property, name = "Name")]
     fn name(&self) -> ZResult<String>;
 
     /// Property: The path to the configuration directory.
-    #[zbus(property)]
+    #[zbus(property, name = "Path")]
     fn path(&self) -> ZResult<String>;
 }
 
