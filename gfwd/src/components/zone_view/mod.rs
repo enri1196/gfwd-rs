@@ -3,6 +3,7 @@ mod export_mode;
 mod port_item;
 mod view_mode;
 
+use gfwd_bus::config_zone::new_config_zone_proxy;
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
@@ -212,7 +213,17 @@ impl AsyncComponent for ZoneView {
 
         let action: RelmAction<DeleteZoneAction> = {
             RelmAction::new_stateless(move |_| {
-                println!("Statelesss action for deleting zone!");
+                relm4::spawn(async move {
+                    use gfwd_bus::config_firewalld1::new_config_firewalld1_proxy;
+                    let cfg_proxy = new_config_firewalld1_proxy().await.unwrap();
+                    // TODO: find a way to pass the current zone name
+                    let proxy = new_config_zone_proxy(&cfg_proxy, "zone_name").await.unwrap();
+
+                    match proxy.remove().await {
+                        Ok(()) => glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!"),
+                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}")
+                    };
+                });
             })
         };
 
@@ -242,7 +253,7 @@ impl AsyncComponent for ZoneView {
                             sender.input(ZoneViewRequest::UpdateZoneSettings(settings));
                         }
                         Err(e) => {
-                            eprintln!("Failed to update zone content: {}", e);
+                            glib::g_log!(LogLevel::Error, "Failed to update zone content: {e}");
                             // You could also send a message to the UI to show an error
                         }
                     }
