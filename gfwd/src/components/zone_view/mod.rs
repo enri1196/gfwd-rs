@@ -10,9 +10,9 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
-use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::view_mode::ZoneViewModeMsg;
 use crate::fwd_broker::FwdBroker;
+use crate::fwd_broker::ZoneSettings;
 use edit_mode::ZoneEditMode;
 use export_mode::ZoneExportMode;
 use view_mode::ZoneViewMode;
@@ -217,11 +217,15 @@ impl AsyncComponent for ZoneView {
                     use gfwd_bus::config_firewalld1::new_config_firewalld1_proxy;
                     let cfg_proxy = new_config_firewalld1_proxy().await.unwrap();
                     // TODO: find a way to pass the current zone name
-                    let proxy = new_config_zone_proxy(&cfg_proxy, "zone_name").await.unwrap();
+                    let proxy = new_config_zone_proxy(&cfg_proxy, "zone_name")
+                        .await
+                        .unwrap();
 
                     match proxy.remove().await {
-                        Ok(()) => glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!"),
-                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}")
+                        Ok(()) => {
+                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!")
+                        }
+                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
                     };
                 });
             })
@@ -233,7 +237,6 @@ impl AsyncComponent for ZoneView {
 
         AsyncComponentParts { model, widgets }
     }
-
 
     async fn update(
         &mut self,
@@ -260,7 +263,8 @@ impl AsyncComponent for ZoneView {
                 });
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
-                self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
+                self.view_mode
+                    .emit(ZoneViewModeMsg::SetSettings(settings.clone()));
                 self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
             }
             ZoneViewRequest::SwitchTo(view) => {

@@ -369,7 +369,10 @@ pub trait ConfigZone {
 ///
 /// * `conn` - An active zbus connection.
 /// * `zone_name` - The name of the zone to configure (e.g., "public").
-pub async fn new_config_zone_proxy(config_proxy: &ConfigFirewalld1Proxy<'_>, zone_name: &str) -> ZResult<ConfigZoneProxy<'static>> {
+pub async fn new_config_zone_proxy(
+    config_proxy: &ConfigFirewalld1Proxy<'_>,
+    zone_name: &str,
+) -> ZResult<ConfigZoneProxy<'static>> {
     let conn = Connection::system().await?;
     let zone_paths = config_proxy.list_zones().await?;
 
@@ -378,7 +381,7 @@ pub async fn new_config_zone_proxy(config_proxy: &ConfigFirewalld1Proxy<'_>, zon
             .path(path.clone())?
             .build()
             .await?;
-        
+
         if let Ok(name) = temp_proxy.get_short().await {
             if name.trim().eq_ignore_ascii_case(zone_name) {
                 // Found it! Return the proxy for the correct path.
@@ -387,5 +390,8 @@ pub async fn new_config_zone_proxy(config_proxy: &ConfigFirewalld1Proxy<'_>, zon
         }
     }
 
-    Err(zbus::Error::Address(format!("Zone '{}' not found on D-Bus.", zone_name)))
+    Err(zbus::Error::Address(format!(
+        "Zone '{}' not found on D-Bus.",
+        zone_name
+    )))
 }

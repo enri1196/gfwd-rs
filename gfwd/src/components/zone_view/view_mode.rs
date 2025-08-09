@@ -1,8 +1,8 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::port_item::PortItem;
+use crate::fwd_broker::ZoneSettings;
 
 #[tracker::track]
 #[derive(Debug)]
@@ -64,7 +64,7 @@ impl SimpleComponent for ZoneViewMode {
 
             add = &adw::PreferencesGroup {
                 set_title: "Allowed Ports",
-                
+
                 #[local_ref]
                 ports_list_box -> gtk::ListBox {
                     set_selection_mode: gtk::SelectionMode::None,
@@ -79,13 +79,14 @@ impl SimpleComponent for ZoneViewMode {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let ports = FactoryVecDeque::builder()
-            .launch_default()
-            .forward(_sender.input_sender(), |_| {
-                // No output from PortItem needed for now
-                todo!()
-            });
-            
+        let ports =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(_sender.input_sender(), |_| {
+                    // No output from PortItem needed for now
+                    todo!()
+                });
+
         let model = ZoneViewMode {
             settings: None,
             ports,
@@ -108,7 +109,7 @@ impl SimpleComponent for ZoneViewMode {
                     ports.push_back((port.clone(), protocol.clone()));
                 }
                 drop(ports);
-                
+
                 self.set_settings(Some(settings.clone()));
             }
         }

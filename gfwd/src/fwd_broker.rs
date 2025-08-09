@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use gfwd_bus::{
     config_firewalld1::ZoneSettings as ZoneSettingsBus,
-    config_zone::new_config_zone_proxy,
-    config_firewalld1::new_config_firewalld1_proxy
+    config_firewalld1::new_config_firewalld1_proxy, config_zone::new_config_zone_proxy,
 };
 use relm4::tokio::sync::OnceCell;
 
