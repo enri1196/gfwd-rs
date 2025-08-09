@@ -77,7 +77,7 @@ impl SimpleAsyncComponent for App {
                             glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
                             self.sidebar.emit(SidebarViewRequest::UpdateZones)
                         }
-                        Err(e) => println!("Failed to add zone: {}", e),
+                        Err(e) => glib::g_log!(LogLevel::Error, "Failed to add zone: {}", e),
                     };
                 }
             }

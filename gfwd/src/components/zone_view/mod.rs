@@ -172,7 +172,7 @@ impl AsyncComponent for ZoneView {
         let initial_settings = match broker.get_zone_settings(&initial_zone_name).await {
             Ok(settings) => Some(settings),
             Err(e) => {
-                eprintln!("Failed to get initial zone settings: {}", e);
+                glib::g_log!(LogLevel::Message, "Failed to get initial zone settings: {}", e);
                 None
             }
         };
