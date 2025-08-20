@@ -48,6 +48,7 @@ pub enum ZoneViewRequest {
     SwitchTo(ActiveView),
     ToggleFirewalld,
     UpdateZoneSettings(ZoneSettings),
+    SetFirewalldRunning(bool),
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -194,13 +195,15 @@ impl AsyncComponent for ZoneView {
             .launch(initial_zone_name.clone())
             .forward(sender.input_sender(), |_| unimplemented!());
 
+        let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
+
         let model = ZoneView {
             broker,
             view_mode,
             edit_mode,
             export_mode,
             current_zone_name: initial_zone_name,
-            firewalld_running: false,
+            firewalld_running: initial_firewalld_running,
             active_view: ActiveView::default(),
             tracker: 0,
         };
@@ -252,21 +255,30 @@ impl AsyncComponent for ZoneView {
                 self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
                 self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
             }
+            ZoneViewRequest::SetFirewalldRunning(is_running) => {
+                self.set_firewalld_running(is_running);
+            }
             ZoneViewRequest::SwitchTo(view) => {
                 self.set_active_view(view);
             }
             ZoneViewRequest::ToggleFirewalld => {
-                // TODO: Connect to systemd Dbus API
-                // - check current status before creation of this component
-                // - toggle the status here with Dbus API
-                // - the button should show an intermediate loading state
-                let new_state = !self.get_firewalld_running();
-                self.set_firewalld_running(new_state);
-                glib::g_log!(
-                    LogLevel::Info,
-                    "Simulating toggling firewalld service to: {}",
-                    if new_state { "ON" } else { "OFF" }
-                );
+                let desired_start = !self.get_firewalld_running();
+                let broker = self.broker;
+                let sender = sender.clone();
+                // Optimistically reflect change; we'll verify after the call.
+                self.set_firewalld_running(desired_start);
+                relm4::spawn(async move {
+                    let result = if desired_start {
+                        broker.start_firewalld().await
+                    } else {
+                        broker.stop_firewalld().await
+                    };
+                    if let Err(e) = result {
+                        glib::g_log!(LogLevel::Error, "Failed to toggle firewalld: {:?}", e);
+                    }
+                    let is_running = broker.is_firewalld_active().await.unwrap_or(false);
+                    let _ = sender.input(ZoneViewRequest::SetFirewalldRunning(is_running));
+                });
             }
         }
     }

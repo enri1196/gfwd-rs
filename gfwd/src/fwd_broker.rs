@@ -1,17 +1,13 @@
 use std::collections::HashMap;
 
-use gfwd_bus::{
-    config_firewalld1::ZoneSettings as ZoneSettingsBus,
-    config_zone::new_config_zone_proxy,
-    config_firewalld1::new_config_firewalld1_proxy
-};
+use gfwd_bus::config_firewalld1::ZoneSettings as ZoneSettingsBus;
+use zbus::Connection;
 use relm4::tokio::sync::OnceCell;
 
 use crate::error::GfwdError;
 
 pub struct FwdBroker {
-    fwd_zone: gfwd_bus::zone::ZoneProxy<'static>,
-    cfg_fwd: gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy<'static>,
+    conn: Connection,
 }
 
 impl PartialEq for FwdBroker {
@@ -60,35 +56,38 @@ impl FwdBroker {
     pub async fn get_broker() -> &'static FwdBroker {
         BROKER
             .get_or_init(|| async move {
-                FwdBroker {
-                    fwd_zone: gfwd_bus::zone::new_zone_proxy().await.unwrap(),
-                    cfg_fwd: gfwd_bus::config_firewalld1::new_config_firewalld1_proxy()
-                        .await
-                        .unwrap(),
-                }
+                let conn = Connection::system().await.unwrap();
+                FwdBroker { conn }
             })
             .await
     }
 
     /// Get all zones
     pub async fn get_zones(&self) -> Result<Vec<String>, GfwdError> {
-        Ok(self.cfg_fwd.get_zone_names().await?)
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        Ok(cfg.get_zone_names().await?)
     }
 
     pub async fn get_active_zones(
         &self,
     ) -> Result<HashMap<String, HashMap<String, Vec<String>>>, GfwdError> {
-        Ok(self.fwd_zone.get_active_zones().await?)
+        let zone = gfwd_bus::zone::ZoneProxy::new(&self.conn).await?;
+        Ok(zone.get_active_zones().await?)
     }
 
     /// Get the default zone
     pub async fn get_default_zone(&self) -> Result<String, GfwdError> {
-        Ok(self.cfg_fwd.default_zone().await?)
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        Ok(cfg.default_zone().await?)
     }
 
     pub async fn get_zone_settings(&self, zone_name: &str) -> Result<ZoneSettings, GfwdError> {
-        let cfg_proxy = new_config_firewalld1_proxy().await?;
-        let proxy = new_config_zone_proxy(&cfg_proxy, zone_name).await?;
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
 
         // Fetch each setting individually for maximum compatibility.
         // This avoids calling getSettings or getSettings2, which may not exist.
@@ -153,10 +152,30 @@ impl FwdBroker {
             settings.protocols,
             settings.source_ports,
         );
-        Ok(self
-            .cfg_fwd
-            .add_zone(name.as_str(), &zone_settings)
-            .await
-            .map(|_| ())?)
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        Ok(cfg.add_zone(name.as_str(), &zone_settings).await.map(|_| ())?)
+    }
+
+    pub async fn is_firewalld_active(&self) -> Result<bool, GfwdError> {
+        let mgr = gfwd_bus::systemd::ManagerProxy::new(&self.conn).await?;
+        let unit_path = mgr.get_unit("firewalld.service").await?;
+        let unit = gfwd_bus::systemd::UnitProxy::builder(&self.conn)
+            .path(unit_path.as_str())?
+            .build()
+            .await?;
+        let active = unit.active_state().await?;
+        Ok(active == "active" || active == "activating")
+    }
+
+    pub async fn start_firewalld(&self) -> Result<(), GfwdError> {
+        let mgr = gfwd_bus::systemd::ManagerProxy::new(&self.conn).await?;
+        let _job = mgr.start_unit("firewalld.service", "replace").await?;
+        Ok(())
+    }
+
+    pub async fn stop_firewalld(&self) -> Result<(), GfwdError> {
+        let mgr = gfwd_bus::systemd::ManagerProxy::new(&self.conn).await?;
+        let _job = mgr.stop_unit("firewalld.service", "replace").await?;
+        Ok(())
     }
 }

@@ -49,3 +49,7 @@ pub mod policies;
 #[cfg_attr(docsrs, doc(cfg(feature = "zone")))]
 #[cfg(feature = "zone")]
 pub mod zone;
+
+#[cfg_attr(docsrs, doc(cfg(feature = "systemd")))]
+#[cfg(feature = "systemd")]
+pub mod systemd;

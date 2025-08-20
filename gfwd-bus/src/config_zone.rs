@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
-use zvariant::{OwnedValue, Value};
+use zvariant::OwnedValue;
 
 use crate::config_firewalld1::ConfigFirewalld1Proxy;
 
@@ -369,23 +369,11 @@ pub trait ConfigZone {
 ///
 /// * `conn` - An active zbus connection.
 /// * `zone_name` - The name of the zone to configure (e.g., "public").
-pub async fn new_config_zone_proxy(config_proxy: &ConfigFirewalld1Proxy<'_>, zone_name: &str) -> ZResult<ConfigZoneProxy<'static>> {
-    let conn = Connection::system().await?;
-    let zone_paths = config_proxy.list_zones().await?;
-
-    for path in zone_paths {
-        let temp_proxy = ConfigZoneProxy::builder(&conn)
-            .path(path.clone())?
-            .build()
-            .await?;
-        
-        if let Ok(name) = temp_proxy.get_short().await {
-            if name.trim().eq_ignore_ascii_case(zone_name) {
-                // Found it! Return the proxy for the correct path.
-                return Ok(temp_proxy);
-            }
-        }
-    }
-
-    Err(zbus::Error::Address(format!("Zone '{}' not found on D-Bus.", zone_name)))
+#[deprecated(note = "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection")]
+pub async fn new_config_zone_proxy(
+    _config_proxy: &ConfigFirewalld1Proxy<'_>,
+    _zone_name: &str,
+) -> ZResult<ConfigZoneProxy<'static>> {
+    // Deprecated in favor of resolving via get_zone_by_name and building a proxy on a shared connection.
+    unreachable!("Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection");
 }
