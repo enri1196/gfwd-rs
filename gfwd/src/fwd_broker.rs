@@ -62,6 +62,7 @@ impl FwdBroker {
             .await
     }
 
+    #[allow(unused)]
     pub fn conn(&self) -> &Connection { &self.conn }
 
     /// Get all zones

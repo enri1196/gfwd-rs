@@ -9,7 +9,6 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
-use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
 use crate::fwd_broker::FwdBroker;

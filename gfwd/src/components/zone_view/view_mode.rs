@@ -15,6 +15,7 @@ pub struct ZoneViewMode {
 #[derive(Debug)]
 pub enum ZoneViewModeMsg {
     SetSettings(ZoneSettings),
+    #[allow(unused)]
     AddPortClicked,
     AddPortConfirmed(String, String),
 }
