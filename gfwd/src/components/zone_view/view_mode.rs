@@ -1,8 +1,8 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::port_item::PortItem;
+use crate::fwd_broker::ZoneSettings;
 
 #[tracker::track]
 #[derive(Debug)]
@@ -164,7 +164,7 @@ impl SimpleComponent for ZoneViewMode {
                     ports.push_back((port.clone(), protocol.clone()));
                 }
                 drop(ports);
-                
+
                 self.set_settings(Some(settings.clone()));
             }
             ZoneViewModeMsg::AddPortClicked => {}

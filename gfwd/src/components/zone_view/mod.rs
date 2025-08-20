@@ -9,6 +9,7 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
+use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
 use crate::fwd_broker::FwdBroker;
@@ -173,7 +174,7 @@ impl AsyncComponent for ZoneView {
         let initial_settings = match broker.get_zone_settings(&initial_zone_name).await {
             Ok(settings) => Some(settings),
             Err(e) => {
-                eprintln!("Failed to get initial zone settings: {}", e);
+                glib::g_log!(LogLevel::Message, "Failed to get initial zone settings: {}", e);
                 None
             }
         };
@@ -218,7 +219,14 @@ impl AsyncComponent for ZoneView {
 
         let action: RelmAction<DeleteZoneAction> = {
             RelmAction::new_stateless(move |_| {
-                println!("Statelesss action for deleting zone!");
+                relm4::spawn(async move {
+                    match broker.remove_zone("zone_name").await {
+                        Ok(()) => {
+                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!")
+                        }
+                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
+                    };
+                });
             })
         };
 
@@ -228,7 +236,6 @@ impl AsyncComponent for ZoneView {
 
         AsyncComponentParts { model, widgets }
     }
-
 
     async fn update(
         &mut self,
@@ -245,14 +252,7 @@ impl AsyncComponent for ZoneView {
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
                     // Lookup the zone proxy and add port
-                    let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(broker.conn()).await;
-                    if let Ok(cfg) = cfg {
-                        if let Ok(path) = cfg.get_zone_by_name(&zone_name).await {
-                            if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(broker.conn()).path(path.as_str()).unwrap().build().await {
-                                let _ = zone.add_port(&port, &protocol).await;
-                            }
-                        }
-                    }
+                    let _ = broker.add_port(zone_name.as_str(), port.as_str(), protocol.as_str()).await;
                     if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                         let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                     }
@@ -262,20 +262,22 @@ impl AsyncComponent for ZoneView {
                 self.set_current_zone_name(zone_name.clone());
                 let sender = sender.clone();
                 let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
                 relm4::spawn(async move {
                     match broker.get_zone_settings(&zone_name).await {
                         Ok(settings) => {
                             sender.input(ZoneViewRequest::UpdateZoneSettings(settings));
                         }
                         Err(e) => {
-                            eprintln!("Failed to update zone content: {}", e);
+                            glib::g_log!(LogLevel::Error, "Failed to update zone content: {e}");
                             // You could also send a message to the UI to show an error
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
-                self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
+                self.view_mode
+                    .emit(ZoneViewModeMsg::SetSettings(settings.clone()));
                 self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
             }
             ZoneViewRequest::SetFirewalldRunning(is_running) => {
