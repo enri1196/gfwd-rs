@@ -15,13 +15,20 @@ pub struct ZoneViewMode {
 #[derive(Debug)]
 pub enum ZoneViewModeMsg {
     SetSettings(ZoneSettings),
+    AddPortClicked,
+    AddPortConfirmed(String, String),
+}
+
+#[derive(Debug)]
+pub enum ZoneViewModeOut {
+    AddPort(String, String),
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for ZoneViewMode {
     type Init = ();
     type Input = ZoneViewModeMsg;
-    type Output = ();
+    type Output = ZoneViewModeOut;
 
     view! {
         adw::PreferencesPage {
@@ -64,7 +71,59 @@ impl SimpleComponent for ZoneViewMode {
 
             add = &adw::PreferencesGroup {
                 set_title: "Allowed Ports",
-                
+
+                #[name = "add_menu_btn"]
+                #[wrap(Some)]
+                set_header_suffix = &gtk::MenuButton {
+                    set_icon_name: "list-add-symbolic",
+                    set_tooltip_text: Some("Add port"),
+
+                    #[wrap(Some)]
+                    set_popover = &gtk::Popover {
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 8,
+                            set_margin_all: 8,
+
+                            gtk::Box {
+                                set_spacing: 6,
+                                gtk::Label { set_label: "Protocol:" },
+                                #[name = "protocol_dd"]
+                                gtk::DropDown {
+                                    set_model: Some(&gtk::StringList::new(&["tcp", "udp"])),
+                                    set_selected: 0,
+                                }
+                            },
+
+                            gtk::Box {
+                                set_spacing: 6,
+                                gtk::Label { set_label: "Port/range:" },
+                                #[name = "port_entry"]
+                                gtk::Entry { set_placeholder_text: Some("80 or 8000-8080") }
+                            },
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_halign: gtk::Align::End,
+                                set_spacing: 6,
+                                gtk::Button { set_label: "Cancel", connect_clicked[add_menu_btn] => move |_| { add_menu_btn.popdown(); } },
+                                gtk::Button {
+                                    add_css_class: "suggested-action",
+                                    set_label: "Add",
+                                    connect_clicked[sender, protocol_dd, port_entry, add_menu_btn] => move |_| {
+                                        let idx = protocol_dd.selected();
+                                        let protocol = if idx == 1 { "udp" } else { "tcp" }.to_string();
+                                        let port = port_entry.text().to_string();
+                                        sender.input(ZoneViewModeMsg::AddPortConfirmed(port, protocol));
+                                        add_menu_btn.popdown();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+
                 #[local_ref]
                 ports_list_box -> gtk::ListBox {
                     set_selection_mode: gtk::SelectionMode::None,
@@ -77,14 +136,11 @@ impl SimpleComponent for ZoneViewMode {
     fn init(
         _init: Self::Init,
         root: Self::Root,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let ports = FactoryVecDeque::builder()
             .launch_default()
-            .forward(_sender.input_sender(), |_| {
-                // No output from PortItem needed for now
-                todo!()
-            });
+            .forward(sender.input_sender(), |_| ZoneViewModeMsg::SetSettings(ZoneSettings::default()));
             
         let model = ZoneViewMode {
             settings: None,
@@ -110,6 +166,13 @@ impl SimpleComponent for ZoneViewMode {
                 drop(ports);
                 
                 self.set_settings(Some(settings.clone()));
+            }
+            ZoneViewModeMsg::AddPortClicked => {}
+            ZoneViewModeMsg::AddPortConfirmed(port, protocol) => {
+                // Emit to parent for persistence; parent will refresh settings
+                let _ = _sender.output(ZoneViewModeOut::AddPort(port.clone(), protocol.clone()));
+                // Also optimistically update UI
+                self.ports.guard().push_back((port, protocol));
             }
         }
     }

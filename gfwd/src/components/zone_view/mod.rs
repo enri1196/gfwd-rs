@@ -10,7 +10,7 @@ use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
 use crate::fwd_broker::ZoneSettings;
-use crate::components::zone_view::view_mode::ZoneViewModeMsg;
+use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
 use crate::fwd_broker::FwdBroker;
 use edit_mode::ZoneEditMode;
 use export_mode::ZoneExportMode;
@@ -49,6 +49,7 @@ pub enum ZoneViewRequest {
     ToggleFirewalld,
     UpdateZoneSettings(ZoneSettings),
     SetFirewalldRunning(bool),
+    AddPort(String, String),
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -179,7 +180,9 @@ impl AsyncComponent for ZoneView {
 
         let view_mode = ZoneViewMode::builder()
             .launch(())
-            .forward(sender.input_sender(), |_| unimplemented!());
+            .forward(sender.input_sender(), |out| match out {
+                ZoneViewModeOut::AddPort(port, protocol) => ZoneViewRequest::AddPort(port, protocol),
+            });
 
         let edit_mode = ZoneEditMode::builder()
             .launch(())
@@ -235,6 +238,26 @@ impl AsyncComponent for ZoneView {
     ) {
         self.reset();
         match msg {
+            ZoneViewRequest::AddPort(port, protocol) => {
+                // Persist add-port via broker, then refresh settings
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Lookup the zone proxy and add port
+                    let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(broker.conn()).await;
+                    if let Ok(cfg) = cfg {
+                        if let Ok(path) = cfg.get_zone_by_name(&zone_name).await {
+                            if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(broker.conn()).path(path.as_str()).unwrap().build().await {
+                                let _ = zone.add_port(&port, &protocol).await;
+                            }
+                        }
+                    }
+                    if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
+                        let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                    }
+                });
+            }
             ZoneViewRequest::SetZoneContent(zone_name) => {
                 self.set_current_zone_name(zone_name.clone());
                 let sender = sender.clone();

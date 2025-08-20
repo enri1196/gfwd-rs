@@ -62,6 +62,8 @@ impl FwdBroker {
             .await
     }
 
+    pub fn conn(&self) -> &Connection { &self.conn }
+
     /// Get all zones
     pub async fn get_zones(&self) -> Result<Vec<String>, GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
