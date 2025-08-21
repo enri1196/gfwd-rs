@@ -28,6 +28,10 @@ impl FactoryComponent for PortItem {
             add_suffix = &gtk::Button {
                 set_icon_name: "user-trash-symbolic",
                 set_tooltip_text: Some("Remove port"),
+                set_valign: gtk::Align::Center,
+                set_vexpand: false,
+                set_margin_top: 6,
+                set_margin_bottom: 6,
                 connect_clicked[sender, _port = self.port.clone(), _protocol = self.protocol.clone()] => move |_| {
                     sender.input(PortItemInput::Remove);
                 }
