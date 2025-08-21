@@ -1,4 +1,5 @@
 use relm4::adw::prelude::*;
+use relm4::gtk::gio::MenuModel;
 use relm4::prelude::*;
 
 use crate::components::zone_view::port_item::PortItem;
@@ -82,7 +83,7 @@ impl SimpleComponent for ZoneInfoComponent {
                     set_tooltip_text: Some("Add port"),
 
                     #[wrap(Some)]
-                    set_popover = &gtk::Popover {
+                    set_popover = &gtk::PopoverMenu::from_model(None::<&MenuModel>) {
                         #[wrap(Some)]
                         set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -91,24 +92,18 @@ impl SimpleComponent for ZoneInfoComponent {
 
                             gtk::Box {
                                 set_spacing: 6,
-                                gtk::Label { set_label: "Protocol:" },
                                 #[name = "protocol_dd"]
                                 gtk::DropDown {
                                     set_model: Some(&gtk::StringList::new(&["tcp", "udp"])),
                                     set_selected: 0,
-                                }
-                            },
-
-                            gtk::Box {
-                                set_spacing: 6,
-                                gtk::Label { set_label: "Port/range:" },
+                                },
                                 #[name = "port_entry"]
                                 gtk::Entry { set_placeholder_text: Some("80 or 8000-8080") }
                             },
 
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
-                                set_halign: gtk::Align::End,
+                                set_halign: gtk::Align::Center,
                                 set_spacing: 6,
                                 gtk::Button { set_label: "Cancel", connect_clicked[add_menu_btn] => move |_| { add_menu_btn.popdown(); } },
                                 gtk::Button {

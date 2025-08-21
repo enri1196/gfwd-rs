@@ -86,7 +86,8 @@ impl SimpleAsyncComponent for App {
                 glib::g_log!(LogLevel::Error, "Failed to add zone");
             }
             AppRequest::ZoneRemoved(removed_zone) => {
-                self.sidebar.emit(SidebarViewRequest::RemoveZone(removed_zone));
+                self.sidebar
+                    .emit(SidebarViewRequest::RemoveZone(removed_zone));
                 let active_zone = self.broker.get_default_zone().await.unwrap();
                 self.zone_view
                     .emit(ZoneViewRequest::SetZoneContent(active_zone));
@@ -125,7 +126,9 @@ impl SimpleAsyncComponent for App {
             .launch((initial_zone_name, root.clone().into()))
             .forward(sender.input_sender(), |resp| match resp {
                 components::zone_view::ZoneViewResponse::ToggleSidebar => AppRequest::ToggleSidebar,
-                components::zone_view::ZoneViewResponse::RemovedZoneSuccess(removed_zone) => AppRequest::ZoneRemoved(removed_zone),
+                components::zone_view::ZoneViewResponse::RemovedZoneSuccess(removed_zone) => {
+                    AppRequest::ZoneRemoved(removed_zone)
+                }
             });
 
         let dialog = AddZoneDialog::builder()

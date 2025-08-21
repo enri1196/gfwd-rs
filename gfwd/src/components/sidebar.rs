@@ -19,7 +19,7 @@ pub enum SidebarViewRequest {
     ShowAddZoneDialog,
     SetDefaultZone,
     SetActiveZones,
-    RemoveZone(String)
+    RemoveZone(String),
 }
 
 #[derive(Debug)]
@@ -120,7 +120,11 @@ impl SimpleAsyncComponent for SidebarView {
             SidebarViewRequest::RemoveZone(removed_zone) => {
                 let mut zones = self.zones.guard();
                 let Some(idx) = zones.iter().position(|item| &item.name == &removed_zone) else {
-                    glib::g_log!(LogLevel::Error, "Sidebar could not remove zone named: {}", removed_zone);
+                    glib::g_log!(
+                        LogLevel::Error,
+                        "Sidebar could not remove zone named: {}",
+                        removed_zone
+                    );
                     return;
                 };
                 zones.remove(idx);

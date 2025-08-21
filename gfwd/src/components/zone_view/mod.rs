@@ -1,5 +1,5 @@
-mod view_mode;
 mod port_item;
+mod view_mode;
 
 use relm4::actions::{AccelsPlus, ActionGroupName, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
@@ -39,7 +39,7 @@ pub enum ZoneViewRequest {
 #[derive(Debug)]
 pub enum ZoneViewResponse {
     ToggleSidebar,
-    RemovedZoneSuccess(String)
+    RemovedZoneSuccess(String),
 }
 
 relm4::new_action_group!(WindowActionGroup, "win");
@@ -131,16 +131,17 @@ impl AsyncComponent for ZoneView {
             }
         };
 
-        let view_mode = ZoneInfoComponent::builder()
-            .launch(())
-            .forward(sender.input_sender(), |out| match out {
+        let view_mode = ZoneInfoComponent::builder().launch(()).forward(
+            sender.input_sender(),
+            |out| match out {
                 ZoneViewModeOut::AddPort(port, protocol) => {
                     ZoneViewRequest::AddPort(port, protocol)
                 }
                 ZoneViewModeOut::RemovePort(port, protocol) => {
                     ZoneViewRequest::RemovePort(port, protocol)
                 }
-            });
+            },
+        );
 
         // Only emit settings if they were successfully fetched
         if let Some(settings) = &initial_settings {
@@ -238,7 +239,8 @@ impl AsyncComponent for ZoneView {
                     match broker.remove_zone(zone_name.as_str()).await {
                         Ok(()) => {
                             glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!");
-                            let _ = sender.output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
+                            let _ = sender
+                                .output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
                         }
                         Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
                     };
