@@ -6,7 +6,7 @@ use crate::fwd_broker::ZoneSettings;
 
 #[tracker::track]
 #[derive(Debug)]
-pub struct ZoneViewMode {
+pub struct ZoneInfoComponent {
     pub(crate) settings: Option<ZoneSettings>,
     #[tracker::do_not_track]
     pub(crate) ports: FactoryVecDeque<PortItem>,
@@ -28,7 +28,7 @@ pub enum ZoneViewModeOut {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for ZoneViewMode {
+impl SimpleComponent for ZoneInfoComponent {
     type Init = ();
     type Input = ZoneViewModeMsg;
     type Output = ZoneViewModeOut;
@@ -147,7 +147,7 @@ impl SimpleComponent for ZoneViewMode {
                 ZoneViewModeMsg::RemovePort(output.0, output.1)
             });
 
-        let model = ZoneViewMode {
+        let model = ZoneInfoComponent {
             settings: None,
             ports,
             tracker: 0,

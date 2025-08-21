@@ -1,28 +1,15 @@
-mod edit_mode;
-mod export_mode;
-mod port_item;
 mod view_mode;
+mod port_item;
 
 use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
-use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
 use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
 use crate::fwd_broker::FwdBroker;
 use crate::fwd_broker::ZoneSettings;
-use edit_mode::ZoneEditMode;
-use export_mode::ZoneExportMode;
-use view_mode::ZoneViewMode;
-
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
-pub enum ActiveView {
-    #[default]
-    View,
-    Edit,
-    Export,
-}
+use view_mode::ZoneInfoComponent;
 
 #[tracker::track]
 pub struct ZoneView {
@@ -30,14 +17,9 @@ pub struct ZoneView {
     broker: &'static FwdBroker,
     // child components
     #[tracker::do_not_track]
-    view_mode: Controller<ZoneViewMode>,
-    #[tracker::do_not_track]
-    edit_mode: Controller<ZoneEditMode>,
-    #[tracker::do_not_track]
-    export_mode: Controller<ZoneExportMode>,
+    view_mode: Controller<ZoneInfoComponent>,
     // props
     current_zone_name: String,
-    active_view: ActiveView,
     firewalld_running: bool,
 }
 
@@ -45,7 +27,6 @@ pub struct ZoneView {
 #[derive(Debug)]
 pub enum ZoneViewRequest {
     SetZoneContent(String),
-    SwitchTo(ActiveView),
     ToggleFirewalld,
     UpdateZoneSettings(ZoneSettings),
     RemoveZone,
@@ -61,7 +42,8 @@ pub enum ZoneViewResponse {
 }
 
 relm4::new_action_group!(WindowActionGroup, "win");
-relm4::new_stateless_action!(RemoveZoneAction, WindowActionGroup, "example");
+relm4::new_stateless_action!(ActivateZoneAction, WindowActionGroup, "win.aza");
+relm4::new_stateless_action!(RemoveZoneAction, WindowActionGroup, "win.rza");
 
 #[relm4::component(async, pub)]
 impl AsyncComponent for ZoneView {
@@ -100,41 +82,6 @@ impl AsyncComponent for ZoneView {
                     #[wrap(Some)]
                     set_popover = &gtk::PopoverMenu::from_model(Some(&main_menu)) {}
                 },
-
-                #[wrap(Some)]
-                set_title_widget = &gtk::Box {
-                    add_css_class: "linked",
-                    #[name = "group"]
-                    gtk::ToggleButton {
-                        set_label: "View",
-                        set_active: model.active_view == ActiveView::View,
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(ZoneViewRequest::SwitchTo(ActiveView::View));
-                            }
-                        },
-                    },
-                    gtk::ToggleButton {
-                        set_label: "Edit",
-                        set_group: Some(&group),
-                        set_active: model.active_view == ActiveView::Edit,
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(ZoneViewRequest::SwitchTo(ActiveView::Edit));
-                            }
-                        },
-                    },
-                    gtk::ToggleButton {
-                        set_label: "Export",
-                        set_group: Some(&group),
-                        set_active: model.active_view == ActiveView::Export,
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(ZoneViewRequest::SwitchTo(ActiveView::Export));
-                            }
-                        },
-                    },
-                }
             },
 
             gtk::ScrolledWindow {
@@ -147,12 +94,9 @@ impl AsyncComponent for ZoneView {
                     set_margin_all: 12,
                     set_spacing: 12,
 
-                    // Conditionally show the child components based on the active view
-                    match model.active_view {
-                        ActiveView::View => model.view_mode.widget().clone(),
-                        ActiveView::Edit => model.edit_mode.widget().clone(),
-                        ActiveView::Export => model.export_mode.widget().clone(),
-                    }
+                    // Always show ZoneViewMode
+                    #[local_ref]
+                    zone_info -> adw::PreferencesPage {}
                 },
             },
         }
@@ -160,6 +104,7 @@ impl AsyncComponent for ZoneView {
 
     menu! {
         main_menu: {
+            "Activate Zone" => ActivateZoneAction,
             "Delete Zone" => RemoveZoneAction,
         }
     }
@@ -184,7 +129,7 @@ impl AsyncComponent for ZoneView {
             }
         };
 
-        let view_mode = ZoneViewMode::builder()
+        let view_mode = ZoneInfoComponent::builder()
             .launch(())
             .forward(sender.input_sender(), |out| match out {
                 ZoneViewModeOut::AddPort(port, protocol) => {
@@ -195,47 +140,48 @@ impl AsyncComponent for ZoneView {
                 }
             });
 
-        let edit_mode = ZoneEditMode::builder()
-            .launch(())
-            .forward(sender.input_sender(), |_| unimplemented!());
-
         // Only emit settings if they were successfully fetched
         if let Some(settings) = &initial_settings {
             view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
-            edit_mode.emit(ZoneEditModeMsg::SetSettings(settings.clone()));
         }
-
-        let export_mode = ZoneExportMode::builder()
-            .launch(initial_zone_name.clone())
-            .forward(sender.input_sender(), |_| unimplemented!());
 
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
         let model = ZoneView {
             broker,
             view_mode,
-            edit_mode,
-            export_mode,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
-            active_view: ActiveView::default(),
             tracker: 0,
         };
 
+        let zone_info = model.view_mode.widget();
         let widgets = view_output!();
 
         let app = relm4::main_application();
+        app.set_accelerators_for_action::<ActivateZoneAction>(&["<primary>A"]);
         app.set_accelerators_for_action::<RemoveZoneAction>(&["<primary>D"]);
 
+        let sender_c1 = sender.clone();
+        let activate_zone_action: RelmAction<ActivateZoneAction> = {
+            let action = RelmAction::new_stateless(move |_| {
+                let _ = sender_c1;
+                glib::g_log!(LogLevel::Info, "ActivateZoneAction triggered");
+            });
+            action.set_enabled(true);
+            action
+        };
+        let sender_c2 = sender.clone();
         let remove_zone_action: RelmAction<RemoveZoneAction> = {
             let action = RelmAction::new_stateless(move |_| {
-                sender.input(ZoneViewRequest::RemoveZone);
+                sender_c2.input(ZoneViewRequest::RemoveZone);
             });
             action.set_enabled(true);
             action
         };
 
         let mut group = RelmActionGroup::<WindowActionGroup>::new();
+        group.add_action(activate_zone_action);
         group.add_action(remove_zone_action);
         root.insert_action_group("win", Some(&group.into_action_group()));
 
@@ -251,12 +197,10 @@ impl AsyncComponent for ZoneView {
         self.reset();
         match msg {
             ZoneViewRequest::AddPort(port, protocol) => {
-                // Persist add-port via broker, then refresh settings
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
-                    // Lookup the zone proxy and add port
                     let _ = broker
                         .add_port(zone_name.as_str(), port.as_str(), protocol.as_str())
                         .await;
@@ -277,15 +221,12 @@ impl AsyncComponent for ZoneView {
                         }
                         Err(e) => {
                             glib::g_log!(LogLevel::Error, "Failed to update zone content: {e}");
-                            // You could also send a message to the UI to show an error
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
-                self.view_mode
-                    .emit(ZoneViewModeMsg::SetSettings(settings.clone()));
-                self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
+                self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings));
             }
             ZoneViewRequest::RemoveZone => {
                 let broker = self.broker;
@@ -293,7 +234,7 @@ impl AsyncComponent for ZoneView {
                 relm4::spawn(async move {
                     match broker.remove_zone(zone_name.as_str()).await {
                         Ok(()) => {
-                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!")
+                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!");
                         }
                         Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
                     };
@@ -302,14 +243,10 @@ impl AsyncComponent for ZoneView {
             ZoneViewRequest::SetFirewalldRunning(is_running) => {
                 self.set_firewalld_running(is_running);
             }
-            ZoneViewRequest::SwitchTo(view) => {
-                self.set_active_view(view);
-            }
             ZoneViewRequest::ToggleFirewalld => {
                 let desired_start = !self.get_firewalld_running();
                 let broker = self.broker;
                 let sender = sender.clone();
-                // Optimistically reflect change; we'll verify after the call.
                 self.set_firewalld_running(desired_start);
                 relm4::spawn(async move {
                     let result = if desired_start {
@@ -325,12 +262,10 @@ impl AsyncComponent for ZoneView {
                 });
             }
             ZoneViewRequest::RemovePort(port, protocol) => {
-                // Persist remove-port via broker, then refresh settings
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
-                    // Lookup the zone proxy and remove port
                     let _ = broker
                         .remove_port(zone_name.as_str(), port.as_str(), protocol.as_str())
                         .await;
