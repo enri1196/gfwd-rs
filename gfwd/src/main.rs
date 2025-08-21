@@ -69,7 +69,9 @@ impl SimpleAsyncComponent for App {
             AppRequest::ShowAddZoneDialog => {
                 self.dialog.widget().present(Some(self.root.as_ref()));
             }
-            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings)) if !settings.name.is_empty() => {
+            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings))
+                if !settings.name.is_empty() =>
+            {
                 let zone_name = settings.name.to_string();
                 match self.broker.add_zone(settings).await {
                     Ok(_) => {

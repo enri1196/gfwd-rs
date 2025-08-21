@@ -369,11 +369,15 @@ pub trait ConfigZone {
 ///
 /// * `conn` - An active zbus connection.
 /// * `zone_name` - The name of the zone to configure (e.g., "public").
-#[deprecated(note = "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection")]
+#[deprecated(
+    note = "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection"
+)]
 pub async fn new_config_zone_proxy(
     _config_proxy: &ConfigFirewalld1Proxy<'_>,
     _zone_name: &str,
 ) -> ZResult<ConfigZoneProxy<'static>> {
     // Deprecated in favor of resolving via get_zone_by_name and building a proxy on a shared connection.
-    unreachable!("Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection");
+    unreachable!(
+        "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection"
+    );
 }

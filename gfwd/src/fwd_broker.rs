@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use gfwd_bus::config_firewalld1::ZoneSettings as ZoneSettingsBus;
-use zbus::Connection;
 use relm4::tokio::sync::OnceCell;
+use zbus::Connection;
 
 use crate::error::GfwdError;
 
@@ -63,7 +63,9 @@ impl FwdBroker {
     }
 
     #[allow(unused)]
-    pub fn conn(&self) -> &Connection { &self.conn }
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
 
     /// Get all zones
     pub async fn get_zones(&self) -> Result<Vec<String>, GfwdError> {
@@ -156,22 +158,36 @@ impl FwdBroker {
             settings.source_ports,
         );
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
-        Ok(cfg.add_zone(name.as_str(), &zone_settings).await.map(|_| ())?)
+        Ok(cfg
+            .add_zone(name.as_str(), &zone_settings)
+            .await
+            .map(|_| ())?)
     }
 
     pub async fn remove_zone(&self, zone_name: &str) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let selected_zone = cfg.get_zone_by_name(zone_name).await?;
 
-        let proxy_zone = gfwd_bus::config_zone::ConfigZoneProxy::new(&self.conn, selected_zone).await?;
+        let proxy_zone =
+            gfwd_bus::config_zone::ConfigZoneProxy::new(&self.conn, selected_zone).await?;
         Ok(proxy_zone.remove().await?)
     }
 
-    pub async fn add_port(&self, zone_name: &str, port: &str, protocol: &str) -> Result<(), GfwdError> {
+    pub async fn add_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await;
         if let Ok(cfg) = cfg {
             if let Ok(path) = cfg.get_zone_by_name(&zone_name).await {
-                if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn).path(path.as_str()).unwrap().build().await {
+                if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+                    .path(path.as_str())
+                    .unwrap()
+                    .build()
+                    .await
+                {
                     let _ = zone.add_port(&port, &protocol).await;
                 }
             }
@@ -179,11 +195,21 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn remove_port(&self, zone_name: &str, port: &str, protocol: &str) -> Result<(), GfwdError> {
+    pub async fn remove_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await;
         if let Ok(cfg) = cfg {
             if let Ok(path) = cfg.get_zone_by_name(&zone_name).await {
-                if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn).path(path.as_str()).unwrap().build().await {
+                if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+                    .path(path.as_str())
+                    .unwrap()
+                    .build()
+                    .await
+                {
                     let _ = zone.remove_port(&port, &protocol).await;
                 }
             }

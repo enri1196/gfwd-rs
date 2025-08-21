@@ -143,8 +143,10 @@ impl SimpleComponent for ZoneViewMode {
     ) -> ComponentParts<Self> {
         let ports = FactoryVecDeque::builder()
             .launch_default()
-            .forward(sender.input_sender(), |output: (String, String)| ZoneViewModeMsg::RemovePort(output.0, output.1));
-            
+            .forward(sender.input_sender(), |output: (String, String)| {
+                ZoneViewModeMsg::RemovePort(output.0, output.1)
+            });
+
         let model = ZoneViewMode {
             settings: None,
             ports,
@@ -178,7 +180,10 @@ impl SimpleComponent for ZoneViewMode {
             ZoneViewModeMsg::RemovePort(port, protocol) => {
                 let _ = _sender.output(ZoneViewModeOut::RemovePort(port.clone(), protocol.clone()));
                 let mut ports = self.ports.guard();
-                let Some(index) = ports.iter().position(|item| item.port == port && item.protocol == protocol) else {
+                let Some(index) = ports
+                    .iter()
+                    .position(|item| item.port == port && item.protocol == protocol)
+                else {
                     return;
                 };
                 ports.remove(index);

@@ -109,5 +109,7 @@ pub trait FirewallD1 {
 /// Crea un proxy già connesso al bus di sistema
 #[deprecated(note = "Create proxies with an external Connection: FirewallD1Proxy::new(&conn)")]
 pub async fn new_firewalld_proxy() -> ZResult<FirewallD1Proxy<'static>> {
-    unreachable!("Use FirewallD1Proxy::new(&Connection) instead of opening a new system connection here")
+    unreachable!(
+        "Use FirewallD1Proxy::new(&Connection) instead of opening a new system connection here"
+    )
 }

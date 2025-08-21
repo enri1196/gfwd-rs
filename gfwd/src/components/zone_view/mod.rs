@@ -9,9 +9,9 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::zone_view::edit_mode::ZoneEditModeMsg;
-use crate::fwd_broker::ZoneSettings;
 use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
 use crate::fwd_broker::FwdBroker;
+use crate::fwd_broker::ZoneSettings;
 use edit_mode::ZoneEditMode;
 use export_mode::ZoneExportMode;
 use view_mode::ZoneViewMode;
@@ -175,7 +175,11 @@ impl AsyncComponent for ZoneView {
         let initial_settings = match broker.get_zone_settings(&initial_zone_name).await {
             Ok(settings) => Some(settings),
             Err(e) => {
-                glib::g_log!(LogLevel::Message, "Failed to get initial zone settings: {}", e);
+                glib::g_log!(
+                    LogLevel::Message,
+                    "Failed to get initial zone settings: {}",
+                    e
+                );
                 None
             }
         };
@@ -183,8 +187,12 @@ impl AsyncComponent for ZoneView {
         let view_mode = ZoneViewMode::builder()
             .launch(())
             .forward(sender.input_sender(), |out| match out {
-                ZoneViewModeOut::AddPort(port, protocol) => ZoneViewRequest::AddPort(port, protocol),
-            ZoneViewModeOut::RemovePort(port, protocol) => ZoneViewRequest::RemovePort(port, protocol),
+                ZoneViewModeOut::AddPort(port, protocol) => {
+                    ZoneViewRequest::AddPort(port, protocol)
+                }
+                ZoneViewModeOut::RemovePort(port, protocol) => {
+                    ZoneViewRequest::RemovePort(port, protocol)
+                }
             });
 
         let edit_mode = ZoneEditMode::builder()
@@ -249,7 +257,9 @@ impl AsyncComponent for ZoneView {
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
                     // Lookup the zone proxy and add port
-                    let _ = broker.add_port(zone_name.as_str(), port.as_str(), protocol.as_str()).await;
+                    let _ = broker
+                        .add_port(zone_name.as_str(), port.as_str(), protocol.as_str())
+                        .await;
                     if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                         let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                     }
@@ -321,7 +331,9 @@ impl AsyncComponent for ZoneView {
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
                     // Lookup the zone proxy and remove port
-                    let _ = broker.remove_port(zone_name.as_str(), port.as_str(), protocol.as_str()).await;
+                    let _ = broker
+                        .remove_port(zone_name.as_str(), port.as_str(), protocol.as_str())
+                        .await;
                     if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                         let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                     }
