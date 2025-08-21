@@ -69,17 +69,18 @@ impl SimpleAsyncComponent for App {
             AppRequest::ShowAddZoneDialog => {
                 self.dialog.widget().present(Some(self.root.as_ref()));
             }
-            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings)) => {
-                if !settings.name.is_empty() {
-                    let zone_name = settings.name.to_string();
-                    match self.broker.add_zone(settings).await {
-                        Ok(_) => {
-                            glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
-                            self.sidebar.emit(SidebarViewRequest::UpdateZones)
-                        }
-                        Err(e) => glib::g_log!(LogLevel::Error, "Failed to add zone: {}", e),
-                    };
-                }
+            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(settings)) if !settings.name.is_empty() => {
+                let zone_name = settings.name.to_string();
+                match self.broker.add_zone(settings).await {
+                    Ok(_) => {
+                        glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
+                        self.sidebar.emit(SidebarViewRequest::UpdateZones)
+                    }
+                    Err(e) => glib::g_log!(LogLevel::Error, "Failed to add zone: {}", e),
+                };
+            }
+            AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(_)) => {
+                glib::g_log!(LogLevel::Error, "Failed to add zone");
             }
             AppRequest::UpdateContentWithZoneName(zone_name) => {
                 self.zone_view

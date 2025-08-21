@@ -179,6 +179,18 @@ impl FwdBroker {
         Ok(())
     }
 
+    pub async fn remove_port(&self, zone_name: &str, port: &str, protocol: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await;
+        if let Ok(cfg) = cfg {
+            if let Ok(path) = cfg.get_zone_by_name(&zone_name).await {
+                if let Ok(zone) = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn).path(path.as_str()).unwrap().build().await {
+                    let _ = zone.remove_port(&port, &protocol).await;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn is_firewalld_active(&self) -> Result<bool, GfwdError> {
         let mgr = gfwd_bus::systemd::ManagerProxy::new(&self.conn).await?;
         let unit_path = mgr.get_unit("firewalld.service").await?;

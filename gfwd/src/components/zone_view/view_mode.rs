@@ -18,11 +18,13 @@ pub enum ZoneViewModeMsg {
     #[allow(unused)]
     AddPortClicked,
     AddPortConfirmed(String, String),
+    RemovePort(String, String),
 }
 
 #[derive(Debug)]
 pub enum ZoneViewModeOut {
     AddPort(String, String),
+    RemovePort(String, String),
 }
 
 #[relm4::component(pub)]
@@ -141,7 +143,7 @@ impl SimpleComponent for ZoneViewMode {
     ) -> ComponentParts<Self> {
         let ports = FactoryVecDeque::builder()
             .launch_default()
-            .forward(sender.input_sender(), |_| ZoneViewModeMsg::SetSettings(ZoneSettings::default()));
+            .forward(sender.input_sender(), |output: (String, String)| ZoneViewModeMsg::RemovePort(output.0, output.1));
             
         let model = ZoneViewMode {
             settings: None,
@@ -170,10 +172,16 @@ impl SimpleComponent for ZoneViewMode {
             }
             ZoneViewModeMsg::AddPortClicked => {}
             ZoneViewModeMsg::AddPortConfirmed(port, protocol) => {
-                // Emit to parent for persistence; parent will refresh settings
                 let _ = _sender.output(ZoneViewModeOut::AddPort(port.clone(), protocol.clone()));
-                // Also optimistically update UI
                 self.ports.guard().push_back((port, protocol));
+            }
+            ZoneViewModeMsg::RemovePort(port, protocol) => {
+                let _ = _sender.output(ZoneViewModeOut::RemovePort(port.clone(), protocol.clone()));
+                let mut ports = self.ports.guard();
+                let Some(index) = ports.iter().position(|item| item.port == port && item.protocol == protocol) else {
+                    return;
+                };
+                ports.remove(index);
             }
         }
     }

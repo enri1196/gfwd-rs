@@ -48,8 +48,10 @@ pub enum ZoneViewRequest {
     SwitchTo(ActiveView),
     ToggleFirewalld,
     UpdateZoneSettings(ZoneSettings),
+    RemoveZone,
     SetFirewalldRunning(bool),
     AddPort(String, String),
+    RemovePort(String, String),
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -59,7 +61,7 @@ pub enum ZoneViewResponse {
 }
 
 relm4::new_action_group!(WindowActionGroup, "win");
-relm4::new_stateless_action!(DeleteZoneAction, WindowActionGroup, "example");
+relm4::new_stateless_action!(RemoveZoneAction, WindowActionGroup, "example");
 
 #[relm4::component(async, pub)]
 impl AsyncComponent for ZoneView {
@@ -158,7 +160,7 @@ impl AsyncComponent for ZoneView {
 
     menu! {
         main_menu: {
-            "Delete Zone" => DeleteZoneAction,
+            "Delete Zone" => RemoveZoneAction,
         }
     }
 
@@ -182,6 +184,7 @@ impl AsyncComponent for ZoneView {
             .launch(())
             .forward(sender.input_sender(), |out| match out {
                 ZoneViewModeOut::AddPort(port, protocol) => ZoneViewRequest::AddPort(port, protocol),
+            ZoneViewModeOut::RemovePort(port, protocol) => ZoneViewRequest::RemovePort(port, protocol),
             });
 
         let edit_mode = ZoneEditMode::builder()
@@ -214,23 +217,18 @@ impl AsyncComponent for ZoneView {
         let widgets = view_output!();
 
         let app = relm4::main_application();
-        app.set_accelerators_for_action::<DeleteZoneAction>(&["<primary>D"]);
+        app.set_accelerators_for_action::<RemoveZoneAction>(&["<primary>D"]);
 
-        let action: RelmAction<DeleteZoneAction> = {
-            RelmAction::new_stateless(move |_| {
-                relm4::spawn(async move {
-                    match broker.remove_zone("zone_name").await {
-                        Ok(()) => {
-                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!")
-                        }
-                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
-                    };
-                });
-            })
+        let remove_zone_action: RelmAction<RemoveZoneAction> = {
+            let action = RelmAction::new_stateless(move |_| {
+                sender.input(ZoneViewRequest::RemoveZone);
+            });
+            action.set_enabled(true);
+            action
         };
 
         let mut group = RelmActionGroup::<WindowActionGroup>::new();
-        group.add_action(action);
+        group.add_action(remove_zone_action);
         root.insert_action_group("win", Some(&group.into_action_group()));
 
         AsyncComponentParts { model, widgets }
@@ -279,6 +277,18 @@ impl AsyncComponent for ZoneView {
                     .emit(ZoneViewModeMsg::SetSettings(settings.clone()));
                 self.edit_mode.emit(ZoneEditModeMsg::SetSettings(settings));
             }
+            ZoneViewRequest::RemoveZone => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                relm4::spawn(async move {
+                    match broker.remove_zone(zone_name.as_str()).await {
+                        Ok(()) => {
+                            glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!")
+                        }
+                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
+                    };
+                });
+            }
             ZoneViewRequest::SetFirewalldRunning(is_running) => {
                 self.set_firewalld_running(is_running);
             }
@@ -302,6 +312,19 @@ impl AsyncComponent for ZoneView {
                     }
                     let is_running = broker.is_firewalld_active().await.unwrap_or(false);
                     let _ = sender.input(ZoneViewRequest::SetFirewalldRunning(is_running));
+                });
+            }
+            ZoneViewRequest::RemovePort(port, protocol) => {
+                // Persist remove-port via broker, then refresh settings
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Lookup the zone proxy and remove port
+                    let _ = broker.remove_port(zone_name.as_str(), port.as_str(), protocol.as_str()).await;
+                    if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
+                        let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                    }
                 });
             }
         }
