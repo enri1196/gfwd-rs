@@ -34,6 +34,7 @@ enum AppRequest {
     ToggleSidebar,
     ShowAddZoneDialog,
     ZoneAdded(AddZoneDialogResponse),
+    ZoneRemoved(String),
     UpdateContentWithZoneName(String),
 }
 
@@ -84,6 +85,12 @@ impl SimpleAsyncComponent for App {
             AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(_)) => {
                 glib::g_log!(LogLevel::Error, "Failed to add zone");
             }
+            AppRequest::ZoneRemoved(removed_zone) => {
+                self.sidebar.emit(SidebarViewRequest::RemoveZone(removed_zone));
+                let active_zone = self.broker.get_default_zone().await.unwrap();
+                self.zone_view
+                    .emit(ZoneViewRequest::SetZoneContent(active_zone));
+            }
             AppRequest::UpdateContentWithZoneName(zone_name) => {
                 self.zone_view
                     .emit(ZoneViewRequest::SetZoneContent(zone_name));
@@ -115,8 +122,11 @@ impl SimpleAsyncComponent for App {
             .unwrap_or(String::from("default"));
 
         let zone_view = ZoneView::builder()
-            .launch(initial_zone_name)
-            .forward(sender.input_sender(), |_| AppRequest::ToggleSidebar);
+            .launch((initial_zone_name, root.clone().into()))
+            .forward(sender.input_sender(), |resp| match resp {
+                components::zone_view::ZoneViewResponse::ToggleSidebar => AppRequest::ToggleSidebar,
+                components::zone_view::ZoneViewResponse::RemovedZoneSuccess(removed_zone) => AppRequest::ZoneRemoved(removed_zone),
+            });
 
         let dialog = AddZoneDialog::builder()
             .launch(())

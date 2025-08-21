@@ -1,7 +1,7 @@
 mod view_mode;
 mod port_item;
 
-use relm4::actions::{AccelsPlus, RelmAction, RelmActionGroup};
+use relm4::actions::{AccelsPlus, ActionGroupName, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
@@ -39,6 +39,7 @@ pub enum ZoneViewRequest {
 #[derive(Debug)]
 pub enum ZoneViewResponse {
     ToggleSidebar,
+    RemovedZoneSuccess(String)
 }
 
 relm4::new_action_group!(WindowActionGroup, "win");
@@ -47,7 +48,7 @@ relm4::new_stateless_action!(RemoveZoneAction, WindowActionGroup, "win.rza");
 
 #[relm4::component(async, pub)]
 impl AsyncComponent for ZoneView {
-    type Init = String;
+    type Init = (String, gtk::ApplicationWindow);
     type Input = ZoneViewRequest;
     type Output = ZoneViewResponse;
     type CommandOutput = ();
@@ -56,6 +57,7 @@ impl AsyncComponent for ZoneView {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
 
+            #[name = "title_bar"]
             adw::HeaderBar {
                 set_css_classes: &["flat"],
 
@@ -110,7 +112,7 @@ impl AsyncComponent for ZoneView {
     }
 
     async fn init(
-        initial_zone_name: Self::Init,
+        (initial_zone_name, app_window): Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
@@ -183,7 +185,7 @@ impl AsyncComponent for ZoneView {
         let mut group = RelmActionGroup::<WindowActionGroup>::new();
         group.add_action(activate_zone_action);
         group.add_action(remove_zone_action);
-        root.insert_action_group("win", Some(&group.into_action_group()));
+        app_window.insert_action_group(WindowActionGroup::NAME, Some(&group.into_action_group()));
 
         AsyncComponentParts { model, widgets }
     }
@@ -231,10 +233,12 @@ impl AsyncComponent for ZoneView {
             ZoneViewRequest::RemoveZone => {
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
+                let sender = sender.clone();
                 relm4::spawn(async move {
                     match broker.remove_zone(zone_name.as_str()).await {
                         Ok(()) => {
                             glib::g_log!(LogLevel::Info, "Stateless action for deleting zone!");
+                            let _ = sender.output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
                         }
                         Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
                     };
