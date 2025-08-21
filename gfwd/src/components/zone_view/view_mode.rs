@@ -84,6 +84,7 @@ impl SimpleComponent for ZoneInfoComponent {
 
                     #[wrap(Some)]
                     set_popover = &gtk::PopoverMenu::from_model(None::<&MenuModel>) {
+                        set_position: gtk::PositionType::Bottom,
                         #[wrap(Some)]
                         set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -92,10 +93,17 @@ impl SimpleComponent for ZoneInfoComponent {
 
                             gtk::Box {
                                 set_spacing: 6,
-                                #[name = "protocol_dd"]
-                                gtk::DropDown {
-                                    set_model: Some(&gtk::StringList::new(&["tcp", "udp"])),
-                                    set_selected: 0,
+                                #[name = "protocol_toggle"]
+                                gtk::ToggleButton {
+                                    set_label: "TCP",
+                                    set_active: true,
+                                    connect_toggled => move |btn| {
+                                        if btn.is_active() {
+                                            btn.set_label("TCP");
+                                        } else {
+                                            btn.set_label("UDP");
+                                        }
+                                    }
                                 },
                                 #[name = "port_entry"]
                                 gtk::Entry { set_placeholder_text: Some("80 or 8000-8080") }
@@ -109,9 +117,8 @@ impl SimpleComponent for ZoneInfoComponent {
                                 gtk::Button {
                                     add_css_class: "suggested-action",
                                     set_label: "Add",
-                                    connect_clicked[sender, protocol_dd, port_entry, add_menu_btn] => move |_| {
-                                        let idx = protocol_dd.selected();
-                                        let protocol = if idx == 1 { "udp" } else { "tcp" }.to_string();
+                                    connect_clicked[sender, protocol_toggle, port_entry, add_menu_btn] => move |_| {
+                                        let protocol = if protocol_toggle.is_active() { "tcp" } else { "udp" }.to_string();
                                         let port = port_entry.text().to_string();
                                         sender.input(ZoneViewModeMsg::AddPortConfirmed(port, protocol));
                                         add_menu_btn.popdown();
