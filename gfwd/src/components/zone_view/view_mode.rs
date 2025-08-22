@@ -13,18 +13,30 @@ pub struct ZoneInfoComponent {
     pub(crate) ports: FactoryVecDeque<PortItem>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ZoneViewModeMsg {
     SetSettings(ZoneSettings),
-    #[allow(unused)]
-    AddPortClicked,
-    AddPortConfirmed(String, String),
+    AddPort {
+        port: String,
+        protocol: String,
+        forward_port: Option<ForwardOpts>
+    },
     RemovePort(String, String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ForwardOpts {
+    pub to_port: String,
+    pub to_addr: String,
 }
 
 #[derive(Debug)]
 pub enum ZoneViewModeOut {
-    AddPort(String, String),
+    AddPort {
+        port: String,
+        protocol: String,
+        forward_port: Option<ForwardOpts>
+    },
     RemovePort(String, String),
 }
 
@@ -109,6 +121,48 @@ impl SimpleComponent for ZoneInfoComponent {
                                 gtk::Entry { set_placeholder_text: Some("80 or 8000-8080") }
                             },
 
+                            #[name = "forwarding_section"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 6,
+
+                                #[name = "forwarding_toggle"]
+                                gtk::ToggleButton {
+                                    set_label: "Port Forwarding: Disabled",
+                                    set_active: false,
+                                    connect_toggled[dest_ip_entry, dest_port_entry, port_entry] => move |btn| {
+                                        let is_enabled = btn.is_active();
+                                        if is_enabled {
+                                            btn.set_label("Port Forwarding: Enabled");
+                                            // Auto-populate destination port with source port
+                                            let source_port = port_entry.text().to_string();
+                                            if !source_port.is_empty() {
+                                                dest_port_entry.set_text(&source_port);
+                                            }
+                                        } else {
+                                            btn.set_label("Port Forwarding: Disabled");
+                                            // Clear forwarding fields when disabled
+                                            dest_ip_entry.set_text("");
+                                            dest_port_entry.set_text("");
+                                        }
+                                        dest_ip_entry.set_visible(is_enabled);
+                                        dest_port_entry.set_visible(is_enabled);
+                                    }
+                                },
+
+                                #[name = "dest_ip_entry"]
+                                gtk::Entry {
+                                    set_placeholder_text: Some("Destination IP (e.g. 192.168.1.100)"),
+                                    set_visible: false,
+                                },
+
+                                #[name = "dest_port_entry"]
+                                gtk::Entry {
+                                    set_placeholder_text: Some("Destination port (e.g. 8080)"),
+                                    set_visible: false,
+                                }
+                            },
+
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_halign: gtk::Align::Center,
@@ -117,10 +171,35 @@ impl SimpleComponent for ZoneInfoComponent {
                                 gtk::Button {
                                     add_css_class: "suggested-action",
                                     set_label: "Add",
-                                    connect_clicked[sender, protocol_toggle, port_entry, add_menu_btn] => move |_| {
+                                    connect_clicked[sender, protocol_toggle, port_entry, forwarding_toggle, dest_ip_entry, dest_port_entry, add_menu_btn] => move |_| {
                                         let protocol = if protocol_toggle.is_active() { "tcp" } else { "udp" }.to_string();
                                         let port = port_entry.text().to_string();
-                                        sender.input(ZoneViewModeMsg::AddPortConfirmed(port, protocol));
+
+                                        if port.trim().is_empty() {
+                                            return;
+                                        }
+
+                                        let forward_port = if forwarding_toggle.is_active() {
+                                            let dest_ip = dest_ip_entry.text().to_string();
+                                            let dest_port = dest_port_entry.text().to_string();
+
+                                            if dest_ip.trim().is_empty() || dest_port.trim().is_empty() {
+                                                return;
+                                            }
+
+                                            Some(ForwardOpts {
+                                                to_addr: dest_ip,
+                                                to_port: dest_port
+                                            })
+                                        } else {
+                                            None
+                                        };
+
+                                        sender.input(ZoneViewModeMsg::AddPort {
+                                            port,
+                                            protocol,
+                                            forward_port
+                                        });
                                         add_menu_btn.popdown();
                                     }
                                 }
@@ -167,17 +246,26 @@ impl SimpleComponent for ZoneInfoComponent {
             ZoneViewModeMsg::SetSettings(settings) => {
                 let mut ports = self.ports.guard();
                 ports.clear();
-                for (port, protocol) in &settings.ports {
-                    ports.push_back((port.clone(), protocol.clone()));
-                }
-                drop(ports);
 
+                // Load regular ports
+                for (port, protocol) in &settings.ports {
+                    ports.push_back((port.clone(), protocol.clone(), None));
+                }
+
+                // Load forwarded ports
+                for (port, protocol, to_port, to_addr) in &settings.forward_ports {
+                    ports.push_back((port.clone(), protocol.clone(), Some(ForwardOpts {
+                        to_port: to_port.clone(),
+                        to_addr: to_addr.clone()
+                    })));
+                }
+
+                drop(ports);
                 self.set_settings(Some(settings.clone()));
             }
-            ZoneViewModeMsg::AddPortClicked => {}
-            ZoneViewModeMsg::AddPortConfirmed(port, protocol) => {
-                let _ = _sender.output(ZoneViewModeOut::AddPort(port.clone(), protocol.clone()));
-                self.ports.guard().push_back((port, protocol));
+            ZoneViewModeMsg::AddPort{port, protocol, forward_port} => {
+                let _ = _sender.output(ZoneViewModeOut::AddPort {port: port.clone(), protocol: protocol.clone(), forward_port: forward_port.clone()});
+                self.ports.guard().push_back((port, protocol, forward_port));
             }
             ZoneViewModeMsg::RemovePort(port, protocol) => {
                 let _ = _sender.output(ZoneViewModeOut::RemovePort(port.clone(), protocol.clone()));

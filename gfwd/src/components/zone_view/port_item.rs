@@ -1,10 +1,13 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
+use crate::components::zone_view::view_mode::ForwardOpts;
+
 #[derive(Debug, PartialEq)]
 pub struct PortItem {
     pub port: String,
     pub protocol: String,
+    pub forwarding_port: Option<ForwardOpts>,
 }
 
 #[derive(Debug)]
@@ -14,7 +17,7 @@ pub enum PortItemInput {
 
 #[relm4::factory(pub)]
 impl FactoryComponent for PortItem {
-    type Init = (String, String);
+    type Init = (String, String, Option<ForwardOpts>);
     type Input = PortItemInput;
     type Output = (String, String);
     type CommandOutput = ();
@@ -22,8 +25,30 @@ impl FactoryComponent for PortItem {
 
     view! {
         adw::ActionRow {
-            set_title: &self.port,
-            set_subtitle: &self.protocol,
+            #[watch]
+            set_title: &if let Some(ref forward) = self.forwarding_port {
+                format!("{} ({}) → {}:{}", self.port, self.protocol, forward.to_addr, forward.to_port)
+            } else {
+                format!("{} ({})", self.port, self.protocol)
+            },
+
+            #[watch]
+            set_subtitle: &if self.forwarding_port.is_some() {
+                "Forwarded Port".to_string()
+            } else {
+                "Allowed Port".to_string()
+            },
+
+            add_prefix = &gtk::Image {
+                #[watch]
+                set_icon_name: Some(if self.forwarding_port.is_some() {
+                    "network-transmit-receive-symbolic"
+                } else {
+                    "network-server-symbolic"
+                }),
+                set_pixel_size: 16,
+                set_margin_end: 6,
+            },
 
             add_suffix = &gtk::Button {
                 set_icon_name: "user-trash-symbolic",
@@ -43,6 +68,7 @@ impl FactoryComponent for PortItem {
         Self {
             port: init.0,
             protocol: init.1,
+            forwarding_port: init.2
         }
     }
 

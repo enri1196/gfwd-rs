@@ -32,6 +32,7 @@ pub enum ZoneViewRequest {
     RemoveZone,
     SetFirewalldRunning(bool),
     AddPort(String, String),
+    AddForwardPort(String, String, String, String), // port, protocol, to_port, to_addr
     RemovePort(String, String),
 }
 
@@ -134,8 +135,12 @@ impl AsyncComponent for ZoneView {
         let view_mode = ZoneInfoComponent::builder().launch(()).forward(
             sender.input_sender(),
             |out| match out {
-                ZoneViewModeOut::AddPort(port, protocol) => {
-                    ZoneViewRequest::AddPort(port, protocol)
+                ZoneViewModeOut::AddPort { port, protocol, forward_port } => {
+                    if let Some(forward) = forward_port {
+                        ZoneViewRequest::AddForwardPort(port, protocol, forward.to_port, forward.to_addr)
+                    } else {
+                        ZoneViewRequest::AddPort(port, protocol)
+                    }
                 }
                 ZoneViewModeOut::RemovePort(port, protocol) => {
                     ZoneViewRequest::RemovePort(port, protocol)
@@ -265,6 +270,19 @@ impl AsyncComponent for ZoneView {
                     }
                     let is_running = broker.is_firewalld_active().await.unwrap_or(false);
                     let _ = sender.input(ZoneViewRequest::SetFirewalldRunning(is_running));
+                });
+            }
+            ZoneViewRequest::AddForwardPort(port, protocol, to_port, to_addr) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    let _ = broker
+                        .add_forward_port(zone_name.as_str(), port.as_str(), protocol.as_str(), to_port.as_str(), to_addr.as_str())
+                        .await;
+                    if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
+                        let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                    }
                 });
             }
             ZoneViewRequest::RemovePort(port, protocol) => {
