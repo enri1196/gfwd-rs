@@ -232,10 +232,12 @@ impl SimpleComponent for ZoneInfoComponent {
     ) -> ComponentParts<Self> {
         let ports = FactoryVecDeque::builder().launch_default().forward(
             sender.input_sender(),
-            |(port, protocol, forward_port): (String, String, Option<ForwardOpts>)| ZoneInfoRequest::RemovePort {
-                port,
-                protocol,
-                forward_port,
+            |(port, protocol, forward_port): (String, String, Option<ForwardOpts>)| {
+                ZoneInfoRequest::RemovePort {
+                    port,
+                    protocol,
+                    forward_port,
+                }
             },
         );
 

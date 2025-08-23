@@ -75,7 +75,11 @@ impl FactoryComponent for PortItem {
     fn update(&mut self, message: Self::Input, sender: FactorySender<Self>) {
         match message {
             PortItemRequest::Remove => {
-                let _ = sender.output((self.port.clone(), self.protocol.clone(), self.forwarding_port.clone()));
+                let _ = sender.output((
+                    self.port.clone(),
+                    self.protocol.clone(),
+                    self.forwarding_port.clone(),
+                ));
             }
         }
     }
