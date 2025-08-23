@@ -11,15 +11,15 @@ pub struct PortItem {
 }
 
 #[derive(Debug)]
-pub enum PortItemInput {
+pub enum PortItemRequest {
     Remove,
 }
 
 #[relm4::factory(pub)]
 impl FactoryComponent for PortItem {
     type Init = (String, String, Option<ForwardOpts>);
-    type Input = PortItemInput;
-    type Output = (String, String);
+    type Input = PortItemRequest;
+    type Output = (String, String, Option<ForwardOpts>);
     type CommandOutput = ();
     type ParentWidget = gtk::ListBox;
 
@@ -58,7 +58,7 @@ impl FactoryComponent for PortItem {
                 set_margin_top: 6,
                 set_margin_bottom: 6,
                 connect_clicked[sender, _port = self.port.clone(), _protocol = self.protocol.clone()] => move |_| {
-                    sender.input(PortItemInput::Remove);
+                    sender.input(PortItemRequest::Remove);
                 }
             }
         }
@@ -68,14 +68,14 @@ impl FactoryComponent for PortItem {
         Self {
             port: init.0,
             protocol: init.1,
-            forwarding_port: init.2
+            forwarding_port: init.2,
         }
     }
 
     fn update(&mut self, message: Self::Input, sender: FactorySender<Self>) {
         match message {
-            PortItemInput::Remove => {
-                let _ = sender.output((self.port.clone(), self.protocol.clone()));
+            PortItemRequest::Remove => {
+                let _ = sender.output((self.port.clone(), self.protocol.clone(), self.forwarding_port.clone()));
             }
         }
     }

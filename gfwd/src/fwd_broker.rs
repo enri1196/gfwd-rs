@@ -217,7 +217,28 @@ impl FwdBroker {
             .path(path.as_str())?
             .build()
             .await?;
-        Ok(zone.add_forward_port(&port, &protocol, to_port, to_addr).await?)
+        Ok(zone
+            .add_forward_port(&port, &protocol, to_port, to_addr)
+            .await?)
+    }
+
+    pub async fn remove_forward_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+        to_port: &str,
+        to_addr: &str,
+    ) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(&zone_name).await?;
+        let zone = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        Ok(zone
+            .remove_forward_port(&port, &protocol, to_port, to_addr)
+            .await?)
     }
 
     pub async fn is_firewalld_active(&self) -> Result<bool, GfwdError> {

@@ -6,7 +6,7 @@ use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
-use crate::components::zone_view::view_mode::{ZoneViewModeMsg, ZoneViewModeOut};
+use crate::components::zone_view::view_mode::{ZoneInfoRequest, ZoneInfoResponse};
 use crate::fwd_broker::FwdBroker;
 use crate::fwd_broker::ZoneSettings;
 use view_mode::ZoneInfoComponent;
@@ -34,6 +34,7 @@ pub enum ZoneViewRequest {
     AddPort(String, String),
     AddForwardPort(String, String, String, String), // port, protocol, to_port, to_addr
     RemovePort(String, String),
+    RemoveForwardPort(String, String, String, String), // port, protocol, to_port, to_addr
 }
 
 /// Responses that can be emitted from the ZoneView component.
@@ -135,22 +136,44 @@ impl AsyncComponent for ZoneView {
         let view_mode = ZoneInfoComponent::builder().launch(()).forward(
             sender.input_sender(),
             |out| match out {
-                ZoneViewModeOut::AddPort { port, protocol, forward_port } => {
+                ZoneInfoResponse::AddPort {
+                    port,
+                    protocol,
+                    forward_port,
+                } => {
                     if let Some(forward) = forward_port {
-                        ZoneViewRequest::AddForwardPort(port, protocol, forward.to_port, forward.to_addr)
+                        ZoneViewRequest::AddForwardPort(
+                            port,
+                            protocol,
+                            forward.to_port,
+                            forward.to_addr,
+                        )
                     } else {
                         ZoneViewRequest::AddPort(port, protocol)
                     }
                 }
-                ZoneViewModeOut::RemovePort(port, protocol) => {
-                    ZoneViewRequest::RemovePort(port, protocol)
+                ZoneInfoResponse::RemovePort {
+                    port,
+                    protocol,
+                    forward_port,
+                } => {
+                    if let Some(forward) = forward_port {
+                        ZoneViewRequest::RemoveForwardPort(
+                            port,
+                            protocol,
+                            forward.to_port,
+                            forward.to_addr,
+                        )
+                    } else {
+                        ZoneViewRequest::RemovePort(port, protocol)
+                    }
                 }
             },
         );
 
         // Only emit settings if they were successfully fetched
         if let Some(settings) = &initial_settings {
-            view_mode.emit(ZoneViewModeMsg::SetSettings(settings.clone()));
+            view_mode.emit(ZoneInfoRequest::SetSettings(settings.clone()));
         }
 
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
@@ -234,7 +257,7 @@ impl AsyncComponent for ZoneView {
                 });
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
-                self.view_mode.emit(ZoneViewModeMsg::SetSettings(settings));
+                self.view_mode.emit(ZoneInfoRequest::SetSettings(settings));
             }
             ZoneViewRequest::RemoveZone => {
                 let broker = self.broker;
@@ -278,7 +301,13 @@ impl AsyncComponent for ZoneView {
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
                     let _ = broker
-                        .add_forward_port(zone_name.as_str(), port.as_str(), protocol.as_str(), to_port.as_str(), to_addr.as_str())
+                        .add_forward_port(
+                            zone_name.as_str(),
+                            port.as_str(),
+                            protocol.as_str(),
+                            to_port.as_str(),
+                            to_addr.as_str(),
+                        )
                         .await;
                     if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                         let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
@@ -295,6 +324,30 @@ impl AsyncComponent for ZoneView {
                         .await;
                     if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                         let _ = sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                    }
+                });
+            }
+            ZoneViewRequest::RemoveForwardPort(port, protocol, to_port, to_addr) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    if let Err(err) = broker
+                        .remove_forward_port(
+                            zone_name.as_str(),
+                            port.as_str(),
+                            protocol.as_str(),
+                            to_port.as_str(),
+                            to_addr.as_str(),
+                        )
+                        .await
+                    {
+                        glib::g_log!(LogLevel::Error, "Could not remove forward port: {}", err);
+                    } else {
+                        if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
+                            let _ =
+                                sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                        }
                     }
                 });
             }

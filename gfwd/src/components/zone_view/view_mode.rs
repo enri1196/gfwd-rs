@@ -14,14 +14,18 @@ pub struct ZoneInfoComponent {
 }
 
 #[derive(Clone, Debug)]
-pub enum ZoneViewModeMsg {
+pub enum ZoneInfoRequest {
     SetSettings(ZoneSettings),
     AddPort {
         port: String,
         protocol: String,
-        forward_port: Option<ForwardOpts>
+        forward_port: Option<ForwardOpts>,
     },
-    RemovePort(String, String),
+    RemovePort {
+        port: String,
+        protocol: String,
+        forward_port: Option<ForwardOpts>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,20 +35,24 @@ pub struct ForwardOpts {
 }
 
 #[derive(Debug)]
-pub enum ZoneViewModeOut {
+pub enum ZoneInfoResponse {
     AddPort {
         port: String,
         protocol: String,
-        forward_port: Option<ForwardOpts>
+        forward_port: Option<ForwardOpts>,
     },
-    RemovePort(String, String),
+    RemovePort {
+        port: String,
+        protocol: String,
+        forward_port: Option<ForwardOpts>,
+    },
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for ZoneInfoComponent {
     type Init = ();
-    type Input = ZoneViewModeMsg;
-    type Output = ZoneViewModeOut;
+    type Input = ZoneInfoRequest;
+    type Output = ZoneInfoResponse;
 
     view! {
         adw::PreferencesPage {
@@ -195,7 +203,7 @@ impl SimpleComponent for ZoneInfoComponent {
                                             None
                                         };
 
-                                        sender.input(ZoneViewModeMsg::AddPort {
+                                        sender.input(ZoneInfoRequest::AddPort {
                                             port,
                                             protocol,
                                             forward_port
@@ -222,11 +230,14 @@ impl SimpleComponent for ZoneInfoComponent {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let ports = FactoryVecDeque::builder()
-            .launch_default()
-            .forward(sender.input_sender(), |output: (String, String)| {
-                ZoneViewModeMsg::RemovePort(output.0, output.1)
-            });
+        let ports = FactoryVecDeque::builder().launch_default().forward(
+            sender.input_sender(),
+            |(port, protocol, forward_port): (String, String, Option<ForwardOpts>)| ZoneInfoRequest::RemovePort {
+                port,
+                protocol,
+                forward_port,
+            },
+        );
 
         let model = ZoneInfoComponent {
             settings: None,
@@ -243,7 +254,7 @@ impl SimpleComponent for ZoneInfoComponent {
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         self.reset();
         match message {
-            ZoneViewModeMsg::SetSettings(settings) => {
+            ZoneInfoRequest::SetSettings(settings) => {
                 let mut ports = self.ports.guard();
                 ports.clear();
 
@@ -254,21 +265,41 @@ impl SimpleComponent for ZoneInfoComponent {
 
                 // Load forwarded ports
                 for (port, protocol, to_port, to_addr) in &settings.forward_ports {
-                    ports.push_back((port.clone(), protocol.clone(), Some(ForwardOpts {
-                        to_port: to_port.clone(),
-                        to_addr: to_addr.clone()
-                    })));
+                    ports.push_back((
+                        port.clone(),
+                        protocol.clone(),
+                        Some(ForwardOpts {
+                            to_port: to_port.clone(),
+                            to_addr: to_addr.clone(),
+                        }),
+                    ));
                 }
 
                 drop(ports);
                 self.set_settings(Some(settings.clone()));
             }
-            ZoneViewModeMsg::AddPort{port, protocol, forward_port} => {
-                let _ = _sender.output(ZoneViewModeOut::AddPort {port: port.clone(), protocol: protocol.clone(), forward_port: forward_port.clone()});
+            ZoneInfoRequest::AddPort {
+                port,
+                protocol,
+                forward_port,
+            } => {
+                let _ = _sender.output(ZoneInfoResponse::AddPort {
+                    port: port.clone(),
+                    protocol: protocol.clone(),
+                    forward_port: forward_port.clone(),
+                });
                 self.ports.guard().push_back((port, protocol, forward_port));
             }
-            ZoneViewModeMsg::RemovePort(port, protocol) => {
-                let _ = _sender.output(ZoneViewModeOut::RemovePort(port.clone(), protocol.clone()));
+            ZoneInfoRequest::RemovePort {
+                port,
+                protocol,
+                forward_port,
+            } => {
+                let _ = _sender.output(ZoneInfoResponse::RemovePort {
+                    port: port.clone(),
+                    protocol: protocol.clone(),
+                    forward_port: forward_port.clone(),
+                });
                 let mut ports = self.ports.guard();
                 let Some(index) = ports
                     .iter()
