@@ -1,14 +1,17 @@
 mod components;
 mod error;
 mod fwd_broker;
+mod validation;
 
 use std::rc::Rc;
 
+use relm4::abstractions::Toaster;
 use relm4::adw::{ApplicationWindow, prelude::*};
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::components::sidebar::{SidebarView, SidebarViewRequest};
+use crate::components::toast::{show_toast, ToastMessage};
 // use crate::components::zone_content::{ZoneView, ZoneViewRequest};
 use crate::components::zone_dialog::{AddZoneDialog, AddZoneDialogResponse};
 use crate::components::zone_view::{ZoneView, ZoneViewRequest};
@@ -26,6 +29,8 @@ struct App {
     sidebar: AsyncController<SidebarView>,
     #[tracker::do_not_track]
     zone_view: AsyncController<ZoneView>,
+    #[tracker::do_not_track]
+    toaster: Toaster,
     sidebar_visible: bool,
 }
 
@@ -48,15 +53,18 @@ impl SimpleAsyncComponent for App {
         adw::ApplicationWindow {
             set_default_size: (1280, 720),
 
-            adw::OverlaySplitView {
-                #[track(model.changed(App::sidebar_visible()))]
-                set_show_sidebar: *model.get_sidebar_visible(),
+            #[local_ref]
+            toast_overlay -> adw::ToastOverlay {
+                adw::OverlaySplitView {
+                    #[track(model.changed(App::sidebar_visible()))]
+                    set_show_sidebar: *model.get_sidebar_visible(),
 
-                #[wrap(Some)]
-                set_sidebar = model.sidebar.widget(),
+                    #[wrap(Some)]
+                    set_sidebar = model.sidebar.widget(),
 
-                #[wrap(Some)]
-                set_content = model.zone_view.widget(),
+                    #[wrap(Some)]
+                    set_content = model.zone_view.widget(),
+                }
             }
         }
     }
@@ -77,15 +85,21 @@ impl SimpleAsyncComponent for App {
                 match self.broker.add_zone(settings).await {
                     Ok(_) => {
                         glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
+                        show_toast(&self.toaster, ToastMessage::success(format!("Zone '{}' created successfully", zone_name)));
                         self.sidebar.emit(SidebarViewRequest::UpdateZones)
                     }
-                    Err(e) => glib::g_log!(LogLevel::Error, "Failed to add zone: {}", e),
+                    Err(e) => {
+                        glib::g_log!(LogLevel::Error, "Failed to add zone: {}", e);
+                        show_toast(&self.toaster, ToastMessage::error(e.user_message()));
+                    }
                 };
             }
             AppRequest::ZoneAdded(AddZoneDialogResponse::ZoneSettings(_)) => {
                 glib::g_log!(LogLevel::Error, "Failed to add zone");
+                show_toast(&self.toaster, ToastMessage::error("Failed to add zone: Invalid zone name"));
             }
             AppRequest::ZoneRemoved(removed_zone) => {
+                show_toast(&self.toaster, ToastMessage::success(format!("Zone '{}' deleted successfully", removed_zone)));
                 self.sidebar
                     .emit(SidebarViewRequest::RemoveZone(removed_zone));
                 let active_zone = self.broker.get_default_zone().await.unwrap();
@@ -137,16 +151,20 @@ impl SimpleAsyncComponent for App {
 
         let root = Rc::new(root);
 
+        let toaster = Toaster::default();
+
         let model = App {
             broker,
             root: Rc::clone(&root),
             dialog,
             sidebar,
             zone_view,
+            toaster,
             sidebar_visible: true,
             tracker: 0,
         };
 
+        let toast_overlay = model.toaster.overlay_widget();
         let widgets = view_output!();
         AsyncComponentParts { model, widgets }
     }
