@@ -36,14 +36,14 @@ GFWD provides an intuitive graphical interface for configuring firewalld, the dy
 ### Building from Source
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd gfwd
+git clone https://github.com/enri1196/gfwd-rs.git
+cd gfwd-rs
 
 # Build the project
 cargo build --release
 
 # Run the application
-cargo run
+cargo run --release
 ```
 
 ## Usage

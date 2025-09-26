@@ -1,4 +1,4 @@
-use crate::error::GfwdError;
+use crate::core::error::GfwdError;
 
 /// Validates a zone name
 pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {

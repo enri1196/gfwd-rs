@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use crate::components::zone_item::ZoneItem;
-use crate::fwd_broker::FwdBroker;
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
+
+use crate::core::FwdBroker;
+use crate::messages::zone::{SidebarRequest, SidebarResponse};
+use crate::ui::components::ZoneItem;
+use crate::utils::constants::SIDEBAR_WIDTH;
 
 pub struct SidebarView {
     broker: &'static FwdBroker,
@@ -13,27 +16,11 @@ pub struct SidebarView {
     default_zone: String,
 }
 
-#[derive(Debug)]
-pub enum SidebarViewRequest {
-    UpdateZones,
-    ShowAddZoneDialog,
-    SetDefaultZone,
-    SetActiveZones,
-    RemoveZone(String),
-}
-
-#[derive(Debug)]
-pub enum SidebarViewResponse {
-    ShowAddZoneDialog,
-    SelectedZone(String),
-}
-
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for SidebarView {
     type Init = ();
-    type Input = SidebarViewRequest;
-    type Output = SidebarViewResponse;
-    type Widgets = SidebarWidgets;
+    type Input = SidebarRequest;
+    type Output = SidebarResponse;
 
     view! {
         gtk::ScrolledWindow {
@@ -44,7 +31,7 @@ impl SimpleAsyncComponent for SidebarView {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 12,
                 set_margin_all: 12,
-                set_width_request: 250,
+                set_width_request: SIDEBAR_WIDTH,
 
                 adw::HeaderBar {
                     set_show_end_title_buttons: false,
@@ -62,7 +49,7 @@ impl SimpleAsyncComponent for SidebarView {
                         set_tooltip_text: Some("New Zone"),
                         set_css_classes: &["flat"],
                         connect_clicked[sender] => move |_| {
-                            sender.input(SidebarViewRequest::ShowAddZoneDialog);
+                            sender.input(SidebarRequest::ShowAddZoneDialog);
                         }
                     }
                 },
@@ -75,7 +62,7 @@ impl SimpleAsyncComponent for SidebarView {
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
         match msg {
-            SidebarViewRequest::UpdateZones => {
+            SidebarRequest::UpdateZones => {
                 let zones = self.broker.get_zones().await.unwrap_or_default();
                 glib::g_log!(LogLevel::Message, "Found {} zones", zones.len());
                 for zone in zones {
@@ -83,9 +70,9 @@ impl SimpleAsyncComponent for SidebarView {
                         self.zones.guard().push_back(zone);
                     }
                 }
-                sender.input(SidebarViewRequest::SetDefaultZone);
+                sender.input(SidebarRequest::SetDefaultZone);
             }
-            SidebarViewRequest::SetDefaultZone => {
+            SidebarRequest::SetDefaultZone => {
                 match self.broker.get_default_zone().await {
                     Ok(default_zone) => {
                         glib::g_log!(LogLevel::Message, "Default zone: {}", default_zone);
@@ -96,16 +83,15 @@ impl SimpleAsyncComponent for SidebarView {
                     }
                     Err(error) => glib::g_log!(LogLevel::Error, "Default Zone Error: {}", error),
                 }
-                sender.input(SidebarViewRequest::SetActiveZones);
+                sender.input(SidebarRequest::SetActiveZones);
             }
-            SidebarViewRequest::SetActiveZones => {
+            SidebarRequest::SetActiveZones => {
                 match self.broker.get_active_zones().await {
                     Ok(active_zones) => {
                         glib::g_log!(LogLevel::Message, "Active zones: {}", active_zones.len());
                         glib::g_log!(LogLevel::Message, "{:?}", active_zones);
                         self.active_zones = active_zones;
                         if let Some(_zone) = self.active_zones.get(&self.default_zone) {
-                            // glib::g_log!(LogLevel::Message, "Public zone: {}", zone.len());
                             self.zones.guard().iter_mut().for_each(|zone| {
                                 zone.set_is_active(zone.name == self.default_zone)
                             });
@@ -114,10 +100,10 @@ impl SimpleAsyncComponent for SidebarView {
                     Err(error) => glib::g_log!(LogLevel::Error, "Active Zone Error: {}", error),
                 }
             }
-            SidebarViewRequest::ShowAddZoneDialog => {
-                let _ = sender.output(SidebarViewResponse::ShowAddZoneDialog);
+            SidebarRequest::ShowAddZoneDialog => {
+                let _ = sender.output(SidebarResponse::ShowAddZoneDialog);
             }
-            SidebarViewRequest::RemoveZone(removed_zone) => {
+            SidebarRequest::RemoveZone(removed_zone) => {
                 let mut zones = self.zones.guard();
                 let Some(idx) = zones.iter().position(|item| &item.name == &removed_zone) else {
                     glib::g_log!(
@@ -139,14 +125,13 @@ impl SimpleAsyncComponent for SidebarView {
     ) -> AsyncComponentParts<Self> {
         let broker = FwdBroker::get_broker().await;
 
-        let zones =
-            FactoryVecDeque::builder()
-                .launch_default()
-                .forward(sender.output_sender(), |msg| match msg {
-                    crate::components::zone_item::ZoneItemResponse::SelectedZone(item_name) => {
-                        SidebarViewResponse::SelectedZone(item_name)
-                    }
-                });
+        let zones = FactoryVecDeque::builder()
+            .launch_default()
+            .forward(sender.output_sender(), |msg| match msg {
+                crate::ui::components::ZoneItemResponse::SelectedZone(item_name) => {
+                    SidebarResponse::SelectedZone(item_name)
+                }
+            });
 
         let model = SidebarView {
             broker,
@@ -157,7 +142,7 @@ impl SimpleAsyncComponent for SidebarView {
 
         let zones_list_box = model.zones.widget();
         let widgets = view_output!();
-        sender.input(SidebarViewRequest::UpdateZones);
+        sender.input(SidebarRequest::UpdateZones);
         AsyncComponentParts { model, widgets }
     }
 }

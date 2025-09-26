@@ -1,8 +1,9 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::fwd_broker::{ZoneSettings, ZoneTarget};
-use crate::validation::validate_zone_name;
+use crate::core::validation::validate_zone_name;
+use crate::messages::zone::{ZoneDialogRequest, ZoneDialogResponse};
+use crate::models::{ZoneSettings, ZoneTarget};
 
 #[tracker::track]
 #[derive(Debug)]
@@ -14,27 +15,11 @@ pub struct AddZoneDialog {
     name_error: Option<String>,
 }
 
-#[derive(Debug)]
-pub enum AddZoneDialogRequest {
-    SetName(String),
-    SetDescription(String),
-    SetTarget(ZoneTarget),
-    ValidateName,
-    Add,
-    Cancel,
-}
-
-#[derive(Debug)]
-pub enum AddZoneDialogResponse {
-    ZoneSettings(ZoneSettings),
-}
-
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for AddZoneDialog {
     type Init = ();
-    type Input = AddZoneDialogRequest;
-    type Output = AddZoneDialogResponse;
-    type Widgets = AddZoneDialogWidgets;
+    type Input = ZoneDialogRequest;
+    type Output = ZoneDialogResponse;
 
     view! {
         dialog = adw::Dialog {
@@ -52,10 +37,10 @@ impl SimpleAsyncComponent for AddZoneDialog {
                         #[track(model.changed(AddZoneDialog::name_error()))]
                         set_css_classes: if model.name_error.is_some() { &["error"] } else { &[] },
                         connect_changed[sender] => move |entry| {
-                            sender.input(AddZoneDialogRequest::SetName(entry.text().to_string()));
+                            sender.input(ZoneDialogRequest::SetName(entry.text().to_string()));
                         },
                         connect_apply[sender] => move |_| {
-                            sender.input(AddZoneDialogRequest::ValidateName);
+                            sender.input(ZoneDialogRequest::ValidateName);
                         },
                     },
 
@@ -75,7 +60,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     add = &adw::EntryRow {
                         set_title: "Description",
                         connect_changed[sender] => move |entry| {
-                            sender.input(AddZoneDialogRequest::SetDescription(entry.text().to_string()));
+                            sender.input(ZoneDialogRequest::SetDescription(entry.text().to_string()));
                         },
                     },
 
@@ -103,7 +88,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                                 3 => ZoneTarget::Reject,
                                 _ => ZoneTarget::Default,
                             };
-                            sender.input(AddZoneDialogRequest::SetTarget(target));
+                            sender.input(ZoneDialogRequest::SetTarget(target));
                         },
                     },
                 },
@@ -118,7 +103,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
 
                         append = &gtk::Button::with_label("Cancel") {
                             connect_clicked[sender, root] => move |_| {
-                                sender.input(AddZoneDialogRequest::Cancel);
+                                sender.input(ZoneDialogRequest::Cancel);
                                 root.close();
                             },
                         },
@@ -128,7 +113,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                             #[track(model.changed(AddZoneDialog::name_valid()))]
                             set_sensitive: model.name_valid && !model.name.is_empty(),
                             connect_clicked[sender, root] => move |_| {
-                                sender.input(AddZoneDialogRequest::Add);
+                                sender.input(ZoneDialogRequest::Add);
                                 root.close();
                             },
                         },
@@ -153,7 +138,6 @@ impl SimpleAsyncComponent for AddZoneDialog {
         };
 
         let widgets = view_output!();
-
         AsyncComponentParts { model, widgets }
     }
 
@@ -161,17 +145,17 @@ impl SimpleAsyncComponent for AddZoneDialog {
         self.reset();
         
         match msg {
-            AddZoneDialogRequest::SetName(name) => {
+            ZoneDialogRequest::SetName(name) => {
                 self.set_name(name);
-                sender.input(AddZoneDialogRequest::ValidateName);
+                sender.input(ZoneDialogRequest::ValidateName);
             }
-            AddZoneDialogRequest::SetDescription(desc) => {
+            ZoneDialogRequest::SetDescription(desc) => {
                 self.set_description(desc);
             }
-            AddZoneDialogRequest::SetTarget(target) => {
+            ZoneDialogRequest::SetTarget(target) => {
                 self.set_target(target);
             }
-            AddZoneDialogRequest::ValidateName => {
+            ZoneDialogRequest::ValidateName => {
                 match validate_zone_name(&self.name) {
                     Ok(_) => {
                         self.set_name_valid(true);
@@ -183,7 +167,7 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     }
                 }
             }
-            AddZoneDialogRequest::Add => {
+            ZoneDialogRequest::Add => {
                 if self.name_valid && !self.name.is_empty() {
                     let settings = ZoneSettings {
                         name: self.name.clone(),
@@ -198,11 +182,11 @@ impl SimpleAsyncComponent for AddZoneDialog {
                     };
                     
                     sender
-                        .output(AddZoneDialogResponse::ZoneSettings(settings))
+                        .output(ZoneDialogResponse::ZoneSettings(settings))
                         .unwrap();
                 }
             }
-            AddZoneDialogRequest::Cancel => {
+            ZoneDialogRequest::Cancel => {
                 // Reset form
                 self.set_name(String::new());
                 self.set_description(String::new());

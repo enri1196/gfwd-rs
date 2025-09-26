@@ -1,5 +1,7 @@
 use relm4::{abstractions::Toaster, prelude::*};
 
+use crate::utils::constants::{TOAST_TIMEOUT_ERROR, TOAST_TIMEOUT_SUCCESS};
+
 #[derive(Debug, Clone)]
 pub enum ToastType {
     Success,
@@ -18,7 +20,7 @@ impl ToastMessage {
         Self {
             message: message.into(),
             toast_type: ToastType::Success,
-            timeout: Some(3),
+            timeout: Some(TOAST_TIMEOUT_SUCCESS),
         }
     }
 
@@ -26,7 +28,7 @@ impl ToastMessage {
         Self {
             message: message.into(),
             toast_type: ToastType::Error,
-            timeout: Some(8),
+            timeout: Some(TOAST_TIMEOUT_ERROR),
         }
     }
 }
