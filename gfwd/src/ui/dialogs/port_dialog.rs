@@ -30,162 +30,256 @@ impl SimpleAsyncComponent for AddPortDialog {
 
     view! {
         dialog = adw::Dialog {
-            set_title: "Add Port",
+            set_title: "Add Port Rule",
+            set_content_width: 450,
+            set_content_height: 600,
 
             #[wrap(Some)]
-            set_child = &adw::PreferencesPage {
-                add = &adw::PreferencesGroup {
-                    set_title: "Port Configuration",
-                    set_description: Some("Configure a new port rule for this zone"),
+            set_child = &adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {
+                    set_show_end_title_buttons: false,
+                    add_css_class: "flat",
+                    
+                    #[wrap(Some)]
+                    set_title_widget = &adw::WindowTitle {
+                        set_title: "Add Port",
+                        set_subtitle: "Configure port access and forwarding",
+                    },
 
-                    // Port field
-                    add = &adw::EntryRow {
-                        set_title: "Port",
-                        set_text: &model.port,
-                        #[track(model.changed(AddPortDialog::port_error()))]
-                        set_css_classes: if model.port_error.is_some() { &["error"] } else { &[] },
-                        connect_changed[sender] => move |entry| {
-                            sender.input(PortDialogRequest::SetPort(entry.text().to_string()));
-                        },
-                        connect_apply[sender] => move |_| {
-                            sender.input(PortDialogRequest::ValidatePort);
-                        },
-
-                        add_suffix = &gtk::Label {
-                            set_text: "e.g. 80, 8080, 1000-2000",
-                            add_css_class: "dim-label",
-                            add_css_class: "caption",
+                    pack_start = &gtk::Button {
+                        set_label: "Cancel",
+                        connect_clicked[sender, root] => move |_| {
+                            sender.input(PortDialogRequest::Cancel);
+                            root.close();
                         },
                     },
 
-                    // Port error label
-                    add = &gtk::Label {
-                        #[track(model.changed(AddPortDialog::port_error()))]
-                        set_text: model.port_error.as_deref().unwrap_or(""),
-                        #[track(model.changed(AddPortDialog::port_error()))]
-                        set_visible: model.port_error.is_some(),
-                        set_halign: gtk::Align::Start,
-                        set_margin_start: 12,
-                        add_css_class: "error",
-                        add_css_class: "caption",
-                    },
-
-                    // Protocol selection
-                    add = &adw::ComboRow {
-                        set_title: "Protocol",
-                        set_model: Some(&gtk::StringList::new(SUPPORTED_PROTOCOLS)),
-                        set_selected: SUPPORTED_PROTOCOLS.iter().position(|&p| p == model.protocol.as_str()).unwrap_or(0) as u32,
-                        connect_selected_notify[sender] => move |combo| {
-                            let protocol = SUPPORTED_PROTOCOLS.get(combo.selected() as usize).unwrap_or(&"tcp");
-                            sender.input(PortDialogRequest::SetProtocol(protocol.to_string()));
-                        },
-                    },
-
-                    // Port forwarding toggle
-                    add = &adw::SwitchRow {
-                        set_title: "Port Forwarding",
-                        set_subtitle: "Forward traffic to another address",
-                        #[track(model.changed(AddPortDialog::is_forwarding()))]
-                        set_active: model.is_forwarding,
-                        connect_active_notify[sender] => move |switch| {
-                            sender.input(PortDialogRequest::SetIsForwarding(switch.is_active()));
+                    pack_end = &gtk::Button {
+                        set_label: "Add Port",
+                        add_css_class: "suggested-action",
+                        #[track(model.changed(AddPortDialog::port_valid()) | model.changed(AddPortDialog::is_forwarding()) | model.changed(AddPortDialog::dest_ip_valid()) | model.changed(AddPortDialog::dest_port_valid()))]
+                        set_sensitive: model.port_valid && (!model.is_forwarding || (model.dest_ip_valid && model.dest_port_valid)),
+                        connect_clicked[sender, root] => move |_| {
+                            sender.input(PortDialogRequest::Add);
+                            root.close();
                         },
                     },
                 },
 
-                // Forwarding configuration
-                add = &adw::PreferencesGroup {
-                    set_title: "Forwarding Configuration",
-                    #[track(model.changed(AddPortDialog::is_forwarding()))]
-                    set_visible: model.is_forwarding,
+                #[wrap(Some)]
+                set_content = &gtk::ScrolledWindow {
+                    set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+                    set_vexpand: true,
 
-                    // Destination IP
-                    add = &adw::EntryRow {
-                        set_title: "Destination IP",
-                        set_text: &model.dest_ip,
-                        #[track(model.changed(AddPortDialog::dest_ip_error()))]
-                        set_css_classes: if model.dest_ip_error.is_some() { &["error"] } else { &[] },
-                        connect_changed[sender] => move |entry| {
-                            sender.input(PortDialogRequest::SetDestIp(entry.text().to_string()));
-                        },
-                        connect_apply[sender] => move |_| {
-                            sender.input(PortDialogRequest::ValidateDestIp);
-                        },
+                    #[wrap(Some)]
+                    set_child = &adw::Clamp {
+                        set_maximum_size: 450,
+                        set_tightening_threshold: 400,
 
-                        add_suffix = &gtk::Label {
-                            set_text: "e.g. 192.168.1.100",
-                            add_css_class: "dim-label",
-                            add_css_class: "caption",
-                        },
-                    },
+                        adw::PreferencesPage {
+                            set_icon_name: Some("network-wired-symbolic"),
+                            set_title: "Port Configuration",
+                            set_description: "Configure port access rules and optional forwarding",
 
-                    // Destination IP error
-                    add = &gtk::Label {
-                        #[track(model.changed(AddPortDialog::dest_ip_error()))]
-                        set_text: model.dest_ip_error.as_deref().unwrap_or(""),
-                        #[track(model.changed(AddPortDialog::dest_ip_error()))]
-                        set_visible: model.dest_ip_error.is_some(),
-                        set_halign: gtk::Align::Start,
-                        set_margin_start: 12,
-                        add_css_class: "error",
-                        add_css_class: "caption",
-                    },
+                            add = &adw::PreferencesGroup {
+                                set_title: "Port Information",
+                                set_description: Some("Specify which port and protocol to configure"),
 
-                    // Destination port
-                    add = &adw::EntryRow {
-                        set_title: "Destination Port",
-                        set_text: &model.dest_port,
-                        #[track(model.changed(AddPortDialog::dest_port_error()))]
-                        set_css_classes: if model.dest_port_error.is_some() { &["error"] } else { &[] },
-                        connect_changed[sender] => move |entry| {
-                            sender.input(PortDialogRequest::SetDestPort(entry.text().to_string()));
-                        },
-                        connect_apply[sender] => move |_| {
-                            sender.input(PortDialogRequest::ValidateDestPort);
-                        },
+                                // Port field with validation
+                                add = &adw::EntryRow {
+                                    set_title: "Port Number",
+                                    #[watch]
+                                    set_text: &model.port,
+                                    #[track(model.changed(AddPortDialog::port_error()))]
+                                    set_css_classes: if model.port_error.is_some() { &["error"] } else { &[] },
+                                    
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("network-server-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
 
-                        add_suffix = &gtk::Label {
-                            set_text: "e.g. 8080",
-                            add_css_class: "dim-label",
-                            add_css_class: "caption",
-                        },
-                    },
+                                    add_suffix = &gtk::Label {
+                                        set_text: "e.g. 80, 8080, 1000-2000",
+                                        add_css_class: "dim-label",
+                                        add_css_class: "caption",
+                                    },
 
-                    // Destination port error
-                    add = &gtk::Label {
-                        #[track(model.changed(AddPortDialog::dest_port_error()))]
-                        set_text: model.dest_port_error.as_deref().unwrap_or(""),
-                        #[track(model.changed(AddPortDialog::dest_port_error()))]
-                        set_visible: model.dest_port_error.is_some(),
-                        set_halign: gtk::Align::Start,
-                        set_margin_start: 12,
-                        add_css_class: "error",
-                        add_css_class: "caption",
-                    },
-                },
+                                    connect_changed[sender] => move |entry| {
+                                        sender.input(PortDialogRequest::SetPort(entry.text().to_string()));
+                                    },
+                                    connect_apply[sender] => move |_| {
+                                        sender.input(PortDialogRequest::ValidatePort);
+                                    },
+                                },
 
-                // Action buttons
-                add = &adw::PreferencesGroup {
-                    add = &gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_halign: gtk::Align::End,
-                        set_spacing: 6,
-                        set_margin_all: 12,
+                                // Port validation feedback
+                                add = &adw::ActionRow {
+                                    #[track(model.changed(AddPortDialog::port_error()))]
+                                    set_visible: model.port_error.is_some(),
+                                    #[track(model.changed(AddPortDialog::port_error()))]
+                                    set_title: model.port_error.as_deref().unwrap_or(""),
+                                    add_css_class: "error",
 
-                        append = &gtk::Button::with_label("Cancel") {
-                            connect_clicked[sender, root] => move |_| {
-                                sender.input(PortDialogRequest::Cancel);
-                                root.close();
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("dialog-warning-symbolic"),
+                                        set_pixel_size: 16,
+                                        add_css_class: "error",
+                                    },
+                                },
+
+                                // Protocol selection
+                                add = &adw::ComboRow {
+                                    set_title: "Protocol",
+                                    set_subtitle: "Network protocol for this port",
+                                    set_model: Some(&gtk::StringList::new(SUPPORTED_PROTOCOLS)),
+                                    set_selected: SUPPORTED_PROTOCOLS.iter().position(|&p| p == model.protocol.as_str()).unwrap_or(0) as u32,
+                                    
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("preferences-system-network-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
+
+                                    connect_selected_notify[sender] => move |combo| {
+                                        let protocol = SUPPORTED_PROTOCOLS.get(combo.selected() as usize).unwrap_or(&"tcp");
+                                        sender.input(PortDialogRequest::SetProtocol(protocol.to_string()));
+                                    },
+                                },
                             },
-                        },
 
-                        append = &gtk::Button::with_label("Add Port") {
-                            add_css_class: "suggested-action",
-                            #[track(model.changed(AddPortDialog::port_valid()) | model.changed(AddPortDialog::is_forwarding()) | model.changed(AddPortDialog::dest_ip_valid()) | model.changed(AddPortDialog::dest_port_valid()))]
-                            set_sensitive: model.port_valid && (!model.is_forwarding || (model.dest_ip_valid && model.dest_port_valid)),
-                            connect_clicked[sender, root] => move |_| {
-                                sender.input(PortDialogRequest::Add);
-                                root.close();
+                            add = &adw::PreferencesGroup {
+                                set_title: "Port Forwarding",
+                                set_description: Some("Optionally forward traffic to another destination"),
+
+                                // Port forwarding toggle
+                                add = &adw::SwitchRow {
+                                    set_title: "Enable Port Forwarding",
+                                    set_subtitle: "Forward incoming traffic to another address",
+                                    #[track(model.changed(AddPortDialog::is_forwarding()))]
+                                    set_active: model.is_forwarding,
+                                    
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("go-jump-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
+
+                                    connect_active_notify[sender] => move |switch| {
+                                        sender.input(PortDialogRequest::SetIsForwarding(switch.is_active()));
+                                    },
+                                },
+                            },
+
+                            // Forwarding configuration (conditionally visible)
+                            add = &adw::PreferencesGroup {
+                                set_title: "Forwarding Destination",
+                                set_description: Some("Configure where to forward the traffic"),
+                                #[track(model.changed(AddPortDialog::is_forwarding()))]
+                                set_visible: model.is_forwarding,
+
+                                // Destination IP
+                                add = &adw::EntryRow {
+                                    set_title: "Destination IP Address",
+                                    #[watch]
+                                    set_text: &model.dest_ip,
+                                    #[track(model.changed(AddPortDialog::dest_ip_error()))]
+                                    set_css_classes: if model.dest_ip_error.is_some() { &["error"] } else { &[] },
+                                    
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("network-workgroup-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
+
+                                    add_suffix = &gtk::Label {
+                                        set_text: "e.g. 192.168.1.100",
+                                        add_css_class: "dim-label",
+                                        add_css_class: "caption",
+                                    },
+
+                                    connect_changed[sender] => move |entry| {
+                                        sender.input(PortDialogRequest::SetDestIp(entry.text().to_string()));
+                                    },
+                                    connect_apply[sender] => move |_| {
+                                        sender.input(PortDialogRequest::ValidateDestIp);
+                                    },
+                                },
+
+                                // Destination IP validation feedback
+                                add = &adw::ActionRow {
+                                    #[track(model.changed(AddPortDialog::dest_ip_error()))]
+                                    set_visible: model.dest_ip_error.is_some(),
+                                    #[track(model.changed(AddPortDialog::dest_ip_error()))]
+                                    set_title: model.dest_ip_error.as_deref().unwrap_or(""),
+                                    add_css_class: "error",
+
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("dialog-warning-symbolic"),
+                                        set_pixel_size: 16,
+                                        add_css_class: "error",
+                                    },
+                                },
+
+                                // Destination port
+                                add = &adw::EntryRow {
+                                    set_title: "Destination Port",
+                                    #[watch]
+                                    set_text: &model.dest_port,
+                                    #[track(model.changed(AddPortDialog::dest_port_error()))]
+                                    set_css_classes: if model.dest_port_error.is_some() { &["error"] } else { &[] },
+                                    
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("network-server-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
+
+                                    add_suffix = &gtk::Label {
+                                        set_text: "e.g. 8080",
+                                        add_css_class: "dim-label",
+                                        add_css_class: "caption",
+                                    },
+
+                                    connect_changed[sender] => move |entry| {
+                                        sender.input(PortDialogRequest::SetDestPort(entry.text().to_string()));
+                                    },
+                                    connect_apply[sender] => move |_| {
+                                        sender.input(PortDialogRequest::ValidateDestPort);
+                                    },
+                                },
+
+                                // Destination port validation feedback
+                                add = &adw::ActionRow {
+                                    #[track(model.changed(AddPortDialog::dest_port_error()))]
+                                    set_visible: model.dest_port_error.is_some(),
+                                    #[track(model.changed(AddPortDialog::dest_port_error()))]
+                                    set_title: model.dest_port_error.as_deref().unwrap_or(""),
+                                    add_css_class: "error",
+
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("dialog-warning-symbolic"),
+                                        set_pixel_size: 16,
+                                        add_css_class: "error",
+                                    },
+                                },
+
+                                // Forwarding summary
+                                add = &adw::ActionRow {
+                                    #[track(model.changed(AddPortDialog::is_forwarding()) | model.changed(AddPortDialog::dest_ip()) | model.changed(AddPortDialog::dest_port()) | model.changed(AddPortDialog::port()) | model.changed(AddPortDialog::protocol()))]
+                                    set_visible: model.is_forwarding && !model.dest_ip.is_empty() && !model.dest_port.is_empty(),
+                                    set_title: "Forwarding Summary",
+                                    #[track(model.changed(AddPortDialog::dest_ip()) | model.changed(AddPortDialog::dest_port()) | model.changed(AddPortDialog::port()) | model.changed(AddPortDialog::protocol()))]
+                                    set_subtitle: &format!("{}:{}/{} → {}:{}", 
+                                        "0.0.0.0", // Any interface
+                                        model.port,
+                                        model.protocol,
+                                        model.dest_ip,
+                                        model.dest_port
+                                    ),
+                                    add_css_class: "caption",
+
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("emblem-ok-symbolic"),
+                                        set_pixel_size: 16,
+                                        add_css_class: "success",
+                                    },
+                                },
                             },
                         },
                     },
