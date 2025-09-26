@@ -1,3 +1,4 @@
+use relm4::actions::{AccelsPlus, ActionGroupName, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
@@ -8,6 +9,11 @@ use crate::models::ZoneSettings;
 use crate::ui::components::{PortItem, PortItemResponse};
 use crate::ui::dialogs::AddPortDialog;
 use crate::messages::port::PortDialogResponse;
+use crate::utils::constants::{APP_NAME, APP_VERSION};
+
+relm4::new_action_group!(WindowActionGroup, "win");
+relm4::new_stateless_action!(DeleteZoneAction, WindowActionGroup, "delete-zone");
+relm4::new_stateless_action!(AboutAction, WindowActionGroup, "about");
 
 #[tracker::track]
 pub struct ZoneView {
@@ -52,6 +58,13 @@ impl AsyncComponent for ZoneView {
                             sender.input(ZoneViewRequest::ToggleFirewalld);
                         }
                     }
+                },
+
+                pack_end = &gtk::MenuButton {
+                    set_icon_name: "open-menu-symbolic",
+                    set_tooltip_text: Some("Zone actions"),
+                    #[wrap(Some)]
+                    set_popover = &gtk::PopoverMenu::from_model(Some(&main_menu)) {}
                 },
             },
 
@@ -99,6 +112,13 @@ impl AsyncComponent for ZoneView {
                     },
                 },
             },
+        }
+    }
+
+    menu! {
+        main_menu: {
+            "Delete Zone" => DeleteZoneAction,
+            "About" => AboutAction,
         }
     }
 
@@ -155,6 +175,43 @@ impl AsyncComponent for ZoneView {
 
         let ports_list_box = model.ports.widget();
         let widgets = view_output!();
+
+        // Set up actions
+        let app = relm4::main_application();
+        app.set_accelerators_for_action::<DeleteZoneAction>(&["<primary>Delete"]);
+
+        let sender_delete = sender.clone();
+        let delete_zone_action: RelmAction<DeleteZoneAction> = {
+            let action = RelmAction::new_stateless(move |_| {
+                sender_delete.input(ZoneViewRequest::RemoveZone);
+            });
+            action.set_enabled(true);
+            action
+        };
+
+        let app_window = _app_window.clone();
+        let about_action: RelmAction<AboutAction> = {
+            let action = RelmAction::new_stateless(move |_| {
+                let about_dialog = adw::AboutDialog::builder()
+                    .application_name(APP_NAME)
+                    .version(APP_VERSION)
+                    .developer_name("GFWD Contributors")
+                    .website("https://github.com/enri1196/gfwd-rs")
+                    .issue_url("https://github.com/enri1196/gfwd-rs/issues")
+                    .comments("A modern GTK4 firewall management application")
+                    .license_type(gtk::License::MitX11)
+                    .build();
+                about_dialog.present(Some(&app_window));
+            });
+            action.set_enabled(true);
+            action
+        };
+
+        let mut group = RelmActionGroup::<WindowActionGroup>::new();
+        group.add_action(delete_zone_action);
+        group.add_action(about_action);
+        _app_window.insert_action_group(WindowActionGroup::NAME, Some(&group.into_action_group()));
+
         AsyncComponentParts { model, widgets }
     }
 
@@ -221,19 +278,45 @@ impl AsyncComponent for ZoneView {
                 glib::g_log!(LogLevel::Message, "Zone settings updated with {} ports", ports.len());
             }
             ZoneViewRequest::RemoveZone => {
+                // Show confirmation dialog using AlertDialog (newer API)
+                let dialog = adw::AlertDialog::builder()
+                    .heading("Delete Zone")
+                    .body(&format!("Are you sure you want to delete the zone '{}'?\n\nThis action cannot be undone.", self.current_zone_name))
+                    .build();
+                
+                dialog.add_response("cancel", "Cancel");
+                dialog.add_response("delete", "Delete");
+                dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+                dialog.set_default_response(Some("cancel"));
+                dialog.set_close_response("cancel");
+
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
-                let sender = sender.clone();
-                relm4::spawn(async move {
-                    match broker.remove_zone(zone_name.as_str()).await {
-                        Ok(()) => {
-                            glib::g_log!(LogLevel::Info, "Zone deleted successfully");
-                            let _ = sender
-                                .output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
-                        }
-                        Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
-                    };
+                let sender_clone = sender.clone();
+                dialog.connect_response(None, move |_, response| {
+                    if response == "delete" {
+                        let broker = broker;
+                        let zone_name = zone_name.clone();
+                        let sender = sender_clone.clone();
+                        relm4::spawn(async move {
+                            match broker.remove_zone(zone_name.as_str()).await {
+                                Ok(()) => {
+                                    glib::g_log!(LogLevel::Info, "Zone deleted successfully");
+                                    let _ = sender
+                                        .output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
+                                }
+                                Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
+                            };
+                        });
+                    }
                 });
+
+                // Present on the root widget (which should be a window)
+                if let Some(window) = root.root().and_downcast::<gtk::Window>() {
+                    dialog.present(Some(&window));
+                } else {
+                    dialog.present(gtk::Widget::NONE);
+                }
             }
             ZoneViewRequest::SetFirewalldRunning(is_running) => {
                 self.set_firewalld_running(is_running);
