@@ -10,13 +10,10 @@ pub const SIDEBAR_WIDTH: i32 = 250;
 
 // Validation limits
 pub const MAX_ZONE_NAME_LENGTH: usize = 17;
-pub const MAX_SERVICE_NAME_LENGTH: usize = 50;
-pub const MAX_INTERFACE_NAME_LENGTH: usize = 15;
 
 // Timeouts (in seconds)
 pub const TOAST_TIMEOUT_SUCCESS: u32 = 3;
 pub const TOAST_TIMEOUT_ERROR: u32 = 8;
-pub const TOAST_TIMEOUT_WARNING: u32 = 5;
 
 // Protocols
 pub const SUPPORTED_PROTOCOLS: &[&str] = &["tcp", "udp", "sctp", "dccp"];

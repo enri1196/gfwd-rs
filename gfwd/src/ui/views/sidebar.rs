@@ -23,40 +23,78 @@ impl SimpleAsyncComponent for SidebarView {
     type Output = SidebarResponse;
 
     view! {
-        gtk::ScrolledWindow {
-            set_vexpand: true,
-            set_hscrollbar_policy: gtk::PolicyType::Never,
-            #[wrap(Some)]
-            set_child = &gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 12,
-                set_margin_all: 12,
-                set_width_request: SIDEBAR_WIDTH,
+        adw::ToolbarView {
+            add_top_bar = &adw::HeaderBar {
+                set_show_end_title_buttons: false,
+                add_css_class: "flat",
 
-                adw::HeaderBar {
-                    set_show_end_title_buttons: false,
-                    set_css_classes: &["flat"],
-
-                    #[wrap(Some)]
-                    set_title_widget = &gtk::Label {
-                        set_text: "Firewall Zones",
-                        set_css_classes: &["title-2"],
-                        set_halign: gtk::Align::Start,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "list-add-symbolic",
-                        set_tooltip_text: Some("New Zone"),
-                        set_css_classes: &["flat"],
-                        connect_clicked[sender] => move |_| {
-                            sender.input(SidebarRequest::ShowAddZoneDialog);
-                        }
-                    }
+                #[wrap(Some)]
+                set_title_widget = &adw::WindowTitle {
+                    set_title: "Firewall Zones",
                 },
 
-                #[local_ref]
-                zones_list_box -> gtk::ListBox {}
-            }
+                pack_end = &gtk::Button {
+                    set_icon_name: "list-add-symbolic",
+                    set_tooltip_text: Some("Add New Zone"),
+                    add_css_class: "flat",
+                    connect_clicked[sender] => move |_| {
+                        sender.input(SidebarRequest::ShowAddZoneDialog);
+                    }
+                }
+            },
+
+            #[wrap(Some)]
+            set_content = &gtk::ScrolledWindow {
+                set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+                set_vexpand: true,
+                set_width_request: SIDEBAR_WIDTH,
+
+                #[wrap(Some)]
+                set_child = &adw::Clamp {
+                    set_maximum_size: SIDEBAR_WIDTH,
+                    set_tightening_threshold: SIDEBAR_WIDTH - 50,
+                    
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 0,
+                        set_margin_all: 12,
+
+                        // Main zones list
+                        #[local_ref]
+                        zones_list_box -> gtk::ListBox {
+                            set_selection_mode: gtk::SelectionMode::None,
+                            add_css_class: "boxed-list",
+                            set_margin_bottom: 18,
+                        },
+
+                        // Status legend
+                        adw::PreferencesGroup {
+                            set_title: "Legend",
+                            set_margin_top: 6,
+                            
+                            adw::ActionRow {
+                                set_title: "Default Zone",
+                                set_subtitle: "Primary firewall zone",
+                                add_prefix = &gtk::Image {
+                                    set_icon_name: Some("security-high-symbolic"),
+                                    set_pixel_size: 16,
+                                    add_css_class: "accent",
+                                },
+                            },
+                            
+                            adw::ActionRow {
+                                set_title: "Active Zone",
+                                set_subtitle: "Currently in use",
+                                add_prefix = &gtk::Image {
+                                    set_icon_name: Some("object-select-symbolic"),
+                                    set_pixel_size: 16,
+                                    add_css_class: "success",
+                                },
+                            },
+                        },
+                    },
+                },
+            },
         }
     }
 

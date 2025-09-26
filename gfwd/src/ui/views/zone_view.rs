@@ -5,7 +5,8 @@ use relm4::prelude::*;
 
 use crate::core::FwdBroker;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
-use crate::models::ZoneSettings;
+
+use crate::models::{PortRule, ForwardingConfig};
 use crate::ui::components::{PortItem, PortItemResponse};
 use crate::ui::dialogs::AddPortDialog;
 use crate::messages::port::PortDialogResponse;
@@ -262,17 +263,18 @@ impl AsyncComponent for ZoneView {
 
                 // Add regular ports
                 for (port, protocol) in &settings.ports {
-                    ports.push_back(PortItem::from((port.clone(), protocol.clone())));
+                    let rule = PortRule::new(port.clone(), protocol.clone());
+                    ports.push_back(PortItem::from(rule));
                 }
 
                 // Add forwarded ports
                 for (port, protocol, to_port, to_addr) in &settings.forward_ports {
-                    ports.push_back(PortItem::from((
-                        port.clone(),
-                        protocol.clone(),
-                        to_port.clone(),
-                        to_addr.clone(),
-                    )));
+                    let forwarding = ForwardingConfig {
+                        to_port: to_port.clone(),
+                        to_addr: to_addr.clone(),
+                    };
+                    let rule = PortRule::with_forwarding(port.clone(), protocol.clone(), forwarding);
+                    ports.push_back(PortItem::from(rule));
                 }
 
                 glib::g_log!(LogLevel::Message, "Zone settings updated with {} ports", ports.len());

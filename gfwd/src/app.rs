@@ -7,7 +7,7 @@ use relm4::prelude::*;
 
 use crate::core::{FwdBroker};
 use crate::messages::{AppRequest, SidebarRequest, SidebarResponse, ZoneViewRequest, ZoneViewResponse};
-use crate::models::ZoneSettings;
+
 
 
 

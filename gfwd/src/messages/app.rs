@@ -9,7 +9,4 @@ pub enum AppRequest {
     UpdateContentWithZoneName(String),
 }
 
-#[derive(Debug)]
-pub enum AppResponse {
-    // App responses if needed
-}
+

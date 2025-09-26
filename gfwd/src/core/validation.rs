@@ -1,4 +1,5 @@
 use crate::core::error::GfwdError;
+use crate::utils::constants::{MAX_ZONE_NAME_LENGTH, SUPPORTED_PROTOCOLS};
 
 /// Validates a zone name
 pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
@@ -8,8 +9,8 @@ pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
         return Err(GfwdError::Validation("Zone name cannot be empty".to_string()));
     }
     
-    if name.len() > 17 {
-        return Err(GfwdError::Validation("Zone name cannot be longer than 17 characters".to_string()));
+    if name.len() > MAX_ZONE_NAME_LENGTH {
+        return Err(GfwdError::Validation(format!("Zone name cannot be longer than {} characters", MAX_ZONE_NAME_LENGTH)));
     }
     
     // Check for valid characters (alphanumeric, dash, underscore)
@@ -57,10 +58,11 @@ pub fn validate_port(port: &str) -> Result<String, GfwdError> {
 /// Validates a protocol string
 pub fn validate_protocol(protocol: &str) -> Result<String, GfwdError> {
     let protocol = protocol.trim().to_lowercase();
-    match protocol.as_str() {
-        "tcp" | "udp" | "sctp" | "dccp" => Ok(protocol),
-        _ => Err(GfwdError::Validation(
-            format!("Invalid protocol '{}'. Must be tcp, udp, sctp, or dccp", protocol)
+    if SUPPORTED_PROTOCOLS.contains(&protocol.as_str()) {
+        Ok(protocol)
+    } else {
+        Err(GfwdError::Validation(
+            format!("Invalid protocol '{}'. Must be one of: {}", protocol, SUPPORTED_PROTOCOLS.join(", "))
         ))
     }
 }

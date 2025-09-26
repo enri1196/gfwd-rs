@@ -16,8 +16,12 @@ pub struct PortItem {
 impl From<PortRule> for PortItem {
     fn from(rule: PortRule) -> Self {
         let title = format!("{}/{}", rule.port, rule.protocol);
-        let subtitle = if let Some(ref forward) = rule.forwarding {
-            format!("→ {}:{}", forward.to_addr, forward.to_port)
+        let subtitle = if rule.is_forwarded() {
+            if let Some(ref forward) = rule.forwarding {
+                format!("→ {}:{}", forward.to_addr, forward.to_port)
+            } else {
+                "Forwarded Port".to_string()
+            }
         } else {
             "Allowed Port".to_string()
         };

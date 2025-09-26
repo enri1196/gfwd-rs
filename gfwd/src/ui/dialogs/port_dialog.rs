@@ -1,9 +1,10 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::validation::validate_port;
+use crate::core::validation::{validate_port, validate_protocol};
 use crate::messages::port::{PortDialogRequest, PortDialogResponse};
 use crate::models::ForwardingConfig;
+use crate::utils::constants::SUPPORTED_PROTOCOLS;
 
 #[tracker::track]
 #[derive(Debug)]
@@ -72,22 +73,10 @@ impl SimpleAsyncComponent for AddPortDialog {
                     // Protocol selection
                     add = &adw::ComboRow {
                         set_title: "Protocol",
-                        set_model: Some(&gtk::StringList::new(&["tcp", "udp", "sctp", "dccp"])),
-                        set_selected: match model.protocol.as_str() {
-                            "tcp" => 0,
-                            "udp" => 1,
-                            "sctp" => 2,
-                            "dccp" => 3,
-                            _ => 0,
-                        },
+                        set_model: Some(&gtk::StringList::new(SUPPORTED_PROTOCOLS)),
+                        set_selected: SUPPORTED_PROTOCOLS.iter().position(|&p| p == model.protocol.as_str()).unwrap_or(0) as u32,
                         connect_selected_notify[sender] => move |combo| {
-                            let protocol = match combo.selected() {
-                                0 => "tcp",
-                                1 => "udp",
-                                2 => "sctp",
-                                3 => "dccp",
-                                _ => "tcp",
-                            };
+                            let protocol = SUPPORTED_PROTOCOLS.get(combo.selected() as usize).unwrap_or(&"tcp");
                             sender.input(PortDialogRequest::SetProtocol(protocol.to_string()));
                         },
                     },
@@ -238,7 +227,14 @@ impl SimpleAsyncComponent for AddPortDialog {
                 sender.input(PortDialogRequest::ValidatePort);
             }
             PortDialogRequest::SetProtocol(protocol) => {
-                self.set_protocol(protocol);
+                // Validate protocol for extra safety
+                match validate_protocol(&protocol) {
+                    Ok(validated_protocol) => self.set_protocol(validated_protocol),
+                    Err(_) => {
+                        // Fallback to tcp if invalid protocol somehow gets through
+                        self.set_protocol("tcp".to_string());
+                    }
+                }
             }
             PortDialogRequest::SetIsForwarding(is_forwarding) => {
                 self.set_is_forwarding(is_forwarding);

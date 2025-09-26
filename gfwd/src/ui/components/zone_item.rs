@@ -38,52 +38,39 @@ impl FactoryComponent for ZoneItem {
     type ParentWidget = gtk::ListBox;
 
     view! {
-        gtk::ListBoxRow {
-            set_halign: gtk::Align::Fill,
-            set_margin_all: 4,
+        #[name(action_row)]
+        adw::ActionRow {
+            set_activatable: true,
+            #[watch]
+            set_title: &self.name,
+            
+            // Default zone indicator
+            #[track(self.changed(ZoneItem::is_default()))]
+            set_subtitle: if self.is_default { "Default Zone" } else { "" },
+            
+            // Icon prefix for default zone
+            add_prefix = &gtk::Image {
+                set_icon_name: Some("security-high-symbolic"),
+                set_pixel_size: 16,
+                #[track(self.changed(ZoneItem::is_default()))]
+                set_visible: self.is_default,
+                add_css_class: "accent",
+            },
 
-            gtk::Button {
-                set_hexpand: true,
+            // Active zone indicator suffix
+            add_suffix = &gtk::Image {
+                set_icon_name: Some("object-select-symbolic"),
+                set_pixel_size: 16,
+                #[track(self.changed(ZoneItem::is_active()))]
+                set_visible: self.is_active,
+                add_css_class: "success",
+            },
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_hexpand: true,
-
-                    // Dot on the left if is_default
-                    #[name(dot)]
-                    gtk::Image {
-                        set_pixel_size: 12,
-                        set_icon_name: Some("media-record-symbolic"),
-                        #[track(self.changed(ZoneItem::is_default()))]
-                        set_visible: self.is_default,
-                    },
-
-                    // The label in the center
-                    #[name(zone_label)]
-                    gtk::Label {
-                        #[watch]
-                        set_label: &self.name,
-                        set_hexpand: true,
-                        set_halign: gtk::Align::Center,
-                    },
-
-                    // Tick on the right if is_active
-                    #[name(tick)]
-                    gtk::Image {
-                        set_pixel_size: 16,
-                        set_icon_name: Some("object-select-symbolic"),
-                        #[track(self.changed(ZoneItem::is_active()))]
-                        set_visible: self.is_active,
-                    },
-                },
-
-                connect_clicked[sender, zone_label] => move |_| {
-                    let zone_name = zone_label.label().to_string();
-                    glib::g_log!(LogLevel::Message, "Selected zone {}", zone_name);
-                    sender.output(ZoneItemResponse::SelectedZone(zone_name)).unwrap();
-                },
-            }
+            connect_activated[sender] => move |row| {
+                let zone_name = row.title().to_string();
+                glib::g_log!(LogLevel::Message, "Selected zone {}", zone_name);
+                sender.output(ZoneItemResponse::SelectedZone(zone_name)).unwrap();
+            },
         }
     }
 
