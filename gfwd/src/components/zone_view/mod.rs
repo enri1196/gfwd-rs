@@ -6,6 +6,7 @@ use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
+use crate::components::port_dialog::{AddPortDialog, AddPortDialogResponse};
 use crate::components::zone_view::view_mode::{ZoneInfoRequest, ZoneInfoResponse};
 use crate::fwd_broker::FwdBroker;
 use crate::fwd_broker::ZoneSettings;
@@ -18,6 +19,8 @@ pub struct ZoneView {
     // child components
     #[tracker::do_not_track]
     view_mode: Controller<ZoneInfoComponent>,
+    #[tracker::do_not_track]
+    port_dialog: AsyncController<AddPortDialog>,
     // props
     current_zone_name: String,
     firewalld_running: bool,
@@ -31,6 +34,7 @@ pub enum ZoneViewRequest {
     UpdateZoneSettings(ZoneSettings),
     RemoveZone,
     SetFirewalldRunning(bool),
+    ShowAddPortDialog,
     AddPort(String, String),
     AddForwardPort(String, String, String, String), // port, protocol, to_port, to_addr
     RemovePort(String, String),
@@ -136,6 +140,7 @@ impl AsyncComponent for ZoneView {
         let view_mode = ZoneInfoComponent::builder().launch(()).forward(
             sender.input_sender(),
             |out| match out {
+                ZoneInfoResponse::ShowAddPortDialog => ZoneViewRequest::ShowAddPortDialog,
                 ZoneInfoResponse::AddPort {
                     port,
                     protocol,
@@ -176,11 +181,24 @@ impl AsyncComponent for ZoneView {
             view_mode.emit(ZoneInfoRequest::SetSettings(settings.clone()));
         }
 
+        let port_dialog = AddPortDialog::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                AddPortDialogResponse::PortAdded { port, protocol, forwarding } => {
+                    if let Some(forward) = forwarding {
+                        ZoneViewRequest::AddForwardPort(port, protocol, forward.to_port, forward.to_addr)
+                    } else {
+                        ZoneViewRequest::AddPort(port, protocol)
+                    }
+                }
+            });
+
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
         let model = ZoneView {
             broker,
             view_mode,
+            port_dialog,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
             tracker: 0,
@@ -227,6 +245,9 @@ impl AsyncComponent for ZoneView {
     ) {
         self.reset();
         match msg {
+            ZoneViewRequest::ShowAddPortDialog => {
+                self.port_dialog.widget().present(Some(_root));
+            }
             ZoneViewRequest::AddPort(port, protocol) => {
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();

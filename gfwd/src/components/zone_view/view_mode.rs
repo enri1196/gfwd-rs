@@ -1,5 +1,5 @@
 use relm4::adw::prelude::*;
-use relm4::gtk::gio::MenuModel;
+
 use relm4::prelude::*;
 
 use crate::components::zone_view::port_item::PortItem;
@@ -16,6 +16,7 @@ pub struct ZoneInfoComponent {
 #[derive(Clone, Debug)]
 pub enum ZoneInfoRequest {
     SetSettings(ZoneSettings),
+    ShowAddPortDialog,
     AddPort {
         port: String,
         protocol: String,
@@ -36,6 +37,7 @@ pub struct ForwardOpts {
 
 #[derive(Debug)]
 pub enum ZoneInfoResponse {
+    ShowAddPortDialog,
     AddPort {
         port: String,
         protocol: String,
@@ -96,124 +98,14 @@ impl SimpleComponent for ZoneInfoComponent {
             add = &adw::PreferencesGroup {
                 set_title: "Allowed Ports",
 
-                #[name = "add_menu_btn"]
                 #[wrap(Some)]
-                set_header_suffix = &gtk::MenuButton {
+                set_header_suffix = &gtk::Button {
                     set_icon_name: "list-add-symbolic",
                     set_tooltip_text: Some("Add port"),
-
-                    #[wrap(Some)]
-                    set_popover = &gtk::PopoverMenu::from_model(None::<&MenuModel>) {
-                        set_position: gtk::PositionType::Bottom,
-                        #[wrap(Some)]
-                        set_child = &gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 8,
-                            set_margin_all: 8,
-
-                            gtk::Box {
-                                set_spacing: 6,
-                                #[name = "protocol_toggle"]
-                                gtk::ToggleButton {
-                                    set_label: "TCP",
-                                    set_active: true,
-                                    connect_toggled => move |btn| {
-                                        if btn.is_active() {
-                                            btn.set_label("TCP");
-                                        } else {
-                                            btn.set_label("UDP");
-                                        }
-                                    }
-                                },
-                                #[name = "port_entry"]
-                                gtk::Entry { set_placeholder_text: Some("80 or 8000-8080") }
-                            },
-
-                            #[name = "forwarding_section"]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 6,
-
-                                #[name = "forwarding_toggle"]
-                                gtk::ToggleButton {
-                                    set_label: "Port Forwarding: Disabled",
-                                    set_active: false,
-                                    connect_toggled[dest_ip_entry, dest_port_entry, port_entry] => move |btn| {
-                                        let is_enabled = btn.is_active();
-                                        if is_enabled {
-                                            btn.set_label("Port Forwarding: Enabled");
-                                            // Auto-populate destination port with source port
-                                            let source_port = port_entry.text().to_string();
-                                            if !source_port.is_empty() {
-                                                dest_port_entry.set_text(&source_port);
-                                            }
-                                        } else {
-                                            btn.set_label("Port Forwarding: Disabled");
-                                            // Clear forwarding fields when disabled
-                                            dest_ip_entry.set_text("");
-                                            dest_port_entry.set_text("");
-                                        }
-                                        dest_ip_entry.set_visible(is_enabled);
-                                        dest_port_entry.set_visible(is_enabled);
-                                    }
-                                },
-
-                                #[name = "dest_ip_entry"]
-                                gtk::Entry {
-                                    set_placeholder_text: Some("Destination IP (e.g. 192.168.1.100)"),
-                                    set_visible: false,
-                                },
-
-                                #[name = "dest_port_entry"]
-                                gtk::Entry {
-                                    set_placeholder_text: Some("Destination port (e.g. 8080)"),
-                                    set_visible: false,
-                                }
-                            },
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_halign: gtk::Align::Center,
-                                set_spacing: 6,
-                                gtk::Button { set_label: "Cancel", connect_clicked[add_menu_btn] => move |_| { add_menu_btn.popdown(); } },
-                                gtk::Button {
-                                    add_css_class: "suggested-action",
-                                    set_label: "Add",
-                                    connect_clicked[sender, protocol_toggle, port_entry, forwarding_toggle, dest_ip_entry, dest_port_entry, add_menu_btn] => move |_| {
-                                        let protocol = if protocol_toggle.is_active() { "tcp" } else { "udp" }.to_string();
-                                        let port = port_entry.text().to_string();
-
-                                        if port.trim().is_empty() {
-                                            return;
-                                        }
-
-                                        let forward_port = if forwarding_toggle.is_active() {
-                                            let dest_ip = dest_ip_entry.text().to_string();
-                                            let dest_port = dest_port_entry.text().to_string();
-
-                                            if dest_ip.trim().is_empty() || dest_port.trim().is_empty() {
-                                                return;
-                                            }
-
-                                            Some(ForwardOpts {
-                                                to_addr: dest_ip,
-                                                to_port: dest_port
-                                            })
-                                        } else {
-                                            None
-                                        };
-
-                                        sender.input(ZoneInfoRequest::AddPort {
-                                            port,
-                                            protocol,
-                                            forward_port
-                                        });
-                                        add_menu_btn.popdown();
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    add_css_class: "flat",
+                    connect_clicked[sender] => move |_| {
+                        sender.input(ZoneInfoRequest::ShowAddPortDialog);
+                    },
                 },
 
                 #[local_ref]
@@ -256,6 +148,9 @@ impl SimpleComponent for ZoneInfoComponent {
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         self.reset();
         match message {
+            ZoneInfoRequest::ShowAddPortDialog => {
+                let _ = _sender.output(ZoneInfoResponse::ShowAddPortDialog);
+            }
             ZoneInfoRequest::SetSettings(settings) => {
                 let mut ports = self.ports.guard();
                 ports.clear();

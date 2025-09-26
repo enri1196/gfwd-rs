@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zbus = "5.10.0"
+zbus = "5.11"
 derive_more = { version = "2.0.1", features = ["display"] }
 
 relm4 = { version = "0.10", features = ["all", "gnome_47"] }
