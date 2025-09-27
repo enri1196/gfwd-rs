@@ -36,14 +36,14 @@ impl ToastMessage {
 /// Helper function to create and show a toast
 pub fn show_toast(toaster: &Toaster, message: ToastMessage) {
     let mut toast_builder = adw::Toast::builder().title(&message.message);
-    
+
     // Set timeout if specified
     if let Some(timeout) = message.timeout {
         toast_builder = toast_builder.timeout(timeout);
     }
-    
+
     let toast = toast_builder.build();
-    
+
     // Set priority based on type
     match message.toast_type {
         ToastType::Success => {
@@ -53,6 +53,6 @@ pub fn show_toast(toaster: &Toaster, message: ToastMessage) {
             toast.set_priority(adw::ToastPriority::High);
         }
     }
-    
+
     toaster.add_toast(toast);
 }

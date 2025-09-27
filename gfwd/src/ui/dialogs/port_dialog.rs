@@ -39,7 +39,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                 add_top_bar = &adw::HeaderBar {
                     set_show_end_title_buttons: false,
                     add_css_class: "flat",
-                    
+
                     #[wrap(Some)]
                     set_title_widget = &adw::WindowTitle {
                         set_title: "Add Port",
@@ -92,7 +92,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_text: &model.port,
                                     #[track(model.changed(AddPortDialog::port_error()))]
                                     set_css_classes: if model.port_error.is_some() { &["error"] } else { &[] },
-                                    
+
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-server-symbolic"),
                                         set_pixel_size: 16,
@@ -133,7 +133,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_subtitle: "Network protocol for this port",
                                     set_model: Some(&gtk::StringList::new(SUPPORTED_PROTOCOLS)),
                                     set_selected: SUPPORTED_PROTOCOLS.iter().position(|&p| p == model.protocol.as_str()).unwrap_or(0) as u32,
-                                    
+
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("preferences-system-network-symbolic"),
                                         set_pixel_size: 16,
@@ -156,7 +156,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_subtitle: "Forward incoming traffic to another address",
                                     #[track(model.changed(AddPortDialog::is_forwarding()))]
                                     set_active: model.is_forwarding,
-                                    
+
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("go-jump-symbolic"),
                                         set_pixel_size: 16,
@@ -182,7 +182,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_text: &model.dest_ip,
                                     #[track(model.changed(AddPortDialog::dest_ip_error()))]
                                     set_css_classes: if model.dest_ip_error.is_some() { &["error"] } else { &[] },
-                                    
+
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-workgroup-symbolic"),
                                         set_pixel_size: 16,
@@ -224,7 +224,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_text: &model.dest_port,
                                     #[track(model.changed(AddPortDialog::dest_port_error()))]
                                     set_css_classes: if model.dest_port_error.is_some() { &["error"] } else { &[] },
-                                    
+
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-server-symbolic"),
                                         set_pixel_size: 16,
@@ -265,7 +265,7 @@ impl SimpleAsyncComponent for AddPortDialog {
                                     set_visible: model.is_forwarding && !model.dest_ip.is_empty() && !model.dest_port.is_empty(),
                                     set_title: "Forwarding Summary",
                                     #[track(model.changed(AddPortDialog::dest_ip()) | model.changed(AddPortDialog::dest_port()) | model.changed(AddPortDialog::port()) | model.changed(AddPortDialog::protocol()))]
-                                    set_subtitle: &format!("{}:{}/{} → {}:{}", 
+                                    set_subtitle: &format!("{}:{}/{} → {}:{}",
                                         "0.0.0.0", // Any interface
                                         model.port,
                                         model.protocol,

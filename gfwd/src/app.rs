@@ -5,13 +5,12 @@ use relm4::adw::{ApplicationWindow, prelude::*};
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
-use crate::core::{FwdBroker};
-use crate::messages::{AppRequest, SidebarRequest, SidebarResponse, ZoneViewRequest, ZoneViewResponse};
+use crate::core::FwdBroker;
+use crate::messages::{
+    AppRequest, SidebarRequest, SidebarResponse, ZoneViewRequest, ZoneViewResponse,
+};
 
-
-
-
-use crate::ui::components::{show_toast, ToastMessage};
+use crate::ui::components::{ToastMessage, show_toast};
 use crate::ui::dialogs::AddZoneDialog;
 use crate::ui::views::{SidebarView, ZoneView};
 use crate::utils::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
@@ -73,7 +72,13 @@ impl SimpleAsyncComponent for App {
                 match self.broker.add_zone(settings).await {
                     Ok(_) => {
                         glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
-                        show_toast(&self.toaster, ToastMessage::success(format!("Zone '{}' created successfully", zone_name)));
+                        show_toast(
+                            &self.toaster,
+                            ToastMessage::success(format!(
+                                "Zone '{}' created successfully",
+                                zone_name
+                            )),
+                        );
                         self.sidebar.emit(SidebarRequest::UpdateZones)
                     }
                     Err(e) => {
@@ -84,16 +89,24 @@ impl SimpleAsyncComponent for App {
             }
             AppRequest::ZoneAdded(_) => {
                 glib::g_log!(LogLevel::Error, "Failed to add zone");
-                show_toast(&self.toaster, ToastMessage::error("Failed to add zone: Invalid zone name"));
+                show_toast(
+                    &self.toaster,
+                    ToastMessage::error("Failed to add zone: Invalid zone name"),
+                );
             }
             AppRequest::ZoneRemoved(removed_zone) => {
-                show_toast(&self.toaster, ToastMessage::success(format!("Zone '{}' deleted successfully", removed_zone)));
+                show_toast(
+                    &self.toaster,
+                    ToastMessage::success(format!("Zone '{}' deleted successfully", removed_zone)),
+                );
                 self.sidebar.emit(SidebarRequest::RemoveZone(removed_zone));
                 let active_zone = self.broker.get_default_zone().await.unwrap();
-                self.zone_view.emit(ZoneViewRequest::SetZoneContent(active_zone));
+                self.zone_view
+                    .emit(ZoneViewRequest::SetZoneContent(active_zone));
             }
             AppRequest::UpdateContentWithZoneName(zone_name) => {
-                self.zone_view.emit(ZoneViewRequest::SetZoneContent(zone_name));
+                self.zone_view
+                    .emit(ZoneViewRequest::SetZoneContent(zone_name));
             }
         }
     }
@@ -109,7 +122,9 @@ impl SimpleAsyncComponent for App {
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 SidebarResponse::ShowAddZoneDialog => AppRequest::ShowAddZoneDialog,
-                SidebarResponse::SelectedZone(item_name) => AppRequest::UpdateContentWithZoneName(item_name),
+                SidebarResponse::SelectedZone(item_name) => {
+                    AppRequest::UpdateContentWithZoneName(item_name)
+                }
             });
 
         let initial_zone_name: String = broker
@@ -123,13 +138,17 @@ impl SimpleAsyncComponent for App {
             .launch((initial_zone_name, root_rc.as_ref().clone()))
             .forward(sender.input_sender(), |resp| match resp {
                 ZoneViewResponse::ToggleSidebar => AppRequest::ToggleSidebar,
-                ZoneViewResponse::RemovedZoneSuccess(removed_zone) => AppRequest::ZoneRemoved(removed_zone),
+                ZoneViewResponse::RemovedZoneSuccess(removed_zone) => {
+                    AppRequest::ZoneRemoved(removed_zone)
+                }
             });
 
         let dialog = AddZoneDialog::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
-                crate::messages::zone::ZoneDialogResponse::ZoneSettings(settings) => AppRequest::ZoneAdded(settings),
+                crate::messages::zone::ZoneDialogResponse::ZoneSettings(settings) => {
+                    AppRequest::ZoneAdded(settings)
+                }
             });
 
         let toaster = Toaster::default();

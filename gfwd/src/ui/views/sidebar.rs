@@ -53,7 +53,7 @@ impl SimpleAsyncComponent for SidebarView {
                 set_child = &adw::Clamp {
                     set_maximum_size: SIDEBAR_WIDTH,
                     set_tightening_threshold: SIDEBAR_WIDTH - 50,
-                    
+
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 0,
@@ -71,7 +71,7 @@ impl SimpleAsyncComponent for SidebarView {
                         adw::PreferencesGroup {
                             set_title: "Legend",
                             set_margin_top: 6,
-                            
+
                             adw::ActionRow {
                                 set_title: "Default Zone",
                                 set_subtitle: "Primary firewall zone",
@@ -81,7 +81,7 @@ impl SimpleAsyncComponent for SidebarView {
                                     add_css_class: "accent",
                                 },
                             },
-                            
+
                             adw::ActionRow {
                                 set_title: "Active Zone",
                                 set_subtitle: "Currently in use",
@@ -123,21 +123,20 @@ impl SimpleAsyncComponent for SidebarView {
                 }
                 sender.input(SidebarRequest::SetActiveZones);
             }
-            SidebarRequest::SetActiveZones => {
-                match self.broker.get_active_zones().await {
-                    Ok(active_zones) => {
-                        glib::g_log!(LogLevel::Message, "Active zones: {}", active_zones.len());
-                        glib::g_log!(LogLevel::Message, "{:?}", active_zones);
-                        self.active_zones = active_zones;
-                        if let Some(_zone) = self.active_zones.get(&self.default_zone) {
-                            self.zones.guard().iter_mut().for_each(|zone| {
-                                zone.set_is_active(zone.name == self.default_zone)
-                            });
-                        }
+            SidebarRequest::SetActiveZones => match self.broker.get_active_zones().await {
+                Ok(active_zones) => {
+                    glib::g_log!(LogLevel::Message, "Active zones: {}", active_zones.len());
+                    glib::g_log!(LogLevel::Message, "{:?}", active_zones);
+                    self.active_zones = active_zones;
+                    if let Some(_zone) = self.active_zones.get(&self.default_zone) {
+                        self.zones
+                            .guard()
+                            .iter_mut()
+                            .for_each(|zone| zone.set_is_active(zone.name == self.default_zone));
                     }
-                    Err(error) => glib::g_log!(LogLevel::Error, "Active Zone Error: {}", error),
                 }
-            }
+                Err(error) => glib::g_log!(LogLevel::Error, "Active Zone Error: {}", error),
+            },
             SidebarRequest::ShowAddZoneDialog => {
                 let _ = sender.output(SidebarResponse::ShowAddZoneDialog);
             }
@@ -163,13 +162,14 @@ impl SimpleAsyncComponent for SidebarView {
     ) -> AsyncComponentParts<Self> {
         let broker = FwdBroker::get_broker().await;
 
-        let zones = FactoryVecDeque::builder()
-            .launch_default()
-            .forward(sender.output_sender(), |msg| match msg {
-                crate::ui::components::ZoneItemResponse::SelectedZone(item_name) => {
-                    SidebarResponse::SelectedZone(item_name)
-                }
-            });
+        let zones =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.output_sender(), |msg| match msg {
+                    crate::ui::components::ZoneItemResponse::SelectedZone(item_name) => {
+                        SidebarResponse::SelectedZone(item_name)
+                    }
+                });
 
         let model = SidebarView {
             broker,

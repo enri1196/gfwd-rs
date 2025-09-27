@@ -43,11 +43,11 @@ impl FactoryComponent for ZoneItem {
             set_activatable: true,
             #[watch]
             set_title: &self.name,
-            
+
             // Default zone indicator
             #[track(self.changed(ZoneItem::is_default()))]
             set_subtitle: if self.is_default { "Default Zone" } else { "" },
-            
+
             // Icon prefix for default zone
             add_prefix = &gtk::Image {
                 set_icon_name: Some("security-high-symbolic"),

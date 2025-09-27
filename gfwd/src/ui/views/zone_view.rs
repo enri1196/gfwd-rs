@@ -6,10 +6,10 @@ use relm4::prelude::*;
 use crate::core::FwdBroker;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::models::{PortRule, ForwardingConfig};
+use crate::messages::port::PortDialogResponse;
+use crate::models::{ForwardingConfig, PortRule};
 use crate::ui::components::{PortItem, PortItemResponse};
 use crate::ui::dialogs::AddPortDialog;
-use crate::messages::port::PortDialogResponse;
 use crate::utils::constants::{APP_NAME, APP_VERSION};
 
 relm4::new_action_group!(WindowActionGroup, "win");
@@ -130,29 +130,49 @@ impl AsyncComponent for ZoneView {
     ) -> AsyncComponentParts<Self> {
         let broker = FwdBroker::get_broker().await;
 
-        let port_dialog = AddPortDialog::builder()
-            .launch(())
-            .forward(sender.input_sender(), |msg| match msg {
-                PortDialogResponse::PortAdded { port, protocol, forwarding } => {
-                    if let Some(forward) = forwarding {
-                        ZoneViewRequest::AddForwardPort(port, protocol, forward.to_port, forward.to_addr)
-                    } else {
-                        ZoneViewRequest::AddPort(port, protocol)
+        let port_dialog =
+            AddPortDialog::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    PortDialogResponse::PortAdded {
+                        port,
+                        protocol,
+                        forwarding,
+                    } => {
+                        if let Some(forward) = forwarding {
+                            ZoneViewRequest::AddForwardPort(
+                                port,
+                                protocol,
+                                forward.to_port,
+                                forward.to_addr,
+                            )
+                        } else {
+                            ZoneViewRequest::AddPort(port, protocol)
+                        }
                     }
-                }
-            });
+                });
 
-        let ports = FactoryVecDeque::builder()
-            .launch_default()
-            .forward(sender.input_sender(), |msg| match msg {
-                PortItemResponse::RemovePort { port, protocol, forwarding } => {
-                    if let Some(forward) = forwarding {
-                        ZoneViewRequest::RemoveForwardPort(port, protocol, forward.to_port, forward.to_addr)
-                    } else {
-                        ZoneViewRequest::RemovePort(port, protocol)
+        let ports =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    PortItemResponse::RemovePort {
+                        port,
+                        protocol,
+                        forwarding,
+                    } => {
+                        if let Some(forward) = forwarding {
+                            ZoneViewRequest::RemoveForwardPort(
+                                port,
+                                protocol,
+                                forward.to_port,
+                                forward.to_addr,
+                            )
+                        } else {
+                            ZoneViewRequest::RemovePort(port, protocol)
+                        }
                     }
-                }
-            });
+                });
 
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
@@ -273,11 +293,16 @@ impl AsyncComponent for ZoneView {
                         to_port: to_port.clone(),
                         to_addr: to_addr.clone(),
                     };
-                    let rule = PortRule::with_forwarding(port.clone(), protocol.clone(), forwarding);
+                    let rule =
+                        PortRule::with_forwarding(port.clone(), protocol.clone(), forwarding);
                     ports.push_back(PortItem::from(rule));
                 }
 
-                glib::g_log!(LogLevel::Message, "Zone settings updated with {} ports", ports.len());
+                glib::g_log!(
+                    LogLevel::Message,
+                    "Zone settings updated with {} ports",
+                    ports.len()
+                );
             }
             ZoneViewRequest::RemoveZone => {
                 // Show confirmation dialog using AlertDialog (newer API)
@@ -285,7 +310,7 @@ impl AsyncComponent for ZoneView {
                     .heading("Delete Zone")
                     .body(&format!("Are you sure you want to delete the zone '{}'?\n\nThis action cannot be undone.", self.current_zone_name))
                     .build();
-                
+
                 dialog.add_response("cancel", "Cancel");
                 dialog.add_response("delete", "Delete");
                 dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
@@ -304,10 +329,13 @@ impl AsyncComponent for ZoneView {
                             match broker.remove_zone(zone_name.as_str()).await {
                                 Ok(()) => {
                                     glib::g_log!(LogLevel::Info, "Zone deleted successfully");
-                                    let _ = sender
-                                        .output(ZoneViewResponse::RemovedZoneSuccess(zone_name.clone()));
+                                    let _ = sender.output(ZoneViewResponse::RemovedZoneSuccess(
+                                        zone_name.clone(),
+                                    ));
                                 }
-                                Err(e) => glib::g_log!(LogLevel::Error, "Could not delete zone: {e}"),
+                                Err(e) => {
+                                    glib::g_log!(LogLevel::Error, "Could not delete zone: {e}")
+                                }
                             };
                         });
                     }

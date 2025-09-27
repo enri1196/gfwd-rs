@@ -8,5 +8,3 @@ pub enum AppRequest {
     ZoneRemoved(String),
     UpdateContentWithZoneName(String),
 }
-
-

@@ -16,7 +16,10 @@ impl GfwdError {
     /// Returns a user-friendly error message suitable for display in the UI
     pub fn user_message(&self) -> String {
         match self {
-            GfwdError::ZBus(_) => "Failed to communicate with firewall service. Please check if firewalld is running.".to_string(),
+            GfwdError::ZBus(_) => {
+                "Failed to communicate with firewall service. Please check if firewalld is running."
+                    .to_string()
+            }
             GfwdError::Validation(msg) => format!("Invalid input: {}", msg),
             GfwdError::Io(e) => format!("System error: {}", e),
         }
