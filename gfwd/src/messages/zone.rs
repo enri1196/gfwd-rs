@@ -32,6 +32,7 @@ pub enum ZoneViewRequest {
     ToggleService(String, bool),
     LoadServices,
     UpdateAvailableServices(Vec<String>),
+    FilterServices(String),
 }
 
 #[derive(Debug)]

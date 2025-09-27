@@ -108,6 +108,7 @@ pub struct ZoneView {
     // Services
     active_services: Vec<String>,
     available_services: Vec<String>,
+    service_filter: String,
 }
 
 #[relm4::component(async, pub)]
@@ -333,7 +334,7 @@ impl AsyncComponent for ZoneView {
                                 // Services
                                 adw::PreferencesGroup {
                                     set_title: "Allowed Services",
-                                    set_description: Some("Predefined service rules"),
+                                    set_description: Some("Available firewall services (use search to filter)"),
 
                                     #[wrap(Some)]
                                     set_header_suffix = &gtk::Button {
@@ -345,11 +346,30 @@ impl AsyncComponent for ZoneView {
                                         },
                                     },
 
-                                    #[local_ref]
-                                    services_list_box -> gtk::ListBox {
-                                        set_selection_mode: gtk::SelectionMode::None,
-                                        add_css_class: "boxed-list",
-                                        set_margin_bottom: 12,
+                                    // Search entry
+                                    add = &adw::EntryRow {
+                                        set_title: "Search Services",
+                                        #[watch]
+                                        set_text: &model.service_filter,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("system-search-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        connect_changed[sender] => move |entry| {
+                                            sender.input(ZoneViewRequest::FilterServices(entry.text().to_string()));
+                                        },
+                                    },
+
+                                    // Scrollable services list
+                                    add = &gtk::ScrolledWindow {
+                                        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+                                        set_min_content_height: 200,
+                                        set_max_content_height: 400,
+                                        set_vexpand: false,
+
+                                        #[local_ref]
+                                        #[wrap(Some)]
+                                        set_child = services_list_box -> gtk::ListBox,
                                     },
 
                                     add = &gtk::Button {
@@ -571,6 +591,7 @@ impl AsyncComponent for ZoneView {
             target_policy: "ACCEPT".to_string(),
             active_services: Vec::new(),
             available_services: Vec::new(),
+            service_filter: String::new(),
             tracker: 0,
         };
 
@@ -895,6 +916,10 @@ impl AsyncComponent for ZoneView {
                 self.set_available_services(services);
                 self.update_services_display();
             }
+            ZoneViewRequest::FilterServices(filter) => {
+                self.set_service_filter(filter);
+                self.update_services_display();
+            }
         }
     }
 }
@@ -904,16 +929,33 @@ impl ZoneView {
         let mut services_list = self.services.guard();
         services_list.clear();
 
-        // Add services from available services list
-        for service in &self.available_services {
+        // Filter services based on search term
+        let services_to_show: Vec<&String> = if self.service_filter.is_empty() {
+            self.available_services.iter().collect()
+        } else {
+            self.available_services
+                .iter()
+                .filter(|service| {
+                    service
+                        .to_lowercase()
+                        .contains(&self.service_filter.to_lowercase())
+                })
+                .collect()
+        };
+
+        // Add services with their enabled state
+        for service in services_to_show {
             let is_enabled = self.active_services.contains(service);
             services_list.push_back((service.clone(), is_enabled));
         }
 
-        glib::g_log!(
-            LogLevel::Message,
-            "Updated services display with {} services",
-            services_list.len()
-        );
+        // Only log when there's a significant change or on initial load
+        if self.service_filter.is_empty() || services_list.len() < 10 {
+            glib::g_log!(
+                LogLevel::Debug,
+                "Services display updated: {} services shown",
+                services_list.len()
+            );
+        }
     }
 }

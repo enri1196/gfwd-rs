@@ -15,5 +15,6 @@ gfwd-bus = { path = "../gfwd-bus", features = [
     "zone",
     "config_firewalld1",
     "config_zone",
+    "config_service",
     "systemd",
 ] }

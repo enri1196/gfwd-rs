@@ -284,13 +284,21 @@ impl FwdBroker {
     pub async fn get_services(&self) -> Result<Vec<String>, GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let service_paths = cfg.list_services().await?;
-        // Convert ObjectPaths to service names
+        // Get actual service names by querying each service object
         let mut services = Vec::new();
         for path in service_paths {
-            if let Some(name) = path.as_str().split('/').last() {
-                services.push(name.to_string());
+            if let Ok(service_proxy) = gfwd_bus::config_service::ConfigServiceProxy::builder(&self.conn)
+                .path(path.as_str())
+                .unwrap()
+                .build()
+                .await 
+            {
+                if let Ok(name) = service_proxy.get_short().await {
+                    services.push(name);
+                }
             }
         }
+        services.sort();
         Ok(services)
     }
 

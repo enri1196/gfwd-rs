@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use zbus::{Connection, Result as ZResult};
 use zbus_macros::proxy;
-use zvariant::OwnedValue;
+use zvariant::{ObjectPath, OwnedValue};
 
 /// Type alias for deprecated permanent service settings.
 /// (version, name, description, ports, modules, destinations, protocols, source_ports)
