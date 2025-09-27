@@ -27,6 +27,11 @@ pub enum ZoneViewRequest {
     AddForwardPort(String, String, String, String),
     RemovePort(String, String),
     RemoveForwardPort(String, String, String, String),
+    ToggleMasquerading,
+    ToggleIcmpBlockInversion,
+    ToggleService(String, bool),
+    LoadServices,
+    UpdateAvailableServices(Vec<String>),
 }
 
 #[derive(Debug)]

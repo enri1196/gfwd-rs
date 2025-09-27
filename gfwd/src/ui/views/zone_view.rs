@@ -1,15 +1,88 @@
+// Zone view implementation with integrated components
+
 use relm4::actions::{AccelsPlus, ActionGroupName, RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::core::FwdBroker;
+use crate::messages::port::PortDialogResponse;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::messages::port::PortDialogResponse;
-use crate::models::{ForwardingConfig, PortRule};
 use crate::ui::components::{PortItem, PortItemResponse};
 use crate::ui::dialogs::AddPortDialog;
+
+// Service item for the services list
+#[derive(Debug, Clone)]
+struct ServiceItem {
+    name: String,
+    enabled: bool,
+}
+
+#[derive(Debug)]
+enum ServiceItemInput {
+    Toggle,
+}
+
+#[derive(Debug)]
+enum ServiceItemOutput {
+    Toggle(String, bool),
+}
+
+#[relm4::factory]
+impl FactoryComponent for ServiceItem {
+    type Init = (String, bool);
+    type Input = ServiceItemInput;
+    type Output = ServiceItemOutput;
+    type CommandOutput = ();
+    type ParentWidget = gtk::ListBox;
+
+    view! {
+        adw::ActionRow {
+            #[watch]
+            set_title: &self.name,
+            set_subtitle: &format!("Service: {}", self.name),
+            set_activatable: true,
+            add_prefix = &gtk::Image {
+                set_icon_name: Some("preferences-system-network-symbolic"),
+                set_pixel_size: 16,
+            },
+            add_suffix = &gtk::Switch {
+                #[watch]
+                set_active: self.enabled,
+                set_valign: gtk::Align::Center,
+                set_vexpand: false,
+                connect_state_set[sender] => move |_, _state| {
+                    sender.input(ServiceItemInput::Toggle);
+                    glib::Propagation::Proceed
+                },
+            },
+            connect_activated[sender] => move |_| {
+                sender.input(ServiceItemInput::Toggle);
+            },
+        }
+    }
+
+    fn init_model(
+        (name, enabled): Self::Init,
+        _index: &DynamicIndex,
+        _sender: FactorySender<Self>,
+    ) -> Self {
+        Self { name, enabled }
+    }
+
+    fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
+        match msg {
+            ServiceItemInput::Toggle => {
+                let new_state = !self.enabled;
+                self.enabled = new_state;
+                sender
+                    .output(ServiceItemOutput::Toggle(self.name.clone(), new_state))
+                    .unwrap();
+            }
+        }
+    }
+}
 use crate::utils::constants::{APP_NAME, APP_VERSION};
 
 relm4::new_action_group!(WindowActionGroup, "win");
@@ -24,8 +97,17 @@ pub struct ZoneView {
     port_dialog: AsyncController<AddPortDialog>,
     #[tracker::do_not_track]
     ports: FactoryVecDeque<PortItem>,
+    #[tracker::do_not_track]
+    services: FactoryVecDeque<ServiceItem>,
     current_zone_name: String,
     firewalld_running: bool,
+    // Zone settings
+    masquerading: bool,
+    icmp_block_inversion: bool,
+    target_policy: String,
+    // Services
+    active_services: Vec<String>,
+    available_services: Vec<String>,
 }
 
 #[relm4::component(async, pub)]
@@ -74,40 +156,320 @@ impl AsyncComponent for ZoneView {
                 set_hscrollbar_policy: gtk::PolicyType::Never,
 
                 #[wrap(Some)]
-                set_child = &gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_margin_all: 12,
-                    set_spacing: 12,
+                set_child = &adw::Clamp {
+                    set_maximum_size: 1200,
+                    set_tightening_threshold: 800,
 
-                    adw::PreferencesPage {
-                        add = &adw::PreferencesGroup {
-                            set_title: "General",
-                            set_description: Some("Basic zone information"),
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_all: 18,
+                        set_spacing: 24,
 
-                            add = &adw::ActionRow {
-                                set_title: "Name",
-                                #[track(model.changed(ZoneView::current_zone_name()))]
-                                set_subtitle: &model.current_zone_name,
+                        // Zone Header
+                        adw::PreferencesGroup {
+                            add = &gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 16,
+                                set_margin_all: 16,
+
+                                gtk::Image {
+                                    set_icon_name: Some("security-high-symbolic"),
+                                    set_pixel_size: 48,
+                                    add_css_class: "accent",
+                                },
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_spacing: 4,
+                                    set_hexpand: true,
+                                    set_valign: gtk::Align::Center,
+
+                                    gtk::Label {
+                                        #[track(model.changed(ZoneView::current_zone_name()))]
+                                        set_text: &model.current_zone_name,
+                                        set_halign: gtk::Align::Start,
+                                        add_css_class: "title-1",
+                                    },
+
+                                    gtk::Label {
+                                        set_text: "Firewall Zone Configuration",
+                                        set_halign: gtk::Align::Start,
+                                        add_css_class: "subtitle",
+                                        add_css_class: "dim-label",
+                                    },
+                                },
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 8,
+                                    set_valign: gtk::Align::Center,
+
+                                    gtk::Image {
+                                        #[track(model.changed(ZoneView::firewalld_running()))]
+                                        set_icon_name: Some(if model.firewalld_running { "emblem-ok-symbolic" } else { "dialog-warning-symbolic" }),
+                                        set_pixel_size: 16,
+                                        set_valign: gtk::Align::Center,
+                                    },
+
+                                    gtk::Label {
+                                        #[track(model.changed(ZoneView::firewalld_running()))]
+                                        set_text: if model.firewalld_running { "Active" } else { "Inactive" },
+                                        add_css_class: "caption",
+                                        set_valign: gtk::Align::Center,
+                                    },
+                                },
                             },
                         },
 
-                        add = &adw::PreferencesGroup {
-                            set_title: "Allowed Ports",
+                        // Main Content Grid
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 24,
+                            set_homogeneous: false,
 
-                            #[wrap(Some)]
-                            set_header_suffix = &gtk::Button {
-                                set_icon_name: "list-add-symbolic",
-                                set_tooltip_text: Some("Add port"),
-                                add_css_class: "flat",
-                                connect_clicked[sender] => move |_| {
-                                    sender.input(ZoneViewRequest::ShowAddPortDialog);
+                            // Left Column - Zone Information
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 18,
+                                set_hexpand: true,
+
+                                // Zone Information
+                                adw::PreferencesGroup {
+                                    set_title: "Zone Information",
+                                    set_description: Some("Basic zone configuration and properties"),
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Zone Name",
+                                        #[track(model.changed(ZoneView::current_zone_name()))]
+                                        set_subtitle: &model.current_zone_name,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("folder-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Target Policy",
+                                        set_subtitle: "Default action for unmatched packets",
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("security-medium-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Label {
+                                            #[track(model.changed(ZoneView::target_policy()))]
+                                            set_text: &model.target_policy,
+                                            add_css_class: "tag",
+                                            add_css_class: "success",
+                                        },
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Masquerading",
+                                        set_subtitle: "Network address translation",
+                                        set_activatable: true,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-workgroup-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Switch {
+                                            #[track(model.changed(ZoneView::masquerading()))]
+                                            set_active: model.masquerading,
+                                            set_valign: gtk::Align::Center,
+                                            set_vexpand: false,
+                                            connect_state_set[sender] => move |_, _state| {
+                                                sender.input(ZoneViewRequest::ToggleMasquerading);
+                                                glib::Propagation::Proceed
+                                            },
+                                        },
+                                        connect_activated[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ToggleMasquerading);
+                                        },
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "ICMP Block Inversion",
+                                        set_subtitle: "Invert ICMP blocking rules",
+                                        set_activatable: true,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-cellular-signal-none-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Switch {
+                                            #[track(model.changed(ZoneView::icmp_block_inversion()))]
+                                            set_active: model.icmp_block_inversion,
+                                            set_valign: gtk::Align::Center,
+                                            set_vexpand: false,
+                                            connect_state_set[sender] => move |_, _state| {
+                                                sender.input(ZoneViewRequest::ToggleIcmpBlockInversion);
+                                                glib::Propagation::Proceed
+                                            },
+                                        },
+                                        connect_activated[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ToggleIcmpBlockInversion);
+                                        },
+                                    },
+                                },
+
+                                // Interfaces
+                                adw::PreferencesGroup {
+                                    set_title: "Network Interfaces",
+                                    set_description: Some("Interfaces assigned to this zone"),
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Active Interfaces",
+                                        set_subtitle: "No interfaces assigned",
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-wired-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Button {
+                                            set_icon_name: "list-add-symbolic",
+                                            set_tooltip_text: Some("Add interface"),
+                                            add_css_class: "flat",
+                                        },
+                                    },
+                                },
+
+                                // Services
+                                adw::PreferencesGroup {
+                                    set_title: "Allowed Services",
+                                    set_description: Some("Predefined service rules"),
+
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "view-refresh-symbolic",
+                                        set_tooltip_text: Some("Refresh services"),
+                                        add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::LoadServices);
+                                        },
+                                    },
+
+                                    #[local_ref]
+                                    services_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        set_margin_bottom: 12,
+                                    },
+
+                                    add = &gtk::Button {
+                                        set_label: "Manage Services",
+                                        add_css_class: "pill",
+                                        set_halign: gtk::Align::Center,
+                                        set_margin_top: 12,
+                                    },
                                 },
                             },
 
-                            #[local_ref]
-                            ports_list_box -> gtk::ListBox {
-                                set_selection_mode: gtk::SelectionMode::None,
-                                add_css_class: "boxed-list",
+                            // Right Column - Ports and Rules
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 18,
+                                set_hexpand: true,
+
+                                // Port Rules
+                                adw::PreferencesGroup {
+                                    set_title: "Port Rules",
+                                    set_description: Some("Custom port access rules and forwarding"),
+
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add port rule"),
+                                        add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ShowAddPortDialog);
+                                        },
+                                    },
+
+                                    #[local_ref]
+                                    ports_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                    },
+                                },
+
+                                // Rich Rules
+                                adw::PreferencesGroup {
+                                    set_title: "Rich Rules",
+                                    set_description: Some("Advanced firewall rules with complex conditions"),
+
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add rich rule"),
+                                        add_css_class: "flat",
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "No rich rules configured",
+                                        set_subtitle: "Rich rules allow complex firewall configurations",
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("applications-system-symbolic"),
+                                            set_pixel_size: 16,
+                                            add_css_class: "dim-label",
+                                        },
+                                    },
+                                },
+
+                                // Source Addresses
+                                adw::PreferencesGroup {
+                                    set_title: "Source Addresses",
+                                    set_description: Some("IP addresses and networks with access to this zone"),
+
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add source address"),
+                                        add_css_class: "flat",
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "All sources allowed",
+                                        set_subtitle: "No source restrictions configured",
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-workgroup-symbolic"),
+                                            set_pixel_size: 16,
+                                            add_css_class: "dim-label",
+                                        },
+                                    },
+                                },
+
+                                // ICMP Types
+                                adw::PreferencesGroup {
+                                    set_title: "ICMP Types",
+                                    set_description: Some("Internet Control Message Protocol rules"),
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Echo Request (ping)",
+                                        set_subtitle: "Allow incoming ping requests",
+                                        set_activatable: true,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-cellular-signal-good-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Switch {
+                                            set_active: true,
+                                            set_valign: gtk::Align::Center,
+                                            set_vexpand: false,
+                                        },
+                                    },
+
+                                    add = &adw::ActionRow {
+                                        set_title: "Echo Reply",
+                                        set_subtitle: "Allow outgoing ping responses",
+                                        set_activatable: true,
+                                        add_prefix = &gtk::Image {
+                                            set_icon_name: Some("network-cellular-signal-good-symbolic"),
+                                            set_pixel_size: 16,
+                                        },
+                                        add_suffix = &gtk::Switch {
+                                            set_active: true,
+                                            set_valign: gtk::Align::Center,
+                                            set_vexpand: false,
+                                        },
+                                    },
+                                },
                             },
                         },
                     },
@@ -174,9 +536,18 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        let services =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    ServiceItemOutput::Toggle(service_name, enabled) => {
+                        ZoneViewRequest::ToggleService(service_name, enabled)
+                    }
+                });
+
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
-        // Load initial zone settings
+        // Load initial zone settings and services
         let initial_zone_name_clone = initial_zone_name.clone();
         let sender_clone = sender.clone();
         relm4::spawn(async move {
@@ -185,16 +556,26 @@ impl AsyncComponent for ZoneView {
             }
         });
 
+        // Load available services
+        sender.input(ZoneViewRequest::LoadServices);
+
         let model = ZoneView {
             broker,
             port_dialog,
             ports,
+            services,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
+            masquerading: false,
+            icmp_block_inversion: false,
+            target_policy: "ACCEPT".to_string(),
+            active_services: Vec::new(),
+            available_services: Vec::new(),
             tracker: 0,
         };
 
         let ports_list_box = model.ports.widget();
+        let services_list_box = model.services.widget();
         let widgets = view_output!();
 
         // Set up actions
@@ -247,6 +628,40 @@ impl AsyncComponent for ZoneView {
             ZoneViewRequest::ShowAddPortDialog => {
                 self.port_dialog.widget().present(Some(root));
             }
+            ZoneViewRequest::ToggleMasquerading => {
+                let new_state = !self.masquerading;
+                self.set_masquerading(new_state);
+
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                relm4::spawn(async move {
+                    let result = if new_state {
+                        broker.add_masquerade(&zone_name).await
+                    } else {
+                        broker.remove_masquerade(&zone_name).await
+                    };
+                    if let Err(e) = result {
+                        glib::g_log!(LogLevel::Error, "Failed to toggle masquerading: {}", e);
+                    }
+                });
+            }
+            ZoneViewRequest::ToggleIcmpBlockInversion => {
+                let new_state = !self.icmp_block_inversion;
+                self.set_icmp_block_inversion(new_state);
+
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                relm4::spawn(async move {
+                    let result = broker.set_icmp_block_inversion(&zone_name, new_state).await;
+                    if let Err(e) = result {
+                        glib::g_log!(
+                            LogLevel::Error,
+                            "Failed to toggle ICMP block inversion: {}",
+                            e
+                        );
+                    }
+                });
+            }
             ZoneViewRequest::AddPort(port, protocol) => {
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
@@ -277,25 +692,33 @@ impl AsyncComponent for ZoneView {
                 });
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
+                // Update zone properties
+                self.set_masquerading(settings.masquerade);
+                self.set_target_policy(settings.target.to_string());
+                self.set_active_services(settings.services.clone());
+
                 // Update port list
                 let mut ports = self.ports.guard();
                 ports.clear();
 
                 // Add regular ports
                 for (port, protocol) in &settings.ports {
-                    let rule = PortRule::new(port.clone(), protocol.clone());
-                    ports.push_back(PortItem::from(rule));
+                    let rule = crate::models::PortRule::new(port.clone(), protocol.clone());
+                    ports.push_back(crate::ui::components::PortItem::from(rule));
                 }
 
                 // Add forwarded ports
                 for (port, protocol, to_port, to_addr) in &settings.forward_ports {
-                    let forwarding = ForwardingConfig {
+                    let forwarding = crate::models::ForwardingConfig {
                         to_port: to_port.clone(),
                         to_addr: to_addr.clone(),
                     };
-                    let rule =
-                        PortRule::with_forwarding(port.clone(), protocol.clone(), forwarding);
-                    ports.push_back(PortItem::from(rule));
+                    let rule = crate::models::PortRule::with_forwarding(
+                        port.clone(),
+                        protocol.clone(),
+                        forwarding,
+                    );
+                    ports.push_back(crate::ui::components::PortItem::from(rule));
                 }
 
                 glib::g_log!(
@@ -303,9 +726,33 @@ impl AsyncComponent for ZoneView {
                     "Zone settings updated with {} ports",
                     ports.len()
                 );
+                drop(ports);
+
+                // Trigger service loading if we have available services
+                if !self.available_services.is_empty() {
+                    self.update_services_display();
+                } else {
+                    // Load services for the first time
+                    sender.input(ZoneViewRequest::LoadServices);
+                }
+            }
+            ZoneViewRequest::LoadServices => {
+                let broker = self.broker;
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.get_services().await {
+                        Ok(services) => {
+                            // Store available services and update display
+                            sender_clone.input(ZoneViewRequest::UpdateAvailableServices(services));
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to load services: {}", e);
+                        }
+                    }
+                });
             }
             ZoneViewRequest::RemoveZone => {
-                // Show confirmation dialog using AlertDialog (newer API)
+                // Show confirmation dialog
                 let dialog = adw::AlertDialog::builder()
                     .heading("Delete Zone")
                     .body(&format!("Are you sure you want to delete the zone '{}'?\n\nThis action cannot be undone.", self.current_zone_name))
@@ -341,7 +788,6 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
-                // Present on the root widget (which should be a window)
                 if let Some(window) = root.root().and_downcast::<gtk::Window>() {
                     dialog.present(Some(&window));
                 } else {
@@ -425,6 +871,49 @@ impl AsyncComponent for ZoneView {
                     }
                 });
             }
+            ZoneViewRequest::ToggleService(service_name, enabled) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                relm4::spawn(async move {
+                    let result = if enabled {
+                        broker.add_service(&zone_name, &service_name).await
+                    } else {
+                        broker.remove_service(&zone_name, &service_name).await
+                    };
+
+                    if let Err(e) = result {
+                        glib::g_log!(
+                            LogLevel::Error,
+                            "Failed to toggle service {}: {}",
+                            service_name,
+                            e
+                        );
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateAvailableServices(services) => {
+                self.set_available_services(services);
+                self.update_services_display();
+            }
         }
+    }
+}
+
+impl ZoneView {
+    fn update_services_display(&mut self) {
+        let mut services_list = self.services.guard();
+        services_list.clear();
+
+        // Add services from available services list
+        for service in &self.available_services {
+            let is_enabled = self.active_services.contains(service);
+            services_list.push_back((service.clone(), is_enabled));
+        }
+
+        glib::g_log!(
+            LogLevel::Message,
+            "Updated services display with {} services",
+            services_list.len()
+        );
     }
 }

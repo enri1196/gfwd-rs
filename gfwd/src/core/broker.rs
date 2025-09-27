@@ -231,4 +231,78 @@ impl FwdBroker {
         let _job = mgr.stop_unit("firewalld.service", "replace").await?;
         Ok(())
     }
+
+    /// Add masquerading to a zone
+    pub async fn add_masquerade(&self, zone_name: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_masquerade().await?;
+        Ok(())
+    }
+
+    /// Remove masquerading from a zone
+    pub async fn remove_masquerade(&self, zone_name: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_masquerade().await?;
+        Ok(())
+    }
+
+    /// Add a service to a zone
+    pub async fn add_service(&self, zone_name: &str, service: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_service(service).await?;
+        Ok(())
+    }
+
+    /// Remove a service from a zone
+    pub async fn remove_service(&self, zone_name: &str, service: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_service(service).await?;
+        Ok(())
+    }
+
+    /// Get all available services
+    pub async fn get_services(&self) -> Result<Vec<String>, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let service_paths = cfg.list_services().await?;
+        // Convert ObjectPaths to service names
+        let mut services = Vec::new();
+        for path in service_paths {
+            if let Some(name) = path.as_str().split('/').last() {
+                services.push(name.to_string());
+            }
+        }
+        Ok(services)
+    }
+
+    /// Set ICMP block inversion for a zone
+    pub async fn set_icmp_block_inversion(&self, zone_name: &str, enabled: bool) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.set_icmp_block_inversion(enabled).await?;
+        Ok(())
+    }
 }
