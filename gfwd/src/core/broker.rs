@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use gfwd_bus::config_firewalld1::ZoneSettings as ZoneSettingsBus;
+use relm4::gtk::glib;
 use relm4::tokio::sync::OnceCell;
 use zbus::Connection;
 
@@ -288,11 +289,12 @@ impl FwdBroker {
         // Get actual service names by querying each service object
         let mut services = Vec::new();
         for path in service_paths {
-            if let Ok(service_proxy) = gfwd_bus::config_service::ConfigServiceProxy::builder(&self.conn)
-                .path(path.as_str())
-                .unwrap()
-                .build()
-                .await 
+            if let Ok(service_proxy) =
+                gfwd_bus::config_service::ConfigServiceProxy::builder(&self.conn)
+                    .path(path.as_str())
+                    .unwrap()
+                    .build()
+                    .await
             {
                 if let Ok(name) = service_proxy.get_short().await {
                     services.push(name);
@@ -304,7 +306,11 @@ impl FwdBroker {
     }
 
     /// Set ICMP block inversion for a zone
-    pub async fn set_icmp_block_inversion(&self, zone_name: &str, enabled: bool) -> Result<(), GfwdError> {
+    pub async fn set_icmp_block_inversion(
+        &self,
+        zone_name: &str,
+        enabled: bool,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
@@ -319,25 +325,29 @@ impl FwdBroker {
     pub async fn get_icmp_types(&self) -> Result<Vec<IcmpType>, GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let icmp_type_names = cfg.get_icmp_type_names().await?;
-        
+
         let mut icmp_types = Vec::new();
         for name in icmp_type_names {
             // Get the object path for this ICMP type
             if let Ok(path) = cfg.get_icmp_type_by_name(&name).await {
                 // Create a proxy for this specific ICMP type
-                if let Ok(proxy) = gfwd_bus::config_icmptype::ConfigIcmpTypeProxy::builder(&self.conn)
-                    .path(path.as_str())
-                    .unwrap()
-                    .build()
-                    .await 
+                if let Ok(proxy) =
+                    gfwd_bus::config_icmptype::ConfigIcmpTypeProxy::builder(&self.conn)
+                        .path(path.as_str())
+                        .unwrap()
+                        .build()
+                        .await
                 {
                     // Get the description, fallback to name if description fails
-                    let description = proxy.get_description().await.unwrap_or_else(|_| name.clone());
+                    let description = proxy
+                        .get_description()
+                        .await
+                        .unwrap_or_else(|_| name.clone());
                     icmp_types.push(IcmpType::new(name, description));
                 }
             }
         }
-        
+
         // Sort by name for consistent ordering
         icmp_types.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(icmp_types)
@@ -356,7 +366,11 @@ impl FwdBroker {
     }
 
     /// Remove an ICMP block from a zone
-    pub async fn remove_icmp_block(&self, zone_name: &str, icmp_type: &str) -> Result<(), GfwdError> {
+    pub async fn remove_icmp_block(
+        &self,
+        zone_name: &str,
+        icmp_type: &str,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
@@ -367,20 +381,92 @@ impl FwdBroker {
         Ok(())
     }
 
-    /// Get all available network interfaces from the system
+    /// Get all available network interfaces from the system using NetworkManager
     pub async fn get_interfaces(&self) -> Result<Vec<String>, GfwdError> {
-        // Note: firewalld doesn't provide a direct method to list all system interfaces
-        // This would typically require reading from /sys/class/net or using other system APIs
-        // For now, we'll return an empty list and let users manually enter interface names
-        // In a real implementation, you might want to use the `nix` crate or similar to read system interfaces
-        Ok(Vec::new())
+        // Try NetworkManager first
+        match self.get_interfaces_from_networkmanager().await {
+            Ok(interfaces) if !interfaces.is_empty() => Ok(interfaces),
+            Ok(_) | Err(_) => {
+                // Fallback to reading from /sys/class/net if NetworkManager fails or returns empty
+                self.get_interfaces_from_sysfs().await
+            }
+        }
+    }
+
+    /// Get network interfaces from NetworkManager D-Bus API
+    async fn get_interfaces_from_networkmanager(&self) -> Result<Vec<String>, GfwdError> {
+        let nm_proxy = gfwd_bus::network_manager::NetworkManagerProxy::new(&self.conn).await?;
+        let device_paths = nm_proxy.get_devices().await?;
+
+        let mut interfaces = Vec::new();
+        for device_path in device_paths {
+            let device_proxy = gfwd_bus::network_manager::DeviceProxy::builder(&self.conn)
+                .path(device_path.as_str())?
+                .build()
+                .await?;
+
+            if let Ok(interface_name) = device_proxy.interface().await {
+                // Filter out loopback and virtual interfaces
+                if interface_name != "lo"
+                    && !interface_name.starts_with("docker")
+                    && !interface_name.starts_with("veth")
+                    && !interface_name.starts_with("br-")
+                {
+                    interfaces.push(interface_name);
+                }
+            }
+        }
+
+        // Sort interfaces for consistent ordering
+        interfaces.sort();
+        Ok(interfaces)
+    }
+
+    /// Fallback method to get network interfaces from /sys/class/net
+    async fn get_interfaces_from_sysfs(&self) -> Result<Vec<String>, GfwdError> {
+        use std::fs;
+
+        match fs::read_dir("/sys/class/net") {
+            Ok(entries) => {
+                let mut interfaces = Vec::new();
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        if let Some(name) = entry.file_name().to_str() {
+                            // Filter out loopback and other virtual interfaces
+                            if name != "lo"
+                                && !name.starts_with("docker")
+                                && !name.starts_with("veth")
+                                && !name.starts_with("br-")
+                            {
+                                interfaces.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+                // Sort interfaces for consistent ordering
+                interfaces.sort();
+                Ok(interfaces)
+            }
+            Err(e) => {
+                glib::g_log!(
+                    glib::LogLevel::Warning,
+                    "Could not read network interfaces from /sys/class/net: {}. Users will need to enter interface names manually.",
+                    e
+                );
+                Ok(Vec::new())
+            }
+        }
     }
 
     /// Add an interface to a zone
-    pub async fn add_interface_to_zone(&self, zone_name: &str, interface: &str) -> Result<(), GfwdError> {
+    pub async fn add_interface_to_zone(
+        &self,
+        zone_name: &str,
+        interface: &str,
+    ) -> Result<(), GfwdError> {
         // Validate interface name first
         crate::core::validation::validate_interface_name(interface)?;
-        
+
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
@@ -392,7 +478,11 @@ impl FwdBroker {
     }
 
     /// Remove an interface from a zone
-    pub async fn remove_interface_from_zone(&self, zone_name: &str, interface: &str) -> Result<(), GfwdError> {
+    pub async fn remove_interface_from_zone(
+        &self,
+        zone_name: &str,
+        interface: &str,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
@@ -407,7 +497,7 @@ impl FwdBroker {
     pub async fn add_source_to_zone(&self, zone_name: &str, source: &str) -> Result<(), GfwdError> {
         // Validate source address first
         crate::core::validation::validate_source_address(source)?;
-        
+
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
@@ -419,7 +509,11 @@ impl FwdBroker {
     }
 
     /// Remove a source address from a zone
-    pub async fn remove_source_from_zone(&self, zone_name: &str, source: &str) -> Result<(), GfwdError> {
+    pub async fn remove_source_from_zone(
+        &self,
+        zone_name: &str,
+        source: &str,
+    ) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)

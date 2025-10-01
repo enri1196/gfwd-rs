@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum InterfaceDialogRequest {
     SetInterface(String),
+    SelectInterface(u32), // Index of selected interface
     ValidateInterface,
     Add,
     Cancel,

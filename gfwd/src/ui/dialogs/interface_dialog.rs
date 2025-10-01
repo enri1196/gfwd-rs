@@ -10,11 +10,15 @@ pub struct AddInterfaceDialog {
     interface_name: String,
     interface_error: Option<String>,
     is_valid: bool,
+    available_interfaces: Vec<String>,
+    selected_interface_index: Option<u32>,
+    #[tracker::do_not_track]
+    interface_model: gtk::StringList,
 }
 
 #[relm4::component(async, pub)]
 impl SimpleAsyncComponent for AddInterfaceDialog {
-    type Init = ();
+    type Init = Vec<String>;
     type Input = InterfaceDialogRequest;
     type Output = InterfaceDialogResponse;
 
@@ -75,8 +79,34 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                                 set_title: "Interface Details",
                                 set_description: Some("Enter the name of the network interface"),
 
-                                // Interface name input
+                                // Interface selection dropdown
+                                add = &adw::ComboRow {
+                                    set_title: "Network Interface",
+                                    set_subtitle: "Select an available network interface",
+                                    #[track(model.changed(AddInterfaceDialog::selected_interface_index()))]
+                                    set_selected: model.selected_interface_index.unwrap_or(gtk::INVALID_LIST_POSITION),
+                                    #[track(model.changed(AddInterfaceDialog::interface_error()))]
+                                    add_css_class: if model.interface_error.is_some() { "error" } else { "" },
+
+                                    add_prefix = &gtk::Image {
+                                        set_icon_name: Some("network-wired-symbolic"),
+                                        set_pixel_size: 16,
+                                    },
+
+                                    set_model: Some(&model.interface_model),
+
+                                    connect_selected_notify[sender] => move |combo| {
+                                        let selected = combo.selected();
+                                        if selected != gtk::INVALID_LIST_POSITION {
+                                            sender.input(InterfaceDialogRequest::SelectInterface(selected));
+                                        }
+                                    },
+                                },
+
+                                // Manual entry fallback (if no interfaces found)
                                 add = &adw::EntryRow {
+                                    #[track(model.changed(AddInterfaceDialog::available_interfaces()))]
+                                    set_visible: model.available_interfaces.is_empty(),
                                     set_title: "Interface Name",
                                     set_text: &model.interface_name,
                                     #[track(model.changed(AddInterfaceDialog::interface_error()))]
@@ -115,40 +145,39 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
 
                             add = &adw::PreferencesGroup {
                                 set_title: "Interface Information",
-                                set_description: Some("Common network interface examples"),
+                                #[track(model.changed(AddInterfaceDialog::available_interfaces()))]
+                                set_description: Some(if model.available_interfaces.is_empty() {
+                                    "No interfaces detected. Enter interface name manually."
+                                } else {
+                                    "Available network interfaces detected from system"
+                                }),
 
-                                // Examples
+                                // Show detected interfaces count
                                 add = &adw::ActionRow {
-                                    set_title: "Ethernet Interfaces",
-                                    set_subtitle: "eth0, enp0s3, ens33",
+                                    #[track(model.changed(AddInterfaceDialog::available_interfaces()))]
+                                    set_visible: !model.available_interfaces.is_empty(),
+                                    set_title: "Detected Interfaces",
+                                    #[track(model.changed(AddInterfaceDialog::available_interfaces()))]
+                                    set_subtitle: &format!("{} interfaces found", model.available_interfaces.len()),
                                     add_css_class: "caption",
 
                                     add_prefix = &gtk::Image {
-                                        set_icon_name: Some("network-wired-symbolic"),
+                                        set_icon_name: Some("emblem-ok-symbolic"),
                                         set_pixel_size: 16,
-                                        add_css_class: "accent",
+                                        add_css_class: "success",
                                     },
                                 },
 
+                                // Manual entry info when no interfaces detected
                                 add = &adw::ActionRow {
-                                    set_title: "Wireless Interfaces",
-                                    set_subtitle: "wlan0, wlp2s0, wifi0",
+                                    #[track(model.changed(AddInterfaceDialog::available_interfaces()))]
+                                    set_visible: model.available_interfaces.is_empty(),
+                                    set_title: "Manual Entry Required",
+                                    set_subtitle: "Common examples: eth0, wlan0, enp0s3",
                                     add_css_class: "caption",
 
                                     add_prefix = &gtk::Image {
-                                        set_icon_name: Some("network-wireless-symbolic"),
-                                        set_pixel_size: 16,
-                                        add_css_class: "accent",
-                                    },
-                                },
-
-                                add = &adw::ActionRow {
-                                    set_title: "Virtual Interfaces",
-                                    set_subtitle: "docker0, br0, veth0",
-                                    add_css_class: "caption",
-
-                                    add_prefix = &gtk::Image {
-                                        set_icon_name: Some("folder-symbolic"),
+                                        set_icon_name: Some("dialog-information-symbolic"),
                                         set_pixel_size: 16,
                                         add_css_class: "accent",
                                     },
@@ -202,14 +231,23 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
     }
 
     async fn init(
-        _init: Self::Init,
+        available_interfaces: Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        // Create StringList model for the ComboRow
+        let interface_model = gtk::StringList::new(&[]);
+        for interface in &available_interfaces {
+            interface_model.append(interface);
+        }
+
         let model = AddInterfaceDialog {
             interface_name: String::new(),
             interface_error: None,
             is_valid: false,
+            available_interfaces,
+            selected_interface_index: None,
+            interface_model,
             tracker: 0,
         };
 
@@ -225,6 +263,14 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                 self.set_interface_name(name);
                 // Auto-validate on change
                 sender.input(InterfaceDialogRequest::ValidateInterface);
+            }
+            InterfaceDialogRequest::SelectInterface(index) => {
+                self.set_selected_interface_index(Some(index));
+                if let Some(interface_name) = self.available_interfaces.get(index as usize) {
+                    self.set_interface_name(interface_name.clone());
+                    // Auto-validate selected interface
+                    sender.input(InterfaceDialogRequest::ValidateInterface);
+                }
             }
             InterfaceDialogRequest::ValidateInterface => {
                 match validate_interface_name(&self.interface_name) {
@@ -252,6 +298,7 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                 self.set_interface_name(String::new());
                 self.set_interface_error(None);
                 self.set_is_valid(false);
+                self.set_selected_interface_index(None);
             }
         }
     }

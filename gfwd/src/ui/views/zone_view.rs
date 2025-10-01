@@ -597,10 +597,13 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        // Get available interfaces for the dialog
+        let available_interfaces = broker.get_interfaces().await.unwrap_or_default();
+        
         // Initialize interface dialog
         let interface_dialog =
             AddInterfaceDialog::builder()
-                .launch(())
+                .launch(available_interfaces)
                 .forward(sender.input_sender(), |msg| match msg {
                     InterfaceDialogResponse::InterfaceAdded { name } => {
                         ZoneViewRequest::AddInterface(name)

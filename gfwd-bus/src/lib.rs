@@ -53,3 +53,7 @@ pub mod zone;
 #[cfg_attr(docsrs, doc(cfg(feature = "systemd")))]
 #[cfg(feature = "systemd")]
 pub mod systemd;
+
+#[cfg_attr(docsrs, doc(cfg(feature = "network_manager")))]
+#[cfg(feature = "network_manager")]
+pub mod network_manager;
