@@ -39,6 +39,18 @@ pub enum ZoneViewRequest {
     RemoveIcmpBlock(String),
     LoadIcmpTypes,
     UpdateIcmpBlocks(Vec<String>),
+    // Interface management
+    ShowAddInterfaceDialog,
+    AddInterface(String),
+    RemoveInterface(String),
+    LoadInterfaces,
+    UpdateInterfaces(Vec<String>),
+    // Source management
+    ShowAddSourceDialog,
+    AddSource(String),
+    RemoveSource(String),
+    LoadSources,
+    UpdateSources(Vec<String>),
 }
 
 #[derive(Debug)]

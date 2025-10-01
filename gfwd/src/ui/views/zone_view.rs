@@ -9,9 +9,11 @@ use crate::core::FwdBroker;
 use crate::messages::port::PortDialogResponse;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse};
-use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog};
+use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse, InterfaceItem, InterfaceItemResponse, SourceItem, SourceItemResponse};
+use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog, AddInterfaceDialog, AddSourceDialog};
 use crate::messages::icmp::IcmpDialogResponse;
+use crate::messages::interface::InterfaceDialogResponse;
+use crate::messages::source::SourceDialogResponse;
 
 // Service item for the services list
 #[derive(Debug, Clone)]
@@ -99,11 +101,19 @@ pub struct ZoneView {
     #[tracker::do_not_track]
     icmp_dialog: AsyncController<AddIcmpDialog>,
     #[tracker::do_not_track]
+    interface_dialog: AsyncController<AddInterfaceDialog>,
+    #[tracker::do_not_track]
+    source_dialog: AsyncController<AddSourceDialog>,
+    #[tracker::do_not_track]
     ports: FactoryVecDeque<PortItem>,
     #[tracker::do_not_track]
     services: FactoryVecDeque<ServiceItem>,
     #[tracker::do_not_track]
     icmp_blocks: FactoryVecDeque<IcmpItem>,
+    #[tracker::do_not_track]
+    interfaces: FactoryVecDeque<InterfaceItem>,
+    #[tracker::do_not_track]
+    sources: FactoryVecDeque<SourceItem>,
     current_zone_name: String,
     firewalld_running: bool,
     // Zone settings
@@ -116,6 +126,9 @@ pub struct ZoneView {
     service_filter: String,
     // ICMP
     icmp_block_list: Vec<String>,
+    // Interfaces and Sources
+    interface_list: Vec<String>,
+    source_list: Vec<String>,
 }
 
 #[relm4::component(async, pub)]
@@ -323,17 +336,34 @@ impl AsyncComponent for ZoneView {
                                     set_title: "Network Interfaces",
                                     set_description: Some("Interfaces assigned to this zone"),
 
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add interface"),
+                                        add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ShowAddInterfaceDialog);
+                                        },
+                                    },
+
+                                    #[local_ref]
+                                    interfaces_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        #[track(model.changed(ZoneView::interface_list()))]
+                                        set_visible: !model.interface_list.is_empty(),
+                                    },
+
+                                    // Show message when no interfaces are assigned
                                     add = &adw::ActionRow {
-                                        set_title: "Active Interfaces",
-                                        set_subtitle: "No interfaces assigned",
+                                        #[track(model.changed(ZoneView::interface_list()))]
+                                        set_visible: model.interface_list.is_empty(),
+                                        set_title: "No interfaces assigned",
+                                        set_subtitle: "All traffic will use default zone assignment",
                                         add_prefix = &gtk::Image {
                                             set_icon_name: Some("network-wired-symbolic"),
                                             set_pixel_size: 16,
-                                        },
-                                        add_suffix = &gtk::Button {
-                                            set_icon_name: "list-add-symbolic",
-                                            set_tooltip_text: Some("Add interface"),
-                                            add_css_class: "flat",
+                                            add_css_class: "dim-label",
                                         },
                                     },
                                 },
@@ -449,9 +479,23 @@ impl AsyncComponent for ZoneView {
                                         set_icon_name: "list-add-symbolic",
                                         set_tooltip_text: Some("Add source address"),
                                         add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ShowAddSourceDialog);
+                                        },
                                     },
 
+                                    #[local_ref]
+                                    sources_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        #[track(model.changed(ZoneView::source_list()))]
+                                        set_visible: !model.source_list.is_empty(),
+                                    },
+
+                                    // Show message when no sources are configured
                                     add = &adw::ActionRow {
+                                        #[track(model.changed(ZoneView::source_list()))]
+                                        set_visible: model.source_list.is_empty(),
                                         set_title: "All sources allowed",
                                         set_subtitle: "No source restrictions configured",
                                         add_prefix = &gtk::Image {
@@ -553,6 +597,26 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        // Initialize interface dialog
+        let interface_dialog =
+            AddInterfaceDialog::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    InterfaceDialogResponse::InterfaceAdded { name } => {
+                        ZoneViewRequest::AddInterface(name)
+                    }
+                });
+
+        // Initialize source dialog
+        let source_dialog =
+            AddSourceDialog::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    SourceDialogResponse::SourceAdded { address } => {
+                        ZoneViewRequest::AddSource(address)
+                    }
+                });
+
         let ports =
             FactoryVecDeque::builder()
                 .launch_default()
@@ -593,6 +657,24 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        let interfaces =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    InterfaceItemResponse::RemoveInterface { name } => {
+                        ZoneViewRequest::RemoveInterface(name)
+                    }
+                });
+
+        let sources =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    SourceItemResponse::RemoveSource { address } => {
+                        ZoneViewRequest::RemoveSource(address)
+                    }
+                });
+
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
         // Load initial zone settings and services
@@ -609,14 +691,22 @@ impl AsyncComponent for ZoneView {
         
         // Load ICMP blocks
         sender.input(ZoneViewRequest::LoadIcmpTypes);
+        
+        // Load interfaces and sources
+        sender.input(ZoneViewRequest::LoadInterfaces);
+        sender.input(ZoneViewRequest::LoadSources);
 
         let model = ZoneView {
             broker,
             port_dialog,
             icmp_dialog,
+            interface_dialog,
+            source_dialog,
             ports,
             services,
             icmp_blocks,
+            interfaces,
+            sources,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
             masquerading: false,
@@ -626,12 +716,16 @@ impl AsyncComponent for ZoneView {
             available_services: Vec::new(),
             service_filter: String::new(),
             icmp_block_list: Vec::new(),
+            interface_list: Vec::new(),
+            source_list: Vec::new(),
             tracker: 0,
         };
 
         let ports_list_box = model.ports.widget();
         let services_list_box = model.services.widget();
         let icmp_blocks_list_box = model.icmp_blocks.widget();
+        let interfaces_list_box = model.interfaces.widget();
+        let sources_list_box = model.sources.widget();
         let widgets = view_output!();
 
         // Set up actions
@@ -687,6 +781,12 @@ impl AsyncComponent for ZoneView {
             ZoneViewRequest::ShowAddIcmpDialog => {
                 self.icmp_dialog.widget().present(Some(root));
             }
+            ZoneViewRequest::ShowAddInterfaceDialog => {
+                self.interface_dialog.widget().present(Some(root));
+            }
+            ZoneViewRequest::ShowAddSourceDialog => {
+                self.source_dialog.widget().present(Some(root));
+            }
             ZoneViewRequest::ToggleMasquerading => {
                 let new_state = !self.masquerading;
                 self.set_masquerading(new_state);
@@ -736,19 +836,23 @@ impl AsyncComponent for ZoneView {
             }
             ZoneViewRequest::SetZoneContent(zone_name) => {
                 self.set_current_zone_name(zone_name.clone());
-                let sender = sender.clone();
+                let sender_clone = sender.clone();
                 let broker = self.broker;
                 let zone_name = self.current_zone_name.clone();
                 relm4::spawn(async move {
                     match broker.get_zone_settings(&zone_name).await {
                         Ok(settings) => {
-                            sender.input(ZoneViewRequest::UpdateZoneSettings(settings));
+                            sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                         }
                         Err(e) => {
                             glib::g_log!(LogLevel::Error, "Failed to update zone content: {e}");
                         }
                     }
                 });
+                
+                // Load interfaces and sources for the new zone
+                sender.input(ZoneViewRequest::LoadInterfaces);
+                sender.input(ZoneViewRequest::LoadSources);
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
                 // Update zone properties
@@ -789,6 +893,10 @@ impl AsyncComponent for ZoneView {
 
                 // Update ICMP blocks
                 sender.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
+                
+                // Update interfaces and sources
+                sender.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
+                sender.input(ZoneViewRequest::UpdateSources(settings.sources));
 
                 // Trigger service loading if we have available services
                 if !self.available_services.is_empty() {
@@ -1024,6 +1132,136 @@ impl AsyncComponent for ZoneView {
                     LogLevel::Debug,
                     "ICMP blocks updated: {} blocks",
                     icmp_list.len()
+                );
+            }
+            ZoneViewRequest::AddInterface(interface_name) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.add_interface_to_zone(&zone_name, &interface_name).await {
+                        Ok(()) => {
+                            // Reload interfaces to update the display
+                            sender_clone.input(ZoneViewRequest::LoadInterfaces);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to add interface: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::RemoveInterface(interface_name) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.remove_interface_from_zone(&zone_name, &interface_name).await {
+                        Ok(()) => {
+                            // Reload interfaces to update the display
+                            sender_clone.input(ZoneViewRequest::LoadInterfaces);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to remove interface: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::LoadInterfaces => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Get current interfaces for this zone
+                    match broker.get_zone_settings(&zone_name).await {
+                        Ok(settings) => {
+                            sender_clone.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to load interfaces: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateInterfaces(interfaces) => {
+                self.set_interface_list(interfaces.clone());
+                
+                // Update the interfaces display
+                let mut interface_list = self.interfaces.guard();
+                interface_list.clear();
+                
+                for interface_name in interfaces {
+                    interface_list.push_back(InterfaceItem::from(interface_name));
+                }
+                
+                glib::g_log!(
+                    LogLevel::Debug,
+                    "Interfaces updated: {} interfaces",
+                    interface_list.len()
+                );
+            }
+            ZoneViewRequest::AddSource(source_address) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.add_source_to_zone(&zone_name, &source_address).await {
+                        Ok(()) => {
+                            // Reload sources to update the display
+                            sender_clone.input(ZoneViewRequest::LoadSources);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to add source: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::RemoveSource(source_address) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.remove_source_from_zone(&zone_name, &source_address).await {
+                        Ok(()) => {
+                            // Reload sources to update the display
+                            sender_clone.input(ZoneViewRequest::LoadSources);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to remove source: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::LoadSources => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Get current sources for this zone
+                    match broker.get_zone_settings(&zone_name).await {
+                        Ok(settings) => {
+                            sender_clone.input(ZoneViewRequest::UpdateSources(settings.sources));
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to load sources: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateSources(sources) => {
+                self.set_source_list(sources.clone());
+                
+                // Update the sources display
+                let mut source_list = self.sources.guard();
+                source_list.clear();
+                
+                for source_address in sources {
+                    source_list.push_back(SourceItem::from(source_address));
+                }
+                
+                glib::g_log!(
+                    LogLevel::Debug,
+                    "Sources updated: {} sources",
+                    source_list.len()
                 );
             }
         }

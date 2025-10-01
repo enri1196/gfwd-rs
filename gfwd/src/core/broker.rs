@@ -366,4 +366,67 @@ impl FwdBroker {
         proxy.remove_icmp_block(icmp_type).await?;
         Ok(())
     }
+
+    /// Get all available network interfaces from the system
+    pub async fn get_interfaces(&self) -> Result<Vec<String>, GfwdError> {
+        // Note: firewalld doesn't provide a direct method to list all system interfaces
+        // This would typically require reading from /sys/class/net or using other system APIs
+        // For now, we'll return an empty list and let users manually enter interface names
+        // In a real implementation, you might want to use the `nix` crate or similar to read system interfaces
+        Ok(Vec::new())
+    }
+
+    /// Add an interface to a zone
+    pub async fn add_interface_to_zone(&self, zone_name: &str, interface: &str) -> Result<(), GfwdError> {
+        // Validate interface name first
+        crate::core::validation::validate_interface_name(interface)?;
+        
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_interface(interface).await?;
+        Ok(())
+    }
+
+    /// Remove an interface from a zone
+    pub async fn remove_interface_from_zone(&self, zone_name: &str, interface: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_interface(interface).await?;
+        Ok(())
+    }
+
+    /// Add a source address to a zone
+    pub async fn add_source_to_zone(&self, zone_name: &str, source: &str) -> Result<(), GfwdError> {
+        // Validate source address first
+        crate::core::validation::validate_source_address(source)?;
+        
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_source(source).await?;
+        Ok(())
+    }
+
+    /// Remove a source address from a zone
+    pub async fn remove_source_from_zone(&self, zone_name: &str, source: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_source(source).await?;
+        Ok(())
+    }
 }
