@@ -1,4 +1,3 @@
-use zbus::Connection;
 use zbus::Result as ZResult;
 use zbus_macros::proxy;
 

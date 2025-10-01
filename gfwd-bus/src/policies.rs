@@ -1,4 +1,4 @@
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(

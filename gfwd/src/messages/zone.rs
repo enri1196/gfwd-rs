@@ -33,6 +33,12 @@ pub enum ZoneViewRequest {
     LoadServices,
     UpdateAvailableServices(Vec<String>),
     FilterServices(String),
+    // ICMP management
+    ShowAddIcmpDialog,
+    AddIcmpBlock(String),
+    RemoveIcmpBlock(String),
+    LoadIcmpTypes,
+    UpdateIcmpBlocks(Vec<String>),
 }
 
 #[derive(Debug)]

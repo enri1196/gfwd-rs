@@ -1,4 +1,5 @@
 pub mod app;
+pub mod icmp;
 pub mod port;
 pub mod zone;
 

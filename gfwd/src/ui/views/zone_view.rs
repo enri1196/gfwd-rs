@@ -9,8 +9,9 @@ use crate::core::FwdBroker;
 use crate::messages::port::PortDialogResponse;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::ui::components::{PortItem, PortItemResponse};
-use crate::ui::dialogs::AddPortDialog;
+use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse};
+use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog};
+use crate::messages::icmp::IcmpDialogResponse;
 
 // Service item for the services list
 #[derive(Debug, Clone)]
@@ -96,9 +97,13 @@ pub struct ZoneView {
     #[tracker::do_not_track]
     port_dialog: AsyncController<AddPortDialog>,
     #[tracker::do_not_track]
+    icmp_dialog: AsyncController<AddIcmpDialog>,
+    #[tracker::do_not_track]
     ports: FactoryVecDeque<PortItem>,
     #[tracker::do_not_track]
     services: FactoryVecDeque<ServiceItem>,
+    #[tracker::do_not_track]
+    icmp_blocks: FactoryVecDeque<IcmpItem>,
     current_zone_name: String,
     firewalld_running: bool,
     // Zone settings
@@ -109,6 +114,8 @@ pub struct ZoneView {
     active_services: Vec<String>,
     available_services: Vec<String>,
     service_filter: String,
+    // ICMP
+    icmp_block_list: Vec<String>,
 }
 
 #[relm4::component(async, pub)]
@@ -455,38 +462,39 @@ impl AsyncComponent for ZoneView {
                                     },
                                 },
 
-                                // ICMP Types
+                                // ICMP Blocks
                                 adw::PreferencesGroup {
-                                    set_title: "ICMP Types",
-                                    set_description: Some("Internet Control Message Protocol rules"),
+                                    set_title: "ICMP Blocks",
+                                    set_description: Some("Blocked ICMP message types for this zone"),
 
-                                    add = &adw::ActionRow {
-                                        set_title: "Echo Request (ping)",
-                                        set_subtitle: "Allow incoming ping requests",
-                                        set_activatable: true,
-                                        add_prefix = &gtk::Image {
-                                            set_icon_name: Some("network-cellular-signal-good-symbolic"),
-                                            set_pixel_size: 16,
-                                        },
-                                        add_suffix = &gtk::Switch {
-                                            set_active: true,
-                                            set_valign: gtk::Align::Center,
-                                            set_vexpand: false,
+                                    #[wrap(Some)]
+                                    set_header_suffix = &gtk::Button {
+                                        set_icon_name: "list-add-symbolic",
+                                        set_tooltip_text: Some("Add ICMP block"),
+                                        add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ShowAddIcmpDialog);
                                         },
                                     },
 
+                                    #[local_ref]
+                                    icmp_blocks_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        #[track(model.changed(ZoneView::icmp_block_list()))]
+                                        set_visible: !model.icmp_block_list.is_empty(),
+                                    },
+
+                                    // Show message when no ICMP blocks are configured
                                     add = &adw::ActionRow {
-                                        set_title: "Echo Reply",
-                                        set_subtitle: "Allow outgoing ping responses",
-                                        set_activatable: true,
+                                        #[track(model.changed(ZoneView::icmp_block_list()))]
+                                        set_visible: model.icmp_block_list.is_empty(),
+                                        set_title: "No ICMP blocks configured",
+                                        set_subtitle: "All ICMP messages are allowed",
                                         add_prefix = &gtk::Image {
                                             set_icon_name: Some("network-cellular-signal-good-symbolic"),
                                             set_pixel_size: 16,
-                                        },
-                                        add_suffix = &gtk::Switch {
-                                            set_active: true,
-                                            set_valign: gtk::Align::Center,
-                                            set_vexpand: false,
+                                            add_css_class: "success",
                                         },
                                     },
                                 },
@@ -534,6 +542,17 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        // Initialize ICMP dialog with available ICMP types
+        let icmp_types = broker.get_icmp_types().await.unwrap_or_default();
+        let icmp_dialog =
+            AddIcmpDialog::builder()
+                .launch(icmp_types)
+                .forward(sender.input_sender(), |msg| match msg {
+                    IcmpDialogResponse::IcmpSelected { name } => {
+                        ZoneViewRequest::AddIcmpBlock(name)
+                    }
+                });
+
         let ports =
             FactoryVecDeque::builder()
                 .launch_default()
@@ -565,6 +584,15 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        let icmp_blocks =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    IcmpItemResponse::RemoveIcmp { name } => {
+                        ZoneViewRequest::RemoveIcmpBlock(name)
+                    }
+                });
+
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
         // Load initial zone settings and services
@@ -578,12 +606,17 @@ impl AsyncComponent for ZoneView {
 
         // Load available services
         sender.input(ZoneViewRequest::LoadServices);
+        
+        // Load ICMP blocks
+        sender.input(ZoneViewRequest::LoadIcmpTypes);
 
         let model = ZoneView {
             broker,
             port_dialog,
+            icmp_dialog,
             ports,
             services,
+            icmp_blocks,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
             masquerading: false,
@@ -592,11 +625,13 @@ impl AsyncComponent for ZoneView {
             active_services: Vec::new(),
             available_services: Vec::new(),
             service_filter: String::new(),
+            icmp_block_list: Vec::new(),
             tracker: 0,
         };
 
         let ports_list_box = model.ports.widget();
         let services_list_box = model.services.widget();
+        let icmp_blocks_list_box = model.icmp_blocks.widget();
         let widgets = view_output!();
 
         // Set up actions
@@ -648,6 +683,9 @@ impl AsyncComponent for ZoneView {
         match msg {
             ZoneViewRequest::ShowAddPortDialog => {
                 self.port_dialog.widget().present(Some(root));
+            }
+            ZoneViewRequest::ShowAddIcmpDialog => {
+                self.icmp_dialog.widget().present(Some(root));
             }
             ZoneViewRequest::ToggleMasquerading => {
                 let new_state = !self.masquerading;
@@ -748,6 +786,9 @@ impl AsyncComponent for ZoneView {
                     ports.len()
                 );
                 drop(ports);
+
+                // Update ICMP blocks
+                sender.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
 
                 // Trigger service loading if we have available services
                 if !self.available_services.is_empty() {
@@ -919,6 +960,71 @@ impl AsyncComponent for ZoneView {
             ZoneViewRequest::FilterServices(filter) => {
                 self.set_service_filter(filter);
                 self.update_services_display();
+            }
+            ZoneViewRequest::AddIcmpBlock(icmp_type) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.add_icmp_block(&zone_name, &icmp_type).await {
+                        Ok(()) => {
+                            // Reload ICMP blocks to update the display
+                            sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to add ICMP block: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::RemoveIcmpBlock(icmp_type) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.remove_icmp_block(&zone_name, &icmp_type).await {
+                        Ok(()) => {
+                            // Reload ICMP blocks to update the display
+                            sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to remove ICMP block: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::LoadIcmpTypes => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Get current ICMP blocks for this zone
+                    match broker.get_zone_settings(&zone_name).await {
+                        Ok(settings) => {
+                            sender_clone.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to load ICMP blocks: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateIcmpBlocks(icmp_blocks) => {
+                self.set_icmp_block_list(icmp_blocks.clone());
+                
+                // Update the ICMP blocks display
+                let mut icmp_list = self.icmp_blocks.guard();
+                icmp_list.clear();
+                
+                for icmp_type in icmp_blocks {
+                    icmp_list.push_back(IcmpItem::from(icmp_type));
+                }
+                
+                glib::g_log!(
+                    LogLevel::Debug,
+                    "ICMP blocks updated: {} blocks",
+                    icmp_list.len()
+                );
             }
         }
     }

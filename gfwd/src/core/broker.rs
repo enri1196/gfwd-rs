@@ -5,6 +5,7 @@ use relm4::tokio::sync::OnceCell;
 use zbus::Connection;
 
 use crate::core::error::GfwdError;
+use crate::models::icmp::IcmpType;
 use crate::models::zone::{ZoneSettings, ZoneTarget};
 
 pub struct FwdBroker {
@@ -311,6 +312,58 @@ impl FwdBroker {
             .build()
             .await?;
         proxy.set_icmp_block_inversion(enabled).await?;
+        Ok(())
+    }
+
+    /// Get all available ICMP types
+    pub async fn get_icmp_types(&self) -> Result<Vec<IcmpType>, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let icmp_type_names = cfg.get_icmp_type_names().await?;
+        
+        let mut icmp_types = Vec::new();
+        for name in icmp_type_names {
+            // Get the object path for this ICMP type
+            if let Ok(path) = cfg.get_icmp_type_by_name(&name).await {
+                // Create a proxy for this specific ICMP type
+                if let Ok(proxy) = gfwd_bus::config_icmptype::ConfigIcmpTypeProxy::builder(&self.conn)
+                    .path(path.as_str())
+                    .unwrap()
+                    .build()
+                    .await 
+                {
+                    // Get the description, fallback to name if description fails
+                    let description = proxy.get_description().await.unwrap_or_else(|_| name.clone());
+                    icmp_types.push(IcmpType::new(name, description));
+                }
+            }
+        }
+        
+        // Sort by name for consistent ordering
+        icmp_types.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(icmp_types)
+    }
+
+    /// Add an ICMP block to a zone
+    pub async fn add_icmp_block(&self, zone_name: &str, icmp_type: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_icmp_block(icmp_type).await?;
+        Ok(())
+    }
+
+    /// Remove an ICMP block from a zone
+    pub async fn remove_icmp_block(&self, zone_name: &str, icmp_type: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_icmp_block(icmp_type).await?;
         Ok(())
     }
 }

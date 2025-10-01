@@ -153,7 +153,7 @@ pub trait ConfigIPSet {
 ///
 /// * `conn` - An active zbus connection.
 /// * `ipset_name` - The name of the ipset to configure.
-pub async fn new_config_ipset_proxy(
+pub async fn new_config_ipset_proxy<'a>(
     conn: &'a Connection,
     ipset_name: &str,
 ) -> ZResult<ConfigIPSetProxy<'static>> {

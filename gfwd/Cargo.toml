@@ -17,4 +17,11 @@ gfwd-bus = { path = "../gfwd-bus", features = [
     "config_zone",
     "config_service",
     "systemd",
+    "config_icmptype",
+    "config_ipset",
+    "config_policies",
+    "direct",
+    "ipset",
+    "policies",
+    "config_helpers",
 ] }
