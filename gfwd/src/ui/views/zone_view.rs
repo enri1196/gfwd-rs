@@ -386,8 +386,7 @@ impl AsyncComponent for ZoneView {
                                     // Search entry
                                     add = &adw::EntryRow {
                                         set_title: "Search Services",
-                                        #[watch]
-                                        set_text: &model.service_filter,
+                                        set_text: "",
                                         add_prefix = &gtk::Image {
                                             set_icon_name: Some("system-search-symbolic"),
                                             set_pixel_size: 16,
@@ -1069,8 +1068,19 @@ impl AsyncComponent for ZoneView {
                 self.update_services_display();
             }
             ZoneViewRequest::FilterServices(filter) => {
-                self.set_service_filter(filter);
-                self.update_services_display();
+                // Only update if the filter actually changed and is reasonable
+                if self.service_filter != filter {
+                    let filter_len = filter.len();
+                    self.set_service_filter(filter);
+                    // Only update display if we have services loaded and filter is not too short
+                    if !self.available_services.is_empty() && (filter_len == 0 || filter_len >= 2) {
+                        self.update_services_display();
+                    } else if filter_len == 1 {
+                        // Clear the list for single character searches to avoid showing too many results
+                        let mut services_list = self.services.guard();
+                        services_list.clear();
+                    }
+                }
             }
             ZoneViewRequest::AddIcmpBlock(icmp_type) => {
                 let broker = self.broker;
@@ -1273,35 +1283,37 @@ impl AsyncComponent for ZoneView {
 
 impl ZoneView {
     fn update_services_display(&mut self) {
+        // Early return if no services available
+        if self.available_services.is_empty() {
+            return;
+        }
+
         let mut services_list = self.services.guard();
         services_list.clear();
 
-        // Filter services based on search term
-        let services_to_show: Vec<&String> = if self.service_filter.is_empty() {
-            self.available_services.iter().collect()
-        } else {
-            self.available_services
-                .iter()
-                .filter(|service| {
-                    service
-                        .to_lowercase()
-                        .contains(&self.service_filter.to_lowercase())
-                })
-                .collect()
-        };
-
-        // Add services with their enabled state
-        for service in services_to_show {
-            let is_enabled = self.active_services.contains(service);
-            services_list.push_back((service.clone(), is_enabled));
+        // Filter services based on search term with a limit to prevent UI freezing
+        let filter_lower = self.service_filter.to_lowercase();
+        let max_display_services = if self.service_filter.is_empty() { 200 } else { 50 };
+        
+        let mut count = 0;
+        for service in &self.available_services {
+            if count >= max_display_services {
+                break;
+            }
+            
+            if self.service_filter.is_empty() || service.to_lowercase().contains(&filter_lower) {
+                let is_enabled = self.active_services.contains(service);
+                services_list.push_back((service.clone(), is_enabled));
+                count += 1;
+            }
         }
 
-        // Only log when there's a significant change or on initial load
-        if self.service_filter.is_empty() || services_list.len() < 10 {
+        // Show a message if we hit the limit
+        if count >= max_display_services && !self.service_filter.is_empty() {
             glib::g_log!(
-                LogLevel::Debug,
-                "Services display updated: {} services shown",
-                services_list.len()
+                LogLevel::Info,
+                "Showing first {} matching services. Refine search to see more.",
+                max_display_services
             );
         }
     }
