@@ -222,6 +222,198 @@ fn validate_ipv6_address(ip: &str) -> Result<(), GfwdError> {
     Ok(())
 }
 
+/// Validates an IP set name
+pub fn validate_ipset_name(name: &str) -> Result<String, GfwdError> {
+    let name = name.trim();
+
+    if name.is_empty() {
+        return Err(GfwdError::Validation(
+            "IP set name cannot be empty".to_string(),
+        ));
+    }
+
+    // IP set names should be reasonable length
+    if name.len() > 31 {
+        return Err(GfwdError::Validation(
+            "IP set name cannot be longer than 31 characters".to_string(),
+        ));
+    }
+
+    // Check for valid characters (alphanumeric, dash, underscore)
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(GfwdError::Validation(
+            "IP set name can only contain letters, numbers, dashes, and underscores".to_string(),
+        ));
+    }
+
+    // Cannot start with dash
+    if name.starts_with('-') {
+        return Err(GfwdError::Validation(
+            "IP set name cannot start with a dash".to_string(),
+        ));
+    }
+
+    Ok(name.to_string())
+}
+
+/// Validates an IP set type
+pub fn validate_ipset_type(ipset_type: &str) -> Result<String, GfwdError> {
+    let ipset_type = ipset_type.trim();
+    
+    // Common IP set types supported by firewalld
+    let valid_types = [
+        "hash:ip", "hash:net", "hash:ip,port", "hash:net,port",
+        "hash:ip,port,ip", "hash:ip,port,net", "hash:net,port,net",
+        "hash:net,iface", "hash:mac", "bitmap:ip", "bitmap:ip,mac",
+        "bitmap:port", "list:set"
+    ];
+
+    if valid_types.contains(&ipset_type) {
+        Ok(ipset_type.to_string())
+    } else {
+        Err(GfwdError::Validation(format!(
+            "Invalid IP set type '{}'. Must be one of: {}",
+            ipset_type,
+            valid_types.join(", ")
+        )))
+    }
+}
+
+/// Validates an IP set entry based on the IP set type
+pub fn validate_ipset_entry(entry: &str, ipset_type: &str) -> Result<String, GfwdError> {
+    let entry = entry.trim();
+
+    if entry.is_empty() {
+        return Err(GfwdError::Validation(
+            "IP set entry cannot be empty".to_string(),
+        ));
+    }
+
+    match ipset_type {
+        "hash:ip" => {
+            // Single IP address
+            if entry.contains(':') {
+                validate_ipv6_address(entry)?;
+            } else {
+                validate_ipv4_address(entry)?;
+            }
+        }
+        "hash:net" => {
+            // Network address (IP/prefix)
+            validate_source_address(entry)?;
+        }
+        "hash:ip,port" => {
+            // IP address and port (e.g., "192.168.1.1,80")
+            if let Some((ip, port)) = entry.split_once(',') {
+                if ip.trim().contains(':') {
+                    validate_ipv6_address(ip.trim())?;
+                } else {
+                    validate_ipv4_address(ip.trim())?;
+                }
+                validate_port(port.trim())?;
+            } else {
+                return Err(GfwdError::Validation(
+                    "IP,port entry must contain comma-separated IP and port".to_string(),
+                ));
+            }
+        }
+        "hash:net,port" => {
+            // Network and port (e.g., "192.168.1.0/24,80")
+            if let Some((net, port)) = entry.split_once(',') {
+                validate_source_address(net.trim())?;
+                validate_port(port.trim())?;
+            } else {
+                return Err(GfwdError::Validation(
+                    "Network,port entry must contain comma-separated network and port".to_string(),
+                ));
+            }
+        }
+        "hash:mac" => {
+            // MAC address validation
+            validate_mac_address(entry)?;
+        }
+        "bitmap:ip" | "bitmap:port" | "list:set" => {
+            // For bitmap and list types, accept any non-empty string
+            // More specific validation would require knowledge of the set's range/members
+            if entry.is_empty() {
+                return Err(GfwdError::Validation(
+                    "Entry cannot be empty".to_string(),
+                ));
+            }
+        }
+        _ => {
+            // For other types, perform basic validation
+            if entry.contains(',') {
+                // Multi-part entry, validate each part as IP or port
+                let parts: Vec<&str> = entry.split(',').collect();
+                for part in parts {
+                    let part = part.trim();
+                    if part.contains(':') {
+                        validate_ipv6_address(part)?;
+                    } else if part.contains('.') {
+                        validate_ipv4_address(part)?;
+                    } else if part.parse::<u16>().is_ok() {
+                        validate_port(part)?;
+                    }
+                    // Allow other formats for complex types
+                }
+            } else if entry.contains(':') {
+                validate_ipv6_address(entry)?;
+            } else if entry.contains('.') {
+                validate_ipv4_address(entry)?;
+            }
+            // Allow other formats for complex types
+        }
+    }
+
+    Ok(entry.to_string())
+}
+
+/// Validates a MAC address
+fn validate_mac_address(mac: &str) -> Result<(), GfwdError> {
+    let mac = mac.trim();
+    
+    // MAC address should be in format XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX
+    let parts: Vec<&str> = if mac.contains(':') {
+        mac.split(':').collect()
+    } else if mac.contains('-') {
+        mac.split('-').collect()
+    } else {
+        return Err(GfwdError::Validation(format!(
+            "Invalid MAC address format: {}. Use XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX",
+            mac
+        )));
+    };
+
+    if parts.len() != 6 {
+        return Err(GfwdError::Validation(format!(
+            "Invalid MAC address: {}. Must have 6 parts",
+            mac
+        )));
+    }
+
+    for part in parts {
+        if part.len() != 2 {
+            return Err(GfwdError::Validation(format!(
+                "Invalid MAC address: {}. Each part must be 2 hex digits",
+                mac
+            )));
+        }
+        
+        if !part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(GfwdError::Validation(format!(
+                "Invalid MAC address: {}. Must contain only hex digits",
+                mac
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Helper function to parse a single port number
 fn parse_single_port(port: &str) -> Result<u16, GfwdError> {
     let port_num = port
@@ -315,5 +507,81 @@ mod tests {
         assert!(validate_ipv6_address("2001:db8::1::2").is_err()); // Multiple :: not allowed
         assert!(validate_ipv6_address("2001:db8:85a3::8a2e:370g:7334").is_err()); // Invalid hex
         assert!(validate_ipv6_address("no-colons").is_err());
+    }
+
+    #[test]
+    fn test_validate_ipset_name() {
+        // Valid IP set names
+        assert!(validate_ipset_name("my_ipset").is_ok());
+        assert!(validate_ipset_name("ipset-1").is_ok());
+        assert!(validate_ipset_name("test123").is_ok());
+        assert!(validate_ipset_name("a").is_ok());
+
+        // Invalid IP set names
+        assert!(validate_ipset_name("").is_err());
+        assert!(validate_ipset_name("   ").is_err());
+        assert!(validate_ipset_name("-invalid").is_err());
+        assert!(validate_ipset_name("invalid@name").is_err());
+        assert!(validate_ipset_name("name with spaces").is_err());
+        assert!(validate_ipset_name("very_long_ipset_name_that_exceeds_limit").is_err());
+    }
+
+    #[test]
+    fn test_validate_ipset_type() {
+        // Valid IP set types
+        assert!(validate_ipset_type("hash:ip").is_ok());
+        assert!(validate_ipset_type("hash:net").is_ok());
+        assert!(validate_ipset_type("hash:ip,port").is_ok());
+        assert!(validate_ipset_type("hash:mac").is_ok());
+        assert!(validate_ipset_type("bitmap:ip").is_ok());
+        assert!(validate_ipset_type("list:set").is_ok());
+
+        // Invalid IP set types
+        assert!(validate_ipset_type("invalid:type").is_err());
+        assert!(validate_ipset_type("").is_err());
+        assert!(validate_ipset_type("hash").is_err());
+    }
+
+    #[test]
+    fn test_validate_ipset_entry() {
+        // hash:ip entries
+        assert!(validate_ipset_entry("192.168.1.1", "hash:ip").is_ok());
+        assert!(validate_ipset_entry("::1", "hash:ip").is_ok());
+        assert!(validate_ipset_entry("invalid", "hash:ip").is_err());
+
+        // hash:net entries
+        assert!(validate_ipset_entry("192.168.1.0/24", "hash:net").is_ok());
+        assert!(validate_ipset_entry("10.0.0.0/8", "hash:net").is_ok());
+        assert!(validate_ipset_entry("192.168.1.1", "hash:net").is_ok()); // Single IP is valid
+        assert!(validate_ipset_entry("invalid/24", "hash:net").is_err());
+
+        // hash:ip,port entries
+        assert!(validate_ipset_entry("192.168.1.1,80", "hash:ip,port").is_ok());
+        assert!(validate_ipset_entry("::1,443", "hash:ip,port").is_ok());
+        assert!(validate_ipset_entry("192.168.1.1", "hash:ip,port").is_err()); // Missing port
+        assert!(validate_ipset_entry("invalid,80", "hash:ip,port").is_err());
+
+        // hash:mac entries
+        assert!(validate_ipset_entry("aa:bb:cc:dd:ee:ff", "hash:mac").is_ok());
+        assert!(validate_ipset_entry("AA-BB-CC-DD-EE-FF", "hash:mac").is_ok());
+        assert!(validate_ipset_entry("invalid-mac", "hash:mac").is_err());
+    }
+
+    #[test]
+    fn test_validate_mac_address() {
+        // Valid MAC addresses
+        assert!(validate_mac_address("aa:bb:cc:dd:ee:ff").is_ok());
+        assert!(validate_mac_address("AA:BB:CC:DD:EE:FF").is_ok());
+        assert!(validate_mac_address("00:11:22:33:44:55").is_ok());
+        assert!(validate_mac_address("aa-bb-cc-dd-ee-ff").is_ok());
+
+        // Invalid MAC addresses
+        assert!(validate_mac_address("").is_err());
+        assert!(validate_mac_address("aa:bb:cc:dd:ee").is_err()); // Too few parts
+        assert!(validate_mac_address("aa:bb:cc:dd:ee:ff:gg").is_err()); // Too many parts
+        assert!(validate_mac_address("aa:bb:cc:dd:ee:gg").is_err()); // Invalid hex
+        assert!(validate_mac_address("a:bb:cc:dd:ee:ff").is_err()); // Part too short
+        assert!(validate_mac_address("aaa:bb:cc:dd:ee:ff").is_err()); // Part too long
+        assert!(validate_mac_address("aabbccddeeff").is_err()); // No separators
     }
 }

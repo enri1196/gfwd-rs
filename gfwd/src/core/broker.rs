@@ -7,6 +7,7 @@ use zbus::Connection;
 
 use crate::core::error::GfwdError;
 use crate::models::icmp::IcmpType;
+use crate::models::ipset::IPSetSettings;
 use crate::models::zone::{ZoneSettings, ZoneTarget};
 
 pub struct FwdBroker {
@@ -522,5 +523,106 @@ impl FwdBroker {
             .await?;
         proxy.remove_source(source).await?;
         Ok(())
+    }
+
+    /// Get all IP sets
+    pub async fn get_ipsets(&self) -> Result<Vec<String>, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let mut ipsets = cfg.get_ipset_names().await?;
+        ipsets.sort();
+        Ok(ipsets)
+    }
+
+    /// Create a new IP set
+    pub async fn create_ipset(&self, settings: IPSetSettings) -> Result<(), GfwdError> {
+        // Validate IP set name
+        crate::core::validation::validate_ipset_name(&settings.name)?;
+        
+        // Validate IP set type
+        crate::core::validation::validate_ipset_type(&settings.ipset_type)?;
+
+        // Validate entries
+        for entry in &settings.entries {
+            crate::core::validation::validate_ipset_entry(entry, &settings.ipset_type)?;
+        }
+
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let ipset_settings: gfwd_bus::config_firewalld1::IPSetSettings = (
+            "1.0".to_string(),      // version
+            settings.name.clone(),   // name
+            "".to_string(),         // description (empty by default)
+            settings.ipset_type,    // type
+            settings.options,       // options
+            settings.entries,       // entries
+        );
+        
+        cfg.add_ipset(&settings.name, &ipset_settings).await?;
+        Ok(())
+    }
+
+    /// Delete an IP set
+    pub async fn delete_ipset(&self, ipset_name: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove().await?;
+        Ok(())
+    }
+
+    /// Get entries for a specific IP set
+    pub async fn get_ipset_entries(&self, ipset_name: &str) -> Result<Vec<String>, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        let entries = proxy.get_entries().await?;
+        Ok(entries)
+    }
+
+    /// Add an entry to an IP set
+    pub async fn add_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), GfwdError> {
+        // Get IP set type for validation
+        let ipset_type = self.get_ipset_type(ipset_name).await?;
+        
+        // Validate entry
+        crate::core::validation::validate_ipset_entry(entry, &ipset_type)?;
+
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_entry(entry).await?;
+        Ok(())
+    }
+
+    /// Remove an entry from an IP set
+    pub async fn remove_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_entry(entry).await?;
+        Ok(())
+    }
+
+    /// Get IP set type (helper method for validation)
+    async fn get_ipset_type(&self, ipset_name: &str) -> Result<String, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        let ipset_type = proxy.get_type().await?;
+        Ok(ipset_type)
     }
 }
