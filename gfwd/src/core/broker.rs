@@ -10,6 +10,7 @@ use crate::models::icmp::IcmpType;
 use crate::models::ipset::IPSetSettings;
 use crate::models::zone::{ZoneSettings, ZoneTarget};
 
+#[derive(Debug)]
 pub struct FwdBroker {
     conn: Connection,
 }

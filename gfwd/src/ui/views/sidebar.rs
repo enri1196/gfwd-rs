@@ -33,6 +33,15 @@ impl SimpleAsyncComponent for SidebarView {
                     set_title: "Firewall Zones",
                 },
 
+                pack_start = &gtk::Button {
+                    set_icon_name: "network-server-symbolic",
+                    set_tooltip_text: Some("IP Sets"),
+                    add_css_class: "flat",
+                    connect_clicked[sender] => move |_| {
+                        sender.input(SidebarRequest::ShowIPSets);
+                    }
+                },
+
                 pack_end = &gtk::Button {
                     set_icon_name: "list-add-symbolic",
                     set_tooltip_text: Some("Add New Zone"),
@@ -139,6 +148,9 @@ impl SimpleAsyncComponent for SidebarView {
             },
             SidebarRequest::ShowAddZoneDialog => {
                 let _ = sender.output(SidebarResponse::ShowAddZoneDialog);
+            }
+            SidebarRequest::ShowIPSets => {
+                let _ = sender.output(SidebarResponse::ShowIPSets);
             }
             SidebarRequest::RemoveZone(removed_zone) => {
                 let mut zones = self.zones.guard();

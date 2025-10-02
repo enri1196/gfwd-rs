@@ -66,10 +66,12 @@ pub enum SidebarRequest {
     SetDefaultZone,
     SetActiveZones,
     RemoveZone(String),
+    ShowIPSets,
 }
 
 #[derive(Debug)]
 pub enum SidebarResponse {
     ShowAddZoneDialog,
     SelectedZone(String),
+    ShowIPSets,
 }

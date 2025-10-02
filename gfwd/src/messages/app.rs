@@ -7,4 +7,6 @@ pub enum AppRequest {
     ZoneAdded(ZoneSettings),
     ZoneRemoved(String),
     UpdateContentWithZoneName(String),
+    ShowIPSets,
+    ShowZones,
 }

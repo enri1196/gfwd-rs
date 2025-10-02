@@ -9,10 +9,11 @@ use crate::core::FwdBroker;
 use crate::messages::{
     AppRequest, SidebarRequest, SidebarResponse, ZoneViewRequest, ZoneViewResponse,
 };
+use crate::messages::ipset::IPSetViewRequest;
 
 use crate::ui::components::{ToastMessage, show_toast};
 use crate::ui::dialogs::AddZoneDialog;
-use crate::ui::views::{SidebarView, ZoneView};
+use crate::ui::views::{SidebarView, ZoneView, IPSetView};
 use crate::utils::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
 
 #[tracker::track]
@@ -28,8 +29,11 @@ pub struct App {
     #[tracker::do_not_track]
     zone_view: AsyncController<ZoneView>,
     #[tracker::do_not_track]
+    ipset_view: AsyncController<IPSetView>,
+    #[tracker::do_not_track]
     toaster: Toaster,
     sidebar_visible: bool,
+    current_view: String,
 }
 
 #[relm4::component(async, pub)]
@@ -52,7 +56,12 @@ impl SimpleAsyncComponent for App {
                     set_sidebar = model.sidebar.widget(),
 
                     #[wrap(Some)]
-                    set_content = model.zone_view.widget(),
+                    set_content = &gtk::Stack {
+                        add_named[Some("zones")] = model.zone_view.widget(),
+                        add_named[Some("ipsets")] = model.ipset_view.widget(),
+                        #[track(model.changed(App::current_view()))]
+                        set_visible_child_name: &model.current_view,
+                    },
                 }
             }
         }
@@ -105,8 +114,16 @@ impl SimpleAsyncComponent for App {
                     .emit(ZoneViewRequest::SetZoneContent(active_zone));
             }
             AppRequest::UpdateContentWithZoneName(zone_name) => {
+                self.set_current_view("zones".to_string());
                 self.zone_view
                     .emit(ZoneViewRequest::SetZoneContent(zone_name));
+            }
+            AppRequest::ShowIPSets => {
+                self.set_current_view("ipsets".to_string());
+                self.ipset_view.emit(IPSetViewRequest::LoadIPSets);
+            }
+            AppRequest::ShowZones => {
+                self.set_current_view("zones".to_string());
             }
         }
     }
@@ -125,6 +142,7 @@ impl SimpleAsyncComponent for App {
                 SidebarResponse::SelectedZone(item_name) => {
                     AppRequest::UpdateContentWithZoneName(item_name)
                 }
+                SidebarResponse::ShowIPSets => AppRequest::ShowIPSets,
             });
 
         let initial_zone_name: String = broker
@@ -143,6 +161,13 @@ impl SimpleAsyncComponent for App {
                 }
             });
 
+        let ipset_view = IPSetView::builder()
+            .launch(broker)
+            .forward(sender.input_sender(), |_resp| {
+                // IPSetView doesn't emit responses that need app handling yet
+                AppRequest::ToggleSidebar // Placeholder
+            });
+
         let dialog = AddZoneDialog::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
@@ -159,8 +184,10 @@ impl SimpleAsyncComponent for App {
             dialog,
             sidebar,
             zone_view,
+            ipset_view,
             toaster,
             sidebar_visible: true,
+            current_view: "zones".to_string(),
             tracker: 0,
         };
 

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod icmp;
 pub mod interface;
+pub mod ipset;
 pub mod port;
 pub mod source;
 pub mod zone;
