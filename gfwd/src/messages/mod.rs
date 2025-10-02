@@ -3,6 +3,7 @@ pub mod icmp;
 pub mod interface;
 pub mod ipset;
 pub mod port;
+pub mod rich_rule;
 pub mod source;
 pub mod zone;
 

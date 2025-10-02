@@ -626,4 +626,152 @@ impl FwdBroker {
         let ipset_type = proxy.get_type().await?;
         Ok(ipset_type)
     }
+
+    /// Get all rich rules for a zone
+    pub async fn get_rich_rules(&self, zone_name: &str) -> Result<Vec<String>, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        let rich_rules = proxy.get_rich_rules().await?;
+        Ok(rich_rules)
+    }
+
+    /// Add a rich rule to a zone
+    pub async fn add_rich_rule(&self, zone_name: &str, rule_xml: &str) -> Result<(), GfwdError> {
+        // Validate the rich rule XML
+        let validated_xml = crate::core::validation::validate_rich_rule_xml(rule_xml)?;
+
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_rich_rule(&validated_xml).await?;
+        Ok(())
+    }
+
+    /// Remove a rich rule from a zone
+    pub async fn remove_rich_rule(&self, zone_name: &str, rule_xml: &str) -> Result<(), GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_rich_rule(rule_xml).await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::rich_rule::{RichRule, RichRuleAction};
+
+    #[test]
+    fn test_rich_rule_xml_generation() {
+        // Test basic accept rule
+        let rule = RichRule::new().with_action(RichRuleAction::Accept);
+        let xml = rule.to_xml();
+        assert_eq!(xml, "<rule><accept/></rule>");
+
+        // Test rule with source and service
+        let rule = RichRule::new()
+            .with_source("192.168.1.0/24".to_string(), false)
+            .with_service("ssh".to_string())
+            .with_action(RichRuleAction::Accept);
+        let xml = rule.to_xml();
+        assert!(xml.contains("<source address=\"192.168.1.0/24\"/>"));
+        assert!(xml.contains("<service name=\"ssh\"/>"));
+        assert!(xml.contains("<accept/>"));
+
+        // Test rule with port and reject action
+        let rule = RichRule::new()
+            .with_port("80".to_string(), "tcp".to_string())
+            .with_action(RichRuleAction::Reject(Some("icmp-port-unreachable".to_string())));
+        let xml = rule.to_xml();
+        assert!(xml.contains("<port port=\"80\" protocol=\"tcp\"/>"));
+        assert!(xml.contains("<reject type=\"icmp-port-unreachable\"/>"));
+
+        // Test rule with family and destination
+        let rule = RichRule::new()
+            .with_family("ipv4".to_string())
+            .with_destination("10.0.0.1".to_string(), true)
+            .with_action(RichRuleAction::Drop);
+        let xml = rule.to_xml();
+        assert!(xml.contains("family=\"ipv4\""));
+        assert!(xml.contains("<destination invert=\"true\" address=\"10.0.0.1\"/>"));
+        assert!(xml.contains("<drop/>"));
+
+        // Test rule with mark action
+        let rule = RichRule::new()
+            .with_protocol("icmp".to_string())
+            .with_action(RichRuleAction::Mark("0x1".to_string()));
+        let xml = rule.to_xml();
+        assert!(xml.contains("<protocol value=\"icmp\"/>"));
+        assert!(xml.contains("<mark set=\"0x1\"/>"));
+    }
+
+    #[test]
+    fn test_rich_rule_validation_integration() {
+        // Test that generated XML passes validation
+        let rule = RichRule::new()
+            .with_source("192.168.1.0/24".to_string(), false)
+            .with_service("ssh".to_string())
+            .with_action(RichRuleAction::Accept);
+        let xml = rule.to_xml();
+        
+        // This should pass validation
+        assert!(crate::core::validation::validate_rich_rule_xml(&xml).is_ok());
+
+        // Test invalid XML fails validation
+        assert!(crate::core::validation::validate_rich_rule_xml("<rule>no action</rule>").is_err());
+        assert!(crate::core::validation::validate_rich_rule_xml("not xml").is_err());
+    }
+
+    #[test]
+    fn test_rich_rule_action_variants() {
+        // Test all action variants
+        let accept_rule = RichRule::new().with_action(RichRuleAction::Accept);
+        assert!(accept_rule.to_xml().contains("<accept/>"));
+
+        let reject_rule = RichRule::new().with_action(RichRuleAction::Reject(None));
+        assert!(reject_rule.to_xml().contains("<reject/>"));
+
+        let reject_with_type = RichRule::new().with_action(RichRuleAction::Reject(Some("icmp-host-prohibited".to_string())));
+        assert!(reject_with_type.to_xml().contains("<reject type=\"icmp-host-prohibited\"/>"));
+
+        let drop_rule = RichRule::new().with_action(RichRuleAction::Drop);
+        assert!(drop_rule.to_xml().contains("<drop/>"));
+
+        let mark_rule = RichRule::new().with_action(RichRuleAction::Mark("0x2".to_string()));
+        assert!(mark_rule.to_xml().contains("<mark set=\"0x2\"/>"));
+    }
+
+    #[test]
+    fn test_rich_rule_builder_pattern() {
+        // Test that builder pattern works correctly
+        let rule = RichRule::new()
+            .with_family("ipv6".to_string())
+            .with_source("2001:db8::/32".to_string(), false)
+            .with_destination("::1".to_string(), true)
+            .with_service("http".to_string())
+            .with_action(RichRuleAction::Accept);
+
+        assert_eq!(rule.family, Some("ipv6".to_string()));
+        assert!(rule.source.is_some());
+        assert!(rule.destination.is_some());
+        assert_eq!(rule.service, Some("http".to_string()));
+        assert_eq!(rule.action, RichRuleAction::Accept);
+
+        // Test that destination has invert flag set
+        if let Some(dest) = &rule.destination {
+            assert!(dest.invert);
+            assert_eq!(dest.address, "::1");
+        }
+    }
 }

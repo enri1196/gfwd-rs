@@ -9,11 +9,12 @@ use crate::core::FwdBroker;
 use crate::messages::port::PortDialogResponse;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse, InterfaceItem, InterfaceItemResponse, SourceItem, SourceItemResponse};
-use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog, AddInterfaceDialog, AddSourceDialog};
+use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse, InterfaceItem, InterfaceItemResponse, SourceItem, SourceItemResponse, RichRuleItem, RichRuleItemResponse};
+use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog, AddInterfaceDialog, AddSourceDialog, RichRuleDialog};
 use crate::messages::icmp::IcmpDialogResponse;
 use crate::messages::interface::InterfaceDialogResponse;
 use crate::messages::source::SourceDialogResponse;
+use crate::messages::rich_rule::RichRuleDialogResponse;
 
 // Service item for the services list
 #[derive(Debug, Clone)]
@@ -105,6 +106,8 @@ pub struct ZoneView {
     #[tracker::do_not_track]
     source_dialog: AsyncController<AddSourceDialog>,
     #[tracker::do_not_track]
+    rich_rule_dialog: AsyncController<RichRuleDialog>,
+    #[tracker::do_not_track]
     ports: FactoryVecDeque<PortItem>,
     #[tracker::do_not_track]
     services: FactoryVecDeque<ServiceItem>,
@@ -114,6 +117,8 @@ pub struct ZoneView {
     interfaces: FactoryVecDeque<InterfaceItem>,
     #[tracker::do_not_track]
     sources: FactoryVecDeque<SourceItem>,
+    #[tracker::do_not_track]
+    rich_rules: FactoryVecDeque<RichRuleItem>,
     current_zone_name: String,
     firewalld_running: bool,
     // Zone settings
@@ -129,6 +134,8 @@ pub struct ZoneView {
     // Interfaces and Sources
     interface_list: Vec<String>,
     source_list: Vec<String>,
+    // Rich Rules
+    rich_rule_list: Vec<String>,
 }
 
 #[relm4::component(async, pub)]
@@ -455,9 +462,23 @@ impl AsyncComponent for ZoneView {
                                         set_icon_name: "list-add-symbolic",
                                         set_tooltip_text: Some("Add rich rule"),
                                         add_css_class: "flat",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.input(ZoneViewRequest::ShowAddRichRuleDialog);
+                                        },
                                     },
 
+                                    #[local_ref]
+                                    rich_rules_list_box -> gtk::ListBox {
+                                        set_selection_mode: gtk::SelectionMode::None,
+                                        add_css_class: "boxed-list",
+                                        #[track(model.changed(ZoneView::rich_rule_list()))]
+                                        set_visible: !model.rich_rule_list.is_empty(),
+                                    },
+
+                                    // Show message when no rich rules are configured
                                     add = &adw::ActionRow {
+                                        #[track(model.changed(ZoneView::rich_rule_list()))]
+                                        set_visible: model.rich_rule_list.is_empty(),
                                         set_title: "No rich rules configured",
                                         set_subtitle: "Rich rules allow complex firewall configurations",
                                         add_prefix = &gtk::Image {
@@ -619,6 +640,16 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        // Initialize rich rule dialog
+        let rich_rule_dialog =
+            RichRuleDialog::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    RichRuleDialogResponse::RichRuleCreated { rule_xml } => {
+                        ZoneViewRequest::AddRichRule(rule_xml)
+                    }
+                });
+
         let ports =
             FactoryVecDeque::builder()
                 .launch_default()
@@ -677,6 +708,15 @@ impl AsyncComponent for ZoneView {
                     }
                 });
 
+        let rich_rules =
+            FactoryVecDeque::builder()
+                .launch_default()
+                .forward(sender.input_sender(), |msg| match msg {
+                    RichRuleItemResponse::RemoveRichRule { rule_xml } => {
+                        ZoneViewRequest::RemoveRichRule(rule_xml)
+                    }
+                });
+
         let initial_firewalld_running = broker.is_firewalld_active().await.unwrap_or(false);
 
         // Load initial zone settings and services
@@ -697,6 +737,9 @@ impl AsyncComponent for ZoneView {
         // Load interfaces and sources
         sender.input(ZoneViewRequest::LoadInterfaces);
         sender.input(ZoneViewRequest::LoadSources);
+        
+        // Load rich rules
+        sender.input(ZoneViewRequest::LoadRichRules);
 
         let model = ZoneView {
             broker,
@@ -704,11 +747,13 @@ impl AsyncComponent for ZoneView {
             icmp_dialog,
             interface_dialog,
             source_dialog,
+            rich_rule_dialog,
             ports,
             services,
             icmp_blocks,
             interfaces,
             sources,
+            rich_rules,
             current_zone_name: initial_zone_name,
             firewalld_running: initial_firewalld_running,
             masquerading: false,
@@ -720,6 +765,7 @@ impl AsyncComponent for ZoneView {
             icmp_block_list: Vec::new(),
             interface_list: Vec::new(),
             source_list: Vec::new(),
+            rich_rule_list: Vec::new(),
             tracker: 0,
         };
 
@@ -728,6 +774,7 @@ impl AsyncComponent for ZoneView {
         let icmp_blocks_list_box = model.icmp_blocks.widget();
         let interfaces_list_box = model.interfaces.widget();
         let sources_list_box = model.sources.widget();
+        let rich_rules_list_box = model.rich_rules.widget();
         let widgets = view_output!();
 
         // Set up actions
@@ -788,6 +835,9 @@ impl AsyncComponent for ZoneView {
             }
             ZoneViewRequest::ShowAddSourceDialog => {
                 self.source_dialog.widget().present(Some(root));
+            }
+            ZoneViewRequest::ShowAddRichRuleDialog => {
+                self.rich_rule_dialog.widget().present(Some(root));
             }
             ZoneViewRequest::ToggleMasquerading => {
                 let new_state = !self.masquerading;
@@ -855,6 +905,9 @@ impl AsyncComponent for ZoneView {
                 // Load interfaces and sources for the new zone
                 sender.input(ZoneViewRequest::LoadInterfaces);
                 sender.input(ZoneViewRequest::LoadSources);
+                
+                // Load rich rules for the new zone
+                sender.input(ZoneViewRequest::LoadRichRules);
             }
             ZoneViewRequest::UpdateZoneSettings(settings) => {
                 // Update zone properties
@@ -899,6 +952,9 @@ impl AsyncComponent for ZoneView {
                 // Update interfaces and sources
                 sender.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
                 sender.input(ZoneViewRequest::UpdateSources(settings.sources));
+                
+                // Update rich rules
+                sender.input(ZoneViewRequest::UpdateRichRules(settings.rich_rules));
 
                 // Trigger service loading if we have available services
                 if !self.available_services.is_empty() {
@@ -1275,6 +1331,71 @@ impl AsyncComponent for ZoneView {
                     LogLevel::Debug,
                     "Sources updated: {} sources",
                     source_list.len()
+                );
+            }
+            ZoneViewRequest::AddRichRule(rule_xml) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.add_rich_rule(&zone_name, &rule_xml).await {
+                        Ok(()) => {
+                            // Reload rich rules to update the display
+                            sender_clone.input(ZoneViewRequest::LoadRichRules);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to add rich rule: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::RemoveRichRule(rule_xml) => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    match broker.remove_rich_rule(&zone_name, &rule_xml).await {
+                        Ok(()) => {
+                            // Reload rich rules to update the display
+                            sender_clone.input(ZoneViewRequest::LoadRichRules);
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to remove rich rule: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::LoadRichRules => {
+                let broker = self.broker;
+                let zone_name = self.current_zone_name.clone();
+                let sender_clone = sender.clone();
+                relm4::spawn(async move {
+                    // Get current rich rules for this zone
+                    match broker.get_rich_rules(&zone_name).await {
+                        Ok(rich_rules) => {
+                            sender_clone.input(ZoneViewRequest::UpdateRichRules(rich_rules));
+                        }
+                        Err(e) => {
+                            glib::g_log!(LogLevel::Error, "Failed to load rich rules: {}", e);
+                        }
+                    }
+                });
+            }
+            ZoneViewRequest::UpdateRichRules(rich_rules) => {
+                self.set_rich_rule_list(rich_rules.clone());
+                
+                // Update the rich rules display
+                let mut rich_rule_list = self.rich_rules.guard();
+                rich_rule_list.clear();
+                
+                for rule_xml in rich_rules {
+                    rich_rule_list.push_back(rule_xml);
+                }
+                
+                glib::g_log!(
+                    LogLevel::Debug,
+                    "Rich rules updated: {} rules",
+                    rich_rule_list.len()
                 );
             }
         }

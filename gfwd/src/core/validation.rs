@@ -414,6 +414,136 @@ fn validate_mac_address(mac: &str) -> Result<(), GfwdError> {
     Ok(())
 }
 
+/// Validates a rich rule XML string
+pub fn validate_rich_rule_xml(xml: &str) -> Result<String, GfwdError> {
+    let xml = xml.trim();
+
+    if xml.is_empty() {
+        return Err(GfwdError::Validation(
+            "Rich rule XML cannot be empty".to_string(),
+        ));
+    }
+
+    // Basic XML structure validation
+    if !xml.starts_with("<rule") {
+        return Err(GfwdError::Validation(
+            "Rich rule must start with <rule".to_string(),
+        ));
+    }
+
+    if !xml.ends_with("</rule>") {
+        return Err(GfwdError::Validation(
+            "Rich rule must end with </rule>".to_string(),
+        ));
+    }
+
+    // Check for required action element
+    let has_action = xml.contains("<accept") || 
+                    xml.contains("<reject") || 
+                    xml.contains("<drop") || 
+                    xml.contains("<mark");
+
+    if !has_action {
+        return Err(GfwdError::Validation(
+            "Rich rule must contain an action (accept, reject, drop, or mark)".to_string(),
+        ));
+    }
+
+    // Validate that XML is well-formed by checking basic structure
+    let mut tag_stack = Vec::new();
+    let mut in_tag = false;
+    let mut current_tag = String::new();
+
+    for ch in xml.chars() {
+        match ch {
+            '<' => {
+                in_tag = true;
+                current_tag.clear();
+            }
+            '>' => {
+                if in_tag {
+                    in_tag = false;
+                    if current_tag.starts_with('/') {
+                        // Closing tag
+                        let tag_name = &current_tag[1..];
+                        if let Some(last_tag) = tag_stack.pop() {
+                            if last_tag != tag_name {
+                                return Err(GfwdError::Validation(format!(
+                                    "Mismatched XML tags: expected </{}>", last_tag
+                                )));
+                            }
+                        }
+                    } else if !current_tag.ends_with('/') {
+                        // Opening tag (not self-closing)
+                        let tag_name = current_tag.split_whitespace().next().unwrap_or("");
+                        if !tag_name.is_empty() {
+                            tag_stack.push(tag_name.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {
+                if in_tag {
+                    current_tag.push(ch);
+                }
+            }
+        }
+    }
+
+    if !tag_stack.is_empty() {
+        return Err(GfwdError::Validation(
+            "Rich rule XML has unclosed tags".to_string(),
+        ));
+    }
+
+    Ok(xml.to_string())
+}
+
+/// Validates rich rule components for logical consistency
+pub fn validate_rich_rule_logic(
+    source: Option<&str>,
+    destination: Option<&str>, 
+    service: Option<&str>,
+    port: Option<(&str, &str)>,
+    protocol: Option<&str>,
+) -> Result<(), GfwdError> {
+    // Validate source address if provided
+    if let Some(src) = source {
+        validate_source_address(src)?;
+    }
+
+    // Validate destination address if provided
+    if let Some(dest) = destination {
+        validate_source_address(dest)?;
+    }
+
+    // Validate port if provided
+    if let Some((port_str, protocol_str)) = port {
+        validate_port(port_str)?;
+        validate_protocol(protocol_str)?;
+    }
+
+    // Validate protocol if provided
+    if let Some(proto) = protocol {
+        validate_protocol(proto)?;
+    }
+
+    // Check for conflicting specifications
+    if service.is_some() && port.is_some() {
+        return Err(GfwdError::Validation(
+            "Rich rule cannot specify both service and port".to_string(),
+        ));
+    }
+
+    if service.is_some() && protocol.is_some() {
+        return Err(GfwdError::Validation(
+            "Rich rule cannot specify both service and protocol".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Helper function to parse a single port number
 fn parse_single_port(port: &str) -> Result<u16, GfwdError> {
     let port_num = port
@@ -583,5 +713,76 @@ mod tests {
         assert!(validate_mac_address("a:bb:cc:dd:ee:ff").is_err()); // Part too short
         assert!(validate_mac_address("aaa:bb:cc:dd:ee:ff").is_err()); // Part too long
         assert!(validate_mac_address("aabbccddeeff").is_err()); // No separators
+    }
+
+    #[test]
+    fn test_validate_rich_rule_xml() {
+        // Valid rich rule XML
+        assert!(validate_rich_rule_xml("<rule><accept/></rule>").is_ok());
+        assert!(validate_rich_rule_xml("<rule family=\"ipv4\"><source address=\"192.168.1.0/24\"/><accept/></rule>").is_ok());
+        assert!(validate_rich_rule_xml("<rule><port port=\"80\" protocol=\"tcp\"/><reject/></rule>").is_ok());
+        assert!(validate_rich_rule_xml("<rule><service name=\"ssh\"/><drop/></rule>").is_ok());
+
+        // Invalid rich rule XML
+        assert!(validate_rich_rule_xml("").is_err());
+        assert!(validate_rich_rule_xml("not xml").is_err());
+        assert!(validate_rich_rule_xml("<rule>no action</rule>").is_err());
+        assert!(validate_rich_rule_xml("<rule><accept/>").is_err()); // Unclosed
+        assert!(validate_rich_rule_xml("rule><accept/></rule>").is_err()); // No opening <
+        assert!(validate_rich_rule_xml("<rule><accept/></wrong>").is_err()); // Mismatched tags
+    }
+
+    #[test]
+    fn test_validate_rich_rule_logic() {
+        // Valid combinations
+        assert!(validate_rich_rule_logic(
+            Some("192.168.1.0/24"), 
+            None, 
+            Some("ssh"), 
+            None, 
+            None
+        ).is_ok());
+        
+        assert!(validate_rich_rule_logic(
+            None, 
+            Some("10.0.0.1"), 
+            None, 
+            Some(("80", "tcp")), 
+            None
+        ).is_ok());
+
+        assert!(validate_rich_rule_logic(
+            None, 
+            None, 
+            None, 
+            None, 
+            Some("tcp")
+        ).is_ok());
+
+        // Invalid combinations
+        assert!(validate_rich_rule_logic(
+            None, 
+            None, 
+            Some("ssh"), 
+            Some(("80", "tcp")), 
+            None
+        ).is_err()); // Service and port conflict
+
+        assert!(validate_rich_rule_logic(
+            None, 
+            None, 
+            Some("ssh"), 
+            None, 
+            Some("tcp")
+        ).is_err()); // Service and protocol conflict
+
+        // Invalid addresses
+        assert!(validate_rich_rule_logic(
+            Some("invalid-ip"), 
+            None, 
+            None, 
+            None, 
+            None
+        ).is_err());
     }
 }

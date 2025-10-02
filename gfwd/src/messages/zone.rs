@@ -51,6 +51,12 @@ pub enum ZoneViewRequest {
     RemoveSource(String),
     LoadSources,
     UpdateSources(Vec<String>),
+    // Rich rule management
+    ShowAddRichRuleDialog,
+    AddRichRule(String),
+    RemoveRichRule(String),
+    LoadRichRules,
+    UpdateRichRules(Vec<String>),
 }
 
 #[derive(Debug)]
