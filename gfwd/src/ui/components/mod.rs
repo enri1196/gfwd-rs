@@ -13,5 +13,5 @@ pub use ipset_item::*;
 pub use port_item::*;
 pub use rich_rule_item::*;
 pub use source_item::*;
-pub use toast::*;
+// Toast components are accessed through specific functions, not wildcard import
 pub use zone_item::*;

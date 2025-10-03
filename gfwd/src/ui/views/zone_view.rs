@@ -852,7 +852,7 @@ impl AsyncComponent for ZoneView {
                         broker.remove_masquerade(&zone_name).await
                     };
                     if let Err(e) = result {
-                        glib::g_log!(LogLevel::Error, "Failed to toggle masquerading: {}", e);
+                        crate::core::error_handling::async_helpers::log_error(&e, "Failed to toggle masquerading");
                     }
                 });
             }
@@ -897,7 +897,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to update zone content: {e}");
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to update zone content");
                         }
                     }
                 });
@@ -974,7 +974,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateAvailableServices(services));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load services: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load services");
                         }
                     }
                 });
@@ -1009,7 +1009,7 @@ impl AsyncComponent for ZoneView {
                                     ));
                                 }
                                 Err(e) => {
-                                    glib::g_log!(LogLevel::Error, "Could not delete zone: {e}")
+                                    crate::core::error_handling::async_helpers::log_error(&e, "Could not delete zone")
                                 }
                             };
                         });
@@ -1037,7 +1037,7 @@ impl AsyncComponent for ZoneView {
                         broker.stop_firewalld().await
                     };
                     if let Err(e) = result {
-                        glib::g_log!(LogLevel::Error, "Failed to toggle firewalld: {:?}", e);
+                        crate::core::error_handling::async_helpers::log_error(&e, "Failed to toggle firewalld");
                     }
                     let is_running = broker.is_firewalld_active().await.unwrap_or(false);
                     let _ = sender.input(ZoneViewRequest::SetFirewalldRunning(is_running));
@@ -1090,7 +1090,7 @@ impl AsyncComponent for ZoneView {
                         )
                         .await
                     {
-                        glib::g_log!(LogLevel::Error, "Could not remove forward port: {}", err);
+                        crate::core::error_handling::async_helpers::log_error(&err, "Could not remove forward port");
                     } else {
                         if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                             let _ =
@@ -1149,7 +1149,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to add ICMP block: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add ICMP block");
                         }
                     }
                 });
@@ -1165,7 +1165,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to remove ICMP block: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove ICMP block");
                         }
                     }
                 });
@@ -1181,7 +1181,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load ICMP blocks: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load ICMP blocks");
                         }
                     }
                 });
@@ -1214,7 +1214,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadInterfaces);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to add interface: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add interface");
                         }
                     }
                 });
@@ -1230,7 +1230,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadInterfaces);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to remove interface: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove interface");
                         }
                     }
                 });
@@ -1246,7 +1246,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load interfaces: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load interfaces");
                         }
                     }
                 });
@@ -1279,7 +1279,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadSources);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to add source: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add source");
                         }
                     }
                 });
@@ -1295,7 +1295,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadSources);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to remove source: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove source");
                         }
                     }
                 });
@@ -1311,7 +1311,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateSources(settings.sources));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load sources: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load sources");
                         }
                     }
                 });
@@ -1344,7 +1344,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadRichRules);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to add rich rule: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add rich rule");
                         }
                     }
                 });
@@ -1360,7 +1360,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadRichRules);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to remove rich rule: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove rich rule");
                         }
                     }
                 });
@@ -1376,7 +1376,7 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateRichRules(rich_rules));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load rich rules: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load rich rules");
                         }
                     }
                 });

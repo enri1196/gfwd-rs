@@ -132,7 +132,7 @@ impl SimpleAsyncComponent for IPSetView {
                             sender.input(IPSetViewRequest::UpdateIPSets(ipsets));
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to load IP sets: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load IP sets");
                         }
                     }
                 });
@@ -160,7 +160,7 @@ impl SimpleAsyncComponent for IPSetView {
                             sender.input(IPSetViewRequest::LoadIPSets);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to create IP set: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to create IP set");
                         }
                     }
                 });
@@ -175,7 +175,7 @@ impl SimpleAsyncComponent for IPSetView {
                             sender.input(IPSetViewRequest::LoadIPSets);
                         }
                         Err(e) => {
-                            glib::g_log!(LogLevel::Error, "Failed to delete IP set: {}", e);
+                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to delete IP set");
                         }
                     }
                 });

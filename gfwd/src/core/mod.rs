@@ -1,5 +1,6 @@
 pub mod broker;
 pub mod error;
+pub mod error_handling;
 pub mod validation;
 
 pub use broker::FwdBroker;

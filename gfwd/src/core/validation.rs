@@ -1,4 +1,5 @@
 use crate::core::error::GfwdError;
+use crate::core::error_handling::validation_helpers;
 use crate::utils::constants::{MAX_ZONE_NAME_LENGTH, SUPPORTED_PROTOCOLS};
 
 /// Validates a zone name
@@ -6,16 +7,11 @@ pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
     let name = name.trim();
 
     if name.is_empty() {
-        return Err(GfwdError::Validation(
-            "Zone name cannot be empty".to_string(),
-        ));
+        return Err(validation_helpers::empty_field("Zone name"));
     }
 
     if name.len() > MAX_ZONE_NAME_LENGTH {
-        return Err(GfwdError::Validation(format!(
-            "Zone name cannot be longer than {} characters",
-            MAX_ZONE_NAME_LENGTH
-        )));
+        return Err(validation_helpers::field_too_long("Zone name", MAX_ZONE_NAME_LENGTH));
     }
 
     // Check for valid characters (alphanumeric, dash, underscore)
@@ -23,9 +19,7 @@ pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(GfwdError::Validation(
-            "Zone name can only contain letters, numbers, dashes, and underscores".to_string(),
-        ));
+        return Err(validation_helpers::invalid_characters("Zone name", "letters, numbers, dashes, and underscores"));
     }
 
     // Cannot start with dash
@@ -43,7 +37,7 @@ pub fn validate_port(port: &str) -> Result<String, GfwdError> {
     let port = port.trim();
 
     if port.is_empty() {
-        return Err(GfwdError::Validation("Port cannot be empty".to_string()));
+        return Err(validation_helpers::empty_field("Port"));
     }
 
     // Check if it's a range (contains dash)
@@ -52,9 +46,7 @@ pub fn validate_port(port: &str) -> Result<String, GfwdError> {
         let end_port = parse_single_port(end.trim())?;
 
         if start_port > end_port {
-            return Err(GfwdError::Validation(
-                "Start port cannot be greater than end port".to_string(),
-            ));
+            return Err(validation_helpers::invalid_port_range(&format!("{}-{}", start, end)));
         }
 
         Ok(format!("{}-{}", start_port, end_port))
@@ -71,11 +63,7 @@ pub fn validate_protocol(protocol: &str) -> Result<String, GfwdError> {
     if SUPPORTED_PROTOCOLS.contains(&protocol.as_str()) {
         Ok(protocol)
     } else {
-        Err(GfwdError::Validation(format!(
-            "Invalid protocol '{}'. Must be one of: {}",
-            protocol,
-            SUPPORTED_PROTOCOLS.join(", ")
-        )))
+        Err(validation_helpers::invalid_protocol(&protocol))
     }
 }
 
@@ -84,16 +72,12 @@ pub fn validate_interface_name(interface: &str) -> Result<String, GfwdError> {
     let interface = interface.trim();
 
     if interface.is_empty() {
-        return Err(GfwdError::Validation(
-            "Interface name cannot be empty".to_string(),
-        ));
+        return Err(validation_helpers::empty_field("Interface name"));
     }
 
     // Interface names should be reasonable length (Linux limit is typically 15 chars)
     if interface.len() > 15 {
-        return Err(GfwdError::Validation(
-            "Interface name cannot be longer than 15 characters".to_string(),
-        ));
+        return Err(validation_helpers::field_too_long("Interface name", 15));
     }
 
     // Check for valid characters (alphanumeric, dash, underscore, dot, colon)
@@ -101,9 +85,7 @@ pub fn validate_interface_name(interface: &str) -> Result<String, GfwdError> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ':')
     {
-        return Err(GfwdError::Validation(
-            "Interface name can only contain letters, numbers, dashes, underscores, dots, and colons".to_string(),
-        ));
+        return Err(validation_helpers::invalid_characters("Interface name", "letters, numbers, dashes, underscores, dots, and colons"));
     }
 
     Ok(interface.to_string())
@@ -114,9 +96,7 @@ pub fn validate_source_address(source: &str) -> Result<String, GfwdError> {
     let source = source.trim();
 
     if source.is_empty() {
-        return Err(GfwdError::Validation(
-            "Source address cannot be empty".to_string(),
-        ));
+        return Err(validation_helpers::empty_field("Source address"));
     }
 
     // Check if it's an IPv4 address or network
@@ -157,7 +137,7 @@ fn validate_ipv4_address(ip: &str) -> Result<(), GfwdError> {
     for part in parts {
         let octet = part
             .parse::<u8>()
-            .map_err(|_| GfwdError::Validation(format!("Invalid IPv4 address: {}", ip)))?;
+            .map_err(|_| validation_helpers::invalid_ip_address(ip))?;
         // All values 0-255 are valid for octets
         let _ = octet;
     }
@@ -169,9 +149,7 @@ fn validate_ipv4_address(ip: &str) -> Result<(), GfwdError> {
 fn validate_ipv6_address(ip: &str) -> Result<(), GfwdError> {
     // Basic IPv6 validation - check for valid characters and structure
     if ip.is_empty() {
-        return Err(GfwdError::Validation(
-            "IPv6 address cannot be empty".to_string(),
-        ));
+        return Err(validation_helpers::empty_field("IPv6 address"));
     }
 
     // IPv6 addresses contain only hex digits, colons, and possibly dots (for IPv4-mapped)
@@ -179,18 +157,12 @@ fn validate_ipv6_address(ip: &str) -> Result<(), GfwdError> {
         .chars()
         .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
     {
-        return Err(GfwdError::Validation(format!(
-            "Invalid IPv6 address: {}",
-            ip
-        )));
+        return Err(validation_helpers::invalid_ip_address(ip));
     }
 
     // Must contain at least one colon
     if !ip.contains(':') {
-        return Err(GfwdError::Validation(format!(
-            "Invalid IPv6 address: {}",
-            ip
-        )));
+        return Err(validation_helpers::invalid_ip_address(ip));
     }
 
     // Cannot start or end with a single colon (unless it's :: for compression)

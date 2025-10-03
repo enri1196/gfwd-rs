@@ -363,8 +363,20 @@ impl FwdBroker {
             .path(path.as_str())?
             .build()
             .await?;
-        proxy.add_icmp_block(icmp_type).await?;
-        Ok(())
+            
+        match proxy.add_icmp_block(icmp_type).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("already enabled") || error_msg.contains("ALREADY_ENABLED") {
+                    Err(GfwdError::IcmpBlock(format!("ICMP type '{}' is already blocked in zone '{}'", icmp_type, zone_name)))
+                } else if error_msg.contains("invalid icmp") || error_msg.contains("INVALID_ICMPTYPE") {
+                    Err(GfwdError::IcmpType(format!("ICMP type '{}' not found or not available", icmp_type)))
+                } else {
+                    Err(GfwdError::from(e))
+                }
+            }
+        }
     }
 
     /// Remove an ICMP block from a zone
@@ -379,8 +391,20 @@ impl FwdBroker {
             .path(path.as_str())?
             .build()
             .await?;
-        proxy.remove_icmp_block(icmp_type).await?;
-        Ok(())
+            
+        match proxy.remove_icmp_block(icmp_type).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("not enabled") || error_msg.contains("NOT_ENABLED") {
+                    Err(GfwdError::IcmpBlock(format!("ICMP type '{}' is not blocked in zone '{}'", icmp_type, zone_name)))
+                } else if error_msg.contains("invalid icmp") || error_msg.contains("INVALID_ICMPTYPE") {
+                    Err(GfwdError::IcmpType(format!("ICMP type '{}' not found or not available", icmp_type)))
+                } else {
+                    Err(GfwdError::from(e))
+                }
+            }
+        }
     }
 
     /// Get all available network interfaces from the system using NetworkManager
@@ -557,20 +581,53 @@ impl FwdBroker {
             settings.entries,       // entries
         );
         
-        cfg.add_ipset(&settings.name, &ipset_settings).await?;
-        Ok(())
+        match cfg.add_ipset(&settings.name, &ipset_settings).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Check for specific D-Bus errors and convert to more specific error types
+                let error_msg = e.to_string();
+                if error_msg.contains("already exists") || error_msg.contains("ALREADY_ENABLED") {
+                    Err(GfwdError::IPSet(format!("IP set '{}' already exists", settings.name)))
+                } else {
+                    Err(GfwdError::from(e))
+                }
+            }
+        }
     }
 
     /// Delete an IP set
     pub async fn delete_ipset(&self, ipset_name: &str) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
-        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        
+        // First check if the IP set exists
+        let path = match cfg.get_ipset_by_name(ipset_name).await {
+            Ok(path) => path,
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("not found") || error_msg.contains("INVALID_IPSET") {
+                    return Err(GfwdError::IPSet(format!("IP set '{}' not found", ipset_name)));
+                } else {
+                    return Err(GfwdError::from(e));
+                }
+            }
+        };
+        
         let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
             .path(path.as_str())?
             .build()
             .await?;
-        proxy.remove().await?;
-        Ok(())
+            
+        match proxy.remove().await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let error_msg = e.to_string();
+                if error_msg.contains("in use") || error_msg.contains("IPSET_IN_USE") {
+                    Err(GfwdError::IPSet(format!("IP set '{}' is currently in use and cannot be deleted", ipset_name)))
+                } else {
+                    Err(GfwdError::from(e))
+                }
+            }
+        }
     }
 
     /// Get entries for a specific IP set
