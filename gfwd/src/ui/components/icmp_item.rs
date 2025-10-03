@@ -65,16 +65,20 @@ impl FactoryComponent for IcmpItem {
             set_title: &self.title,
             #[watch]
             set_subtitle: &self.subtitle,
+            set_accessible_role: gtk::AccessibleRole::ListItem,
 
             add_prefix = &gtk::Image {
                 set_icon_name: Some("network-wired-symbolic"),
                 set_pixel_size: 16,
                 add_css_class: "accent",
+                set_accessible_role: gtk::AccessibleRole::Img,
             },
 
             add_suffix = &gtk::Button {
                 set_icon_name: "user-trash-symbolic",
                 set_tooltip_text: Some("Remove ICMP block"),
+                set_accessible_role: gtk::AccessibleRole::Button,
+                set_can_focus: true,
                 add_css_class: "flat",
                 add_css_class: "destructive-action",
                 connect_clicked[sender, name = self.name.clone()] => move |_| {

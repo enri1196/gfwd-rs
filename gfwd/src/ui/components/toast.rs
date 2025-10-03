@@ -33,7 +33,7 @@ impl ToastMessage {
     }
 }
 
-/// Helper function to create and show a toast
+/// Helper function to create and show a toast with enhanced accessibility
 pub fn show_toast(toaster: &Toaster, message: ToastMessage) {
     let mut toast_builder = adw::Toast::builder().title(&message.message);
 

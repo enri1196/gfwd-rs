@@ -342,7 +342,7 @@ impl SimpleAsyncComponent for IPSetDialog {
                         entries: self.entries.clone(),
                         options: std::collections::HashMap::new(),
                     };
-                    sender.output(IPSetDialogResponse::IPSetCreated { settings });
+                    let _ = sender.output(IPSetDialogResponse::IPSetCreated { settings });
                     sender.input(IPSetDialogRequest::Cancel);
                 }
             }

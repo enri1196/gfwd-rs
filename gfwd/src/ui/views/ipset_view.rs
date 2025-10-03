@@ -49,6 +49,8 @@ impl SimpleAsyncComponent for IPSetView {
                         set_header_suffix = &gtk::Button {
                             set_icon_name: "list-add-symbolic",
                             set_tooltip_text: Some("Create new IP set"),
+                            set_accessible_role: gtk::AccessibleRole::Button,
+                            set_can_focus: true,
                             add_css_class: "flat",
                             connect_clicked => IPSetViewRequest::ShowCreateDialog,
                         },
@@ -56,6 +58,8 @@ impl SimpleAsyncComponent for IPSetView {
                         #[local_ref]
                         ipset_list_box -> gtk::ListBox {
                             add_css_class: "boxed-list",
+                            set_accessible_role: gtk::AccessibleRole::List,
+                            set_can_focus: true,
                             #[track(model.changed(IPSetView::ipset_list()))]
                             set_visible: !model.ipset_list.is_empty(),
                         },

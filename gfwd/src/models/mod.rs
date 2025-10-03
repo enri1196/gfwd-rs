@@ -10,6 +10,6 @@ pub use port::*;
 pub use zone::*;
 pub use icmp::*;
 pub use ipset::*;
-pub use policy::*;
-pub use direct::*;
+// pub use policy::*;  // Will be used when policy management is implemented
+// pub use direct::*;  // Will be used when direct rules management is implemented
 pub use rich_rule::*;

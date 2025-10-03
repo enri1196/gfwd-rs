@@ -3,6 +3,7 @@ use relm4::prelude::*;
 
 #[tracker::track]
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct IPSetItem {
     pub name: String,
     title: String,
@@ -74,12 +75,14 @@ impl FactoryComponent for IPSetItem {
     }
 
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
+        self.reset();
+        
         match msg {
             IPSetItemInput::Delete => {
-                sender.output(IPSetItemResponse::Delete(self.name.clone()));
+                let _ = sender.output(IPSetItemResponse::Delete(self.name.clone()));
             }
             IPSetItemInput::Select => {
-                sender.output(IPSetItemResponse::Select(self.name.clone()));
+                let _ = sender.output(IPSetItemResponse::Select(self.name.clone()));
             }
         }
     }

@@ -2,6 +2,7 @@ use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
 use crate::models::{ForwardingConfig, PortRule};
+use crate::ui::styling::{css_classes, icons};
 
 #[tracker::track]
 #[derive(Debug, Clone, PartialEq)]
@@ -93,12 +94,30 @@ impl FactoryComponent for PortItem {
             set_title: &self.title,
             #[watch]
             set_subtitle: &self.subtitle,
+            set_accessible_role: gtk::AccessibleRole::ListItem,
+
+            add_prefix = &gtk::Image {
+                set_icon_name: Some(if self.forwarding.is_some() { 
+                    icons::GO_JUMP 
+                } else { 
+                    icons::NETWORK_WIRED 
+                }),
+                set_pixel_size: 16,
+                set_accessible_role: gtk::AccessibleRole::Img,
+                add_css_class: if self.forwarding.is_some() { 
+                    css_classes::ACCENT 
+                } else { 
+                    css_classes::SUCCESS 
+                },
+            },
 
             add_suffix = &gtk::Button {
-                set_icon_name: "user-trash-symbolic",
-                set_tooltip_text: Some("Remove port"),
-                add_css_class: "flat",
-                add_css_class: "destructive-action",
+                set_icon_name: icons::REMOVE,
+                set_tooltip_text: Some("Remove port rule"),
+                set_accessible_role: gtk::AccessibleRole::Button,
+                set_can_focus: true,
+                add_css_class: css_classes::FLAT,
+                add_css_class: css_classes::DESTRUCTIVE_ACTION,
                 connect_clicked[sender, port = self.port.clone(), protocol = self.protocol.clone(), forwarding = self.forwarding.clone()] => move |_| {
                     sender.output(PortItemResponse::RemovePort {
                         port: port.clone(),

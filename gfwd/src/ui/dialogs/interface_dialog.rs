@@ -42,6 +42,8 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
 
                     pack_start = &gtk::Button {
                         set_label: "Cancel",
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
                         connect_clicked[sender, root] => move |_| {
                             sender.input(InterfaceDialogRequest::Cancel);
                             root.close();
@@ -51,6 +53,9 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                     pack_end = &gtk::Button {
                         set_label: "Add Interface",
                         add_css_class: "suggested-action",
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
+                        set_receives_default: true,
                         #[track(model.changed(AddInterfaceDialog::is_valid()))]
                         set_sensitive: model.is_valid,
                         connect_clicked[sender, root] => move |_| {
@@ -83,6 +88,8 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                                 add = &adw::ComboRow {
                                     set_title: "Network Interface",
                                     set_subtitle: "Select an available network interface",
+                                    set_accessible_role: gtk::AccessibleRole::ComboBox,
+                                    set_can_focus: true,
                                     #[track(model.changed(AddInterfaceDialog::selected_interface_index()))]
                                     set_selected: model.selected_interface_index.unwrap_or(gtk::INVALID_LIST_POSITION),
                                     #[track(model.changed(AddInterfaceDialog::interface_error()))]
@@ -91,6 +98,7 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-wired-symbolic"),
                                         set_pixel_size: 16,
+                                        set_accessible_role: gtk::AccessibleRole::Img,
                                     },
 
                                     set_model: Some(&model.interface_model),
@@ -109,12 +117,15 @@ impl SimpleAsyncComponent for AddInterfaceDialog {
                                     set_visible: model.available_interfaces.is_empty(),
                                     set_title: "Interface Name",
                                     set_text: &model.interface_name,
+                                    set_accessible_role: gtk::AccessibleRole::TextBox,
+                                    set_can_focus: true,
                                     #[track(model.changed(AddInterfaceDialog::interface_error()))]
                                     add_css_class: if model.interface_error.is_some() { "error" } else { "" },
 
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-wired-symbolic"),
                                         set_pixel_size: 16,
+                                        set_accessible_role: gtk::AccessibleRole::Img,
                                     },
 
                                     connect_changed[sender] => move |entry| {

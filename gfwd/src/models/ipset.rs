@@ -9,6 +9,7 @@ pub struct IPSetSettings {
 }
 
 impl IPSetSettings {
+    #[allow(dead_code)]
     pub fn new(name: String, ipset_type: String) -> Self {
         Self {
             name,
@@ -18,11 +19,13 @@ impl IPSetSettings {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_entries(mut self, entries: Vec<String>) -> Self {
         self.entries = entries;
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_options(mut self, options: HashMap<String, String>) -> Self {
         self.options = options;
         self

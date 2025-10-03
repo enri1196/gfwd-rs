@@ -12,8 +12,11 @@ pub enum IPSetViewRequest {
 
 #[derive(Debug)]
 pub enum IPSetViewResponse {
+    #[allow(dead_code)]
     IPSetSelected(String),
+    #[allow(dead_code)]
     IPSetCreated(String),
+    #[allow(dead_code)]
     IPSetDeleted(String),
 }
 
@@ -26,6 +29,7 @@ pub enum IPSetDialogRequest {
     SetCurrentEntry(String),
     ValidateCurrentEntry,
     AddEntry,
+    #[allow(dead_code)]
     RemoveEntry(String),
     Create,
     Cancel,

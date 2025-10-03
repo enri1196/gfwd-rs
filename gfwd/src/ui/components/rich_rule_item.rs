@@ -142,13 +142,17 @@ impl FactoryComponent for RichRuleItem {
             #[watch]
             set_title: &self.display_text,
             set_subtitle: "Rich firewall rule",
+            set_accessible_role: gtk::AccessibleRole::ListItem,
             add_prefix = &gtk::Image {
                 set_icon_name: Some("applications-system-symbolic"),
                 set_pixel_size: 16,
+                set_accessible_role: gtk::AccessibleRole::Img,
             },
             add_suffix = &gtk::Button {
                 set_icon_name: "user-trash-symbolic",
                 set_tooltip_text: Some("Remove rich rule"),
+                set_accessible_role: gtk::AccessibleRole::Button,
+                set_can_focus: true,
                 add_css_class: "flat",
                 add_css_class: "destructive-action",
                 set_valign: gtk::Align::Center,

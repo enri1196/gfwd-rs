@@ -82,6 +82,8 @@ impl SimpleAsyncComponent for RichRuleDialog {
                         set_label: "Cancel",
                         set_valign: gtk::Align::Center,
                         set_vexpand: false,
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
                         connect_clicked[sender, dialog] => move |_| {
                             sender.input(RichRuleDialogRequest::Cancel);
                             dialog.close();
@@ -93,6 +95,9 @@ impl SimpleAsyncComponent for RichRuleDialog {
                         add_css_class: "suggested-action",
                         set_valign: gtk::Align::Center,
                         set_vexpand: false,
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
+                        set_receives_default: true,
                         #[track(model.changed(RichRuleDialog::is_valid()))]
                         set_sensitive: model.is_valid,
                         connect_clicked => RichRuleDialogRequest::Create,

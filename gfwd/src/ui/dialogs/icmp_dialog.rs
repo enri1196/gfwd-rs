@@ -38,6 +38,8 @@ impl SimpleAsyncComponent for AddIcmpDialog {
 
                     pack_start = &gtk::Button {
                         set_label: "Cancel",
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
                         connect_clicked[sender, root] => move |_| {
                             sender.input(IcmpDialogRequest::Cancel);
                             root.close();
@@ -47,6 +49,9 @@ impl SimpleAsyncComponent for AddIcmpDialog {
                     pack_end = &gtk::Button {
                         set_label: "Add Block",
                         add_css_class: "suggested-action",
+                        set_accessible_role: gtk::AccessibleRole::Button,
+                        set_can_focus: true,
+                        set_receives_default: true,
                         #[track(model.changed(AddIcmpDialog::selected_icmp()))]
                         set_sensitive: model.selected_icmp.is_some(),
                         connect_clicked[sender, root] => move |_| {
@@ -79,6 +84,8 @@ impl SimpleAsyncComponent for AddIcmpDialog {
                                 add = &adw::ComboRow {
                                     set_title: "ICMP Message Type",
                                     set_subtitle: "Type of ICMP message to block",
+                                    set_accessible_role: gtk::AccessibleRole::ComboBox,
+                                    set_can_focus: true,
                                     #[track(model.changed(AddIcmpDialog::available_icmp_types()))]
                                     set_model: Some(&{
                                         let string_list = gtk::StringList::new(&[]);
@@ -93,6 +100,7 @@ impl SimpleAsyncComponent for AddIcmpDialog {
                                     add_prefix = &gtk::Image {
                                         set_icon_name: Some("network-wired-symbolic"),
                                         set_pixel_size: 16,
+                                        set_accessible_role: gtk::AccessibleRole::Img,
                                     },
 
                                     connect_selected_notify[sender, available_types = model.available_icmp_types.clone()] => move |combo| {

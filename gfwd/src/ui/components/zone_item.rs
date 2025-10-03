@@ -2,6 +2,8 @@ use relm4::adw::prelude::*;
 use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
+use crate::ui::styling::{css_classes, icons};
+
 #[tracker::track]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZoneItem {
@@ -41,6 +43,8 @@ impl FactoryComponent for ZoneItem {
         #[name(action_row)]
         adw::ActionRow {
             set_activatable: true,
+            set_accessible_role: gtk::AccessibleRole::ListItem,
+            set_can_focus: true,
             #[watch]
             set_title: &self.name,
 
@@ -50,20 +54,24 @@ impl FactoryComponent for ZoneItem {
 
             // Icon prefix for default zone
             add_prefix = &gtk::Image {
-                set_icon_name: Some("security-high-symbolic"),
+                set_icon_name: Some(icons::SECURITY_HIGH),
                 set_pixel_size: 16,
+                set_accessible_role: gtk::AccessibleRole::Img,
+                set_tooltip_text: Some("Default firewall zone"),
                 #[track(self.changed(ZoneItem::is_default()))]
                 set_visible: self.is_default,
-                add_css_class: "accent",
+                add_css_class: css_classes::ACCENT,
             },
 
             // Active zone indicator suffix
             add_suffix = &gtk::Image {
-                set_icon_name: Some("object-select-symbolic"),
+                set_icon_name: Some(icons::OBJECT_SELECT),
                 set_pixel_size: 16,
+                set_accessible_role: gtk::AccessibleRole::Img,
+                set_tooltip_text: Some("Currently selected zone"),
                 #[track(self.changed(ZoneItem::is_active()))]
                 set_visible: self.is_active,
-                add_css_class: "success",
+                add_css_class: css_classes::SUCCESS,
             },
 
             connect_activated[sender] => move |row| {

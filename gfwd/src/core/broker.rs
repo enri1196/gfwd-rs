@@ -574,6 +574,7 @@ impl FwdBroker {
     }
 
     /// Get entries for a specific IP set
+    #[allow(dead_code)]
     pub async fn get_ipset_entries(&self, ipset_name: &str) -> Result<Vec<String>, GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_ipset_by_name(ipset_name).await?;
@@ -586,6 +587,7 @@ impl FwdBroker {
     }
 
     /// Add an entry to an IP set
+    #[allow(dead_code)]
     pub async fn add_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), GfwdError> {
         // Get IP set type for validation
         let ipset_type = self.get_ipset_type(ipset_name).await?;
@@ -604,6 +606,7 @@ impl FwdBroker {
     }
 
     /// Remove an entry from an IP set
+    #[allow(dead_code)]
     pub async fn remove_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_ipset_by_name(ipset_name).await?;
@@ -616,6 +619,7 @@ impl FwdBroker {
     }
 
     /// Get IP set type (helper method for validation)
+    #[allow(dead_code)]
     async fn get_ipset_type(&self, ipset_name: &str) -> Result<String, GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_ipset_by_name(ipset_name).await?;
@@ -669,6 +673,7 @@ impl FwdBroker {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
     use crate::models::rich_rule::{RichRule, RichRuleAction};
 

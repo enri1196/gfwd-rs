@@ -36,6 +36,8 @@ impl SimpleAsyncComponent for SidebarView {
                 pack_start = &gtk::Button {
                     set_icon_name: "network-server-symbolic",
                     set_tooltip_text: Some("IP Sets"),
+                    set_accessible_role: gtk::AccessibleRole::Button,
+                    set_can_focus: true,
                     add_css_class: "flat",
                     connect_clicked[sender] => move |_| {
                         sender.input(SidebarRequest::ShowIPSets);
@@ -45,6 +47,8 @@ impl SimpleAsyncComponent for SidebarView {
                 pack_end = &gtk::Button {
                     set_icon_name: "list-add-symbolic",
                     set_tooltip_text: Some("Add New Zone"),
+                    set_accessible_role: gtk::AccessibleRole::Button,
+                    set_can_focus: true,
                     add_css_class: "flat",
                     connect_clicked[sender] => move |_| {
                         sender.input(SidebarRequest::ShowAddZoneDialog);
@@ -73,6 +77,8 @@ impl SimpleAsyncComponent for SidebarView {
                         zones_list_box -> gtk::ListBox {
                             set_selection_mode: gtk::SelectionMode::None,
                             add_css_class: "boxed-list",
+                            set_accessible_role: gtk::AccessibleRole::List,
+                            set_can_focus: true,
                             set_margin_bottom: 18,
                         },
 

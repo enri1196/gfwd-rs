@@ -115,7 +115,7 @@ impl SimpleAsyncComponent for AddSourceDialog {
 
                             add = &adw::PreferencesGroup {
                                 set_title: "Address Format Examples",
-                                set_description: Some("Supported IP address and network formats"),
+                                set_description: Some("Supported IP address and network formats with accessibility guidance"),
 
                                 // IPv4 examples
                                 add = &adw::ActionRow {
