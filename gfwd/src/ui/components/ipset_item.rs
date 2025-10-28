@@ -76,7 +76,7 @@ impl FactoryComponent for IPSetItem {
 
     fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         self.reset();
-        
+
         match msg {
             IPSetItemInput::Delete => {
                 let _ = sender.output(IPSetItemResponse::Delete(self.name.clone()));

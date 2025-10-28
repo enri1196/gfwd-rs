@@ -33,14 +33,14 @@ impl RichRuleItem {
     fn parse_rule_for_display(rule_xml: &str) -> String {
         // Simple XML parsing to extract key components for display
         let mut parts = Vec::new();
-        
+
         // Extract family
         if rule_xml.contains("family=\"ipv4\"") {
             parts.push("IPv4".to_string());
         } else if rule_xml.contains("family=\"ipv6\"") {
             parts.push("IPv6".to_string());
         }
-        
+
         // Extract source
         if let Some(start) = rule_xml.find("<source address=\"") {
             if let Some(end) = rule_xml[start + 17..].find("\"") {
@@ -53,7 +53,7 @@ impl RichRuleItem {
                 }
             }
         }
-        
+
         // Extract destination
         if let Some(start) = rule_xml.find("<destination address=\"") {
             if let Some(end) = rule_xml[start + 22..].find("\"") {
@@ -66,7 +66,7 @@ impl RichRuleItem {
                 }
             }
         }
-        
+
         // Extract service
         if let Some(start) = rule_xml.find("<service name=\"") {
             if let Some(end) = rule_xml[start + 15..].find("\"") {
@@ -74,7 +74,7 @@ impl RichRuleItem {
                 parts.push(format!("service {}", service));
             }
         }
-        
+
         // Extract port
         if let Some(start) = rule_xml.find("<port port=\"") {
             if let Some(end) = rule_xml[start + 12..].find("\"") {
@@ -89,7 +89,7 @@ impl RichRuleItem {
                 }
             }
         }
-        
+
         // Extract protocol
         if let Some(start) = rule_xml.find("<protocol value=\"") {
             if let Some(end) = rule_xml[start + 17..].find("\"") {
@@ -97,7 +97,7 @@ impl RichRuleItem {
                 parts.push(format!("protocol {}", protocol));
             }
         }
-        
+
         // Extract action
         let action = if rule_xml.contains("<accept/>") {
             "ACCEPT"
@@ -120,7 +120,7 @@ impl RichRuleItem {
         } else {
             "UNKNOWN"
         };
-        
+
         if parts.is_empty() {
             format!("Any traffic → {}", action)
         } else {

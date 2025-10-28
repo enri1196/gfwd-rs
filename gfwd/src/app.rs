@@ -6,14 +6,14 @@ use relm4::gtk::glib::{self, LogLevel};
 use relm4::prelude::*;
 
 use crate::core::FwdBroker;
+use crate::messages::ipset::IPSetViewRequest;
 use crate::messages::{
     AppRequest, SidebarRequest, SidebarResponse, ZoneViewRequest, ZoneViewResponse,
 };
-use crate::messages::ipset::IPSetViewRequest;
 
 // Toast components are now accessed through specific functions
 use crate::ui::dialogs::AddZoneDialog;
-use crate::ui::views::{SidebarView, ZoneView, IPSetView};
+use crate::ui::views::{IPSetView, SidebarView, ZoneView};
 use crate::utils::constants::{DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH};
 
 #[tracker::track]
@@ -81,11 +81,18 @@ impl SimpleAsyncComponent for App {
                 match self.broker.add_zone(settings).await {
                     Ok(_) => {
                         glib::g_log!(LogLevel::Message, "Created new Zone: {}", zone_name);
-                        crate::ui::components::toast::show_success_toast(&self.toaster, "created", &format!("zone '{}'", zone_name));
+                        crate::ui::components::toast::show_success_toast(
+                            &self.toaster,
+                            "created",
+                            &format!("zone '{}'", zone_name),
+                        );
                         self.sidebar.emit(SidebarRequest::UpdateZones)
                     }
                     Err(e) => {
-                        crate::core::error_handling::async_helpers::log_error(&e, "Failed to add zone");
+                        crate::core::error_handling::async_helpers::log_error(
+                            &e,
+                            "Failed to add zone",
+                        );
                         crate::ui::components::toast::show_error_toast(&self.toaster, &e);
                     }
                 };
@@ -93,11 +100,18 @@ impl SimpleAsyncComponent for App {
             AppRequest::ZoneAdded(_) => {
                 // This should not happen in normal operation
                 let error = crate::core::error::GfwdError::zone_already_exists("unknown");
-                crate::core::error_handling::async_helpers::log_error(&error, "Unexpected zone add failure");
+                crate::core::error_handling::async_helpers::log_error(
+                    &error,
+                    "Unexpected zone add failure",
+                );
                 crate::ui::components::toast::show_error_toast(&self.toaster, &error);
             }
             AppRequest::ZoneRemoved(removed_zone) => {
-                crate::ui::components::toast::show_success_toast(&self.toaster, "deleted", &format!("zone '{}'", removed_zone));
+                crate::ui::components::toast::show_success_toast(
+                    &self.toaster,
+                    "deleted",
+                    &format!("zone '{}'", removed_zone),
+                );
                 self.sidebar.emit(SidebarRequest::RemoveZone(removed_zone));
                 let active_zone = self.broker.get_default_zone().await.unwrap();
                 self.zone_view
@@ -151,12 +165,13 @@ impl SimpleAsyncComponent for App {
                 }
             });
 
-        let ipset_view = IPSetView::builder()
-            .launch(broker)
-            .forward(sender.input_sender(), |_resp| {
-                // IPSetView doesn't emit responses that need app handling yet
-                AppRequest::ToggleSidebar // Placeholder
-            });
+        let ipset_view =
+            IPSetView::builder()
+                .launch(broker)
+                .forward(sender.input_sender(), |_resp| {
+                    // IPSetView doesn't emit responses that need app handling yet
+                    AppRequest::ToggleSidebar // Placeholder
+                });
 
         let dialog = AddZoneDialog::builder()
             .launch(())

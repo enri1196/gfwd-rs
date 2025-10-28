@@ -2,7 +2,9 @@ use relm4::adw::prelude::*;
 use relm4::gtk::glib;
 use relm4::prelude::*;
 
-use crate::core::validation::{validate_source_address, validate_port, validate_protocol, validate_rich_rule_logic};
+use crate::core::validation::{
+    validate_port, validate_protocol, validate_rich_rule_logic, validate_source_address,
+};
 use crate::messages::rich_rule::{RichRuleDialogRequest, RichRuleDialogResponse};
 use crate::models::{RichRule, RichRuleAction};
 
@@ -11,45 +13,45 @@ use crate::models::{RichRule, RichRuleAction};
 pub struct RichRuleDialog {
     // Rule components
     family: String,
-    
+
     // Source configuration
     source_address: String,
     source_invert: bool,
     source_error: Option<String>,
     source_valid: bool,
-    
+
     // Destination configuration
     destination_address: String,
     destination_invert: bool,
     destination_error: Option<String>,
     destination_valid: bool,
-    
+
     // Rule type (service, port, or protocol)
     rule_type: String,
-    
+
     // Service configuration
     service_name: String,
     service_error: Option<String>,
     service_valid: bool,
-    
+
     // Port configuration
     port_number: String,
     port_protocol: String,
     port_error: Option<String>,
     port_valid: bool,
-    
+
     // Protocol configuration
     protocol_name: String,
     protocol_error: Option<String>,
     protocol_valid: bool,
-    
+
     // Action configuration
     action_type: String,
     mark_value: String,
     reject_type: String,
     action_error: Option<String>,
     action_valid: bool,
-    
+
     // Overall validation
     is_valid: bool,
 }
@@ -704,7 +706,11 @@ impl SimpleAsyncComponent for RichRuleDialog {
                         self.set_service_error(Some("Service name is required".to_string()));
                     } else {
                         // Basic service name validation (non-empty, reasonable characters)
-                        if self.service_name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                        if self
+                            .service_name
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                        {
                             self.set_service_valid(true);
                             self.set_service_error(None);
                         } else {
@@ -733,18 +739,16 @@ impl SimpleAsyncComponent for RichRuleDialog {
                         self.set_port_error(Some("Port number is required".to_string()));
                     } else {
                         match validate_port(&self.port_number) {
-                            Ok(_) => {
-                                match validate_protocol(&self.port_protocol) {
-                                    Ok(_) => {
-                                        self.set_port_valid(true);
-                                        self.set_port_error(None);
-                                    }
-                                    Err(e) => {
-                                        self.set_port_valid(false);
-                                        self.set_port_error(Some(e.to_string()));
-                                    }
+                            Ok(_) => match validate_protocol(&self.port_protocol) {
+                                Ok(_) => {
+                                    self.set_port_valid(true);
+                                    self.set_port_error(None);
                                 }
-                            }
+                                Err(e) => {
+                                    self.set_port_valid(false);
+                                    self.set_port_error(Some(e.to_string()));
+                                }
+                            },
                             Err(e) => {
                                 self.set_port_valid(false);
                                 self.set_port_error(Some(e.to_string()));
@@ -798,13 +802,18 @@ impl SimpleAsyncComponent for RichRuleDialog {
                         self.set_action_error(Some("Mark value is required".to_string()));
                     } else {
                         // Validate mark value (should be a number or hex)
-                        if self.mark_value.parse::<u32>().is_ok() || 
-                           (self.mark_value.starts_with("0x") && u32::from_str_radix(&self.mark_value[2..], 16).is_ok()) {
+                        if self.mark_value.parse::<u32>().is_ok()
+                            || (self.mark_value.starts_with("0x")
+                                && u32::from_str_radix(&self.mark_value[2..], 16).is_ok())
+                        {
                             self.set_action_valid(true);
                             self.set_action_error(None);
                         } else {
                             self.set_action_valid(false);
-                            self.set_action_error(Some("Mark value must be a number or hex value (e.g., 123 or 0x7b)".to_string()));
+                            self.set_action_error(Some(
+                                "Mark value must be a number or hex value (e.g., 123 or 0x7b)"
+                                    .to_string(),
+                            ));
                         }
                     }
                 } else {
@@ -868,15 +877,31 @@ impl RichRuleDialog {
         }
 
         // Validate logical consistency
-        let source = if self.source_address.trim().is_empty() { None } else { Some(self.source_address.as_str()) };
-        let destination = if self.destination_address.trim().is_empty() { None } else { Some(self.destination_address.as_str()) };
-        let service = if self.rule_type == "Service" && !self.service_name.trim().is_empty() { Some(self.service_name.as_str()) } else { None };
-        let port = if self.rule_type == "Port and Protocol" && !self.port_number.trim().is_empty() { 
-            Some((self.port_number.as_str(), self.port_protocol.as_str())) 
-        } else { 
-            None 
+        let source = if self.source_address.trim().is_empty() {
+            None
+        } else {
+            Some(self.source_address.as_str())
         };
-        let protocol = if self.rule_type == "Protocol Only" { Some(self.protocol_name.as_str()) } else { None };
+        let destination = if self.destination_address.trim().is_empty() {
+            None
+        } else {
+            Some(self.destination_address.as_str())
+        };
+        let service = if self.rule_type == "Service" && !self.service_name.trim().is_empty() {
+            Some(self.service_name.as_str())
+        } else {
+            None
+        };
+        let port = if self.rule_type == "Port and Protocol" && !self.port_number.trim().is_empty() {
+            Some((self.port_number.as_str(), self.port_protocol.as_str()))
+        } else {
+            None
+        };
+        let protocol = if self.rule_type == "Protocol Only" {
+            Some(self.protocol_name.as_str())
+        } else {
+            None
+        };
 
         if let Err(_) = validate_rich_rule_logic(source, destination, service, port, protocol) {
             valid = false;
@@ -900,7 +925,10 @@ impl RichRuleDialog {
 
         // Set destination if specified
         if !self.destination_address.trim().is_empty() {
-            rule = rule.with_destination(self.destination_address.trim().to_string(), self.destination_invert);
+            rule = rule.with_destination(
+                self.destination_address.trim().to_string(),
+                self.destination_invert,
+            );
         }
 
         // Set traffic specification based on rule type
@@ -912,7 +940,10 @@ impl RichRuleDialog {
             }
             "Port and Protocol" => {
                 if !self.port_number.trim().is_empty() {
-                    rule = rule.with_port(self.port_number.trim().to_string(), self.port_protocol.clone());
+                    rule = rule.with_port(
+                        self.port_number.trim().to_string(),
+                        self.port_protocol.clone(),
+                    );
                 }
             }
             "Protocol Only" => {

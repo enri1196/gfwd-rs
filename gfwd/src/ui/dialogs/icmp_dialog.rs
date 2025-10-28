@@ -219,7 +219,11 @@ impl SimpleAsyncComponent for AddIcmpDialog {
         match msg {
             IcmpDialogRequest::SetSelectedIcmp(name) => {
                 // Find the index of the selected ICMP type
-                if let Some(index) = self.available_icmp_types.iter().position(|t| t.name == name) {
+                if let Some(index) = self
+                    .available_icmp_types
+                    .iter()
+                    .position(|t| t.name == name)
+                {
                     self.set_selected_index(index as u32);
                     self.set_selected_icmp(Some(name));
                 }

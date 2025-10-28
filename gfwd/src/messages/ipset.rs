@@ -8,6 +8,12 @@ pub enum IPSetViewRequest {
     CreateIPSet(IPSetSettings),
     DeleteIPSet(String),
     SelectIPSet(String),
+    LoadIPSetDetails(String),
+    UpdateIPSetDetails(IPSetSettings),
+    UpdateEntryInput(String),
+    AddEntry,
+    RemoveEntry(String),
+    LoadIPSetDetailsFailed,
 }
 
 #[derive(Debug)]

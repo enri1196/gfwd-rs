@@ -73,11 +73,11 @@ impl RichRule {
     /// Generate XML representation of the rich rule
     pub fn to_xml(&self) -> String {
         let mut rule = String::from("<rule");
-        
+
         if let Some(ref family) = self.family {
             rule.push_str(&format!(" family=\"{}\"", family));
         }
-        
+
         rule.push('>');
 
         if let Some(ref source) = self.source {
@@ -101,7 +101,10 @@ impl RichRule {
         }
 
         if let Some(ref port) = self.port {
-            rule.push_str(&format!("<port port=\"{}\" protocol=\"{}\"/>", port.port, port.protocol));
+            rule.push_str(&format!(
+                "<port port=\"{}\" protocol=\"{}\"/>",
+                port.port, port.protocol
+            ));
         }
 
         if let Some(ref protocol) = self.protocol {

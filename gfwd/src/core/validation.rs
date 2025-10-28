@@ -11,7 +11,10 @@ pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
     }
 
     if name.len() > MAX_ZONE_NAME_LENGTH {
-        return Err(validation_helpers::field_too_long("Zone name", MAX_ZONE_NAME_LENGTH));
+        return Err(validation_helpers::field_too_long(
+            "Zone name",
+            MAX_ZONE_NAME_LENGTH,
+        ));
     }
 
     // Check for valid characters (alphanumeric, dash, underscore)
@@ -19,7 +22,10 @@ pub fn validate_zone_name(name: &str) -> Result<String, GfwdError> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(validation_helpers::invalid_characters("Zone name", "letters, numbers, dashes, and underscores"));
+        return Err(validation_helpers::invalid_characters(
+            "Zone name",
+            "letters, numbers, dashes, and underscores",
+        ));
     }
 
     // Cannot start with dash
@@ -46,7 +52,10 @@ pub fn validate_port(port: &str) -> Result<String, GfwdError> {
         let end_port = parse_single_port(end.trim())?;
 
         if start_port > end_port {
-            return Err(validation_helpers::invalid_port_range(&format!("{}-{}", start, end)));
+            return Err(validation_helpers::invalid_port_range(&format!(
+                "{}-{}",
+                start, end
+            )));
         }
 
         Ok(format!("{}-{}", start_port, end_port))
@@ -85,7 +94,10 @@ pub fn validate_interface_name(interface: &str) -> Result<String, GfwdError> {
         .chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ':')
     {
-        return Err(validation_helpers::invalid_characters("Interface name", "letters, numbers, dashes, underscores, dots, and colons"));
+        return Err(validation_helpers::invalid_characters(
+            "Interface name",
+            "letters, numbers, dashes, underscores, dots, and colons",
+        ));
     }
 
     Ok(interface.to_string())
@@ -234,13 +246,22 @@ pub fn validate_ipset_name(name: &str) -> Result<String, GfwdError> {
 /// Validates an IP set type
 pub fn validate_ipset_type(ipset_type: &str) -> Result<String, GfwdError> {
     let ipset_type = ipset_type.trim();
-    
+
     // Common IP set types supported by firewalld
     let valid_types = [
-        "hash:ip", "hash:net", "hash:ip,port", "hash:net,port",
-        "hash:ip,port,ip", "hash:ip,port,net", "hash:net,port,net",
-        "hash:net,iface", "hash:mac", "bitmap:ip", "bitmap:ip,mac",
-        "bitmap:port", "list:set"
+        "hash:ip",
+        "hash:net",
+        "hash:ip,port",
+        "hash:net,port",
+        "hash:ip,port,ip",
+        "hash:ip,port,net",
+        "hash:net,port,net",
+        "hash:net,iface",
+        "hash:mac",
+        "bitmap:ip",
+        "bitmap:ip,mac",
+        "bitmap:port",
+        "list:set",
     ];
 
     if valid_types.contains(&ipset_type) {
@@ -311,9 +332,7 @@ pub fn validate_ipset_entry(entry: &str, ipset_type: &str) -> Result<String, Gfw
             // For bitmap and list types, accept any non-empty string
             // More specific validation would require knowledge of the set's range/members
             if entry.is_empty() {
-                return Err(GfwdError::Validation(
-                    "Entry cannot be empty".to_string(),
-                ));
+                return Err(GfwdError::Validation("Entry cannot be empty".to_string()));
             }
         }
         _ => {
@@ -347,7 +366,7 @@ pub fn validate_ipset_entry(entry: &str, ipset_type: &str) -> Result<String, Gfw
 /// Validates a MAC address
 fn validate_mac_address(mac: &str) -> Result<(), GfwdError> {
     let mac = mac.trim();
-    
+
     // MAC address should be in format XX:XX:XX:XX:XX:XX or XX-XX-XX-XX-XX-XX
     let parts: Vec<&str> = if mac.contains(':') {
         mac.split(':').collect()
@@ -374,7 +393,7 @@ fn validate_mac_address(mac: &str) -> Result<(), GfwdError> {
                 mac
             )));
         }
-        
+
         if !part.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(GfwdError::Validation(format!(
                 "Invalid MAC address: {}. Must contain only hex digits",
@@ -410,10 +429,10 @@ pub fn validate_rich_rule_xml(xml: &str) -> Result<String, GfwdError> {
     }
 
     // Check for required action element
-    let has_action = xml.contains("<accept") || 
-                    xml.contains("<reject") || 
-                    xml.contains("<drop") || 
-                    xml.contains("<mark");
+    let has_action = xml.contains("<accept")
+        || xml.contains("<reject")
+        || xml.contains("<drop")
+        || xml.contains("<mark");
 
     if !has_action {
         return Err(GfwdError::Validation(
@@ -441,7 +460,8 @@ pub fn validate_rich_rule_xml(xml: &str) -> Result<String, GfwdError> {
                         if let Some(last_tag) = tag_stack.pop() {
                             if last_tag != tag_name {
                                 return Err(GfwdError::Validation(format!(
-                                    "Mismatched XML tags: expected </{}>", last_tag
+                                    "Mismatched XML tags: expected </{}>",
+                                    last_tag
                                 )));
                             }
                         }
@@ -474,7 +494,7 @@ pub fn validate_rich_rule_xml(xml: &str) -> Result<String, GfwdError> {
 /// Validates rich rule components for logical consistency
 pub fn validate_rich_rule_logic(
     source: Option<&str>,
-    destination: Option<&str>, 
+    destination: Option<&str>,
     service: Option<&str>,
     port: Option<(&str, &str)>,
     protocol: Option<&str>,
@@ -691,8 +711,16 @@ mod tests {
     fn test_validate_rich_rule_xml() {
         // Valid rich rule XML
         assert!(validate_rich_rule_xml("<rule><accept/></rule>").is_ok());
-        assert!(validate_rich_rule_xml("<rule family=\"ipv4\"><source address=\"192.168.1.0/24\"/><accept/></rule>").is_ok());
-        assert!(validate_rich_rule_xml("<rule><port port=\"80\" protocol=\"tcp\"/><reject/></rule>").is_ok());
+        assert!(
+            validate_rich_rule_xml(
+                "<rule family=\"ipv4\"><source address=\"192.168.1.0/24\"/><accept/></rule>"
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_rich_rule_xml("<rule><port port=\"80\" protocol=\"tcp\"/><reject/></rule>")
+                .is_ok()
+        );
         assert!(validate_rich_rule_xml("<rule><service name=\"ssh\"/><drop/></rule>").is_ok());
 
         // Invalid rich rule XML
@@ -707,54 +735,25 @@ mod tests {
     #[test]
     fn test_validate_rich_rule_logic() {
         // Valid combinations
-        assert!(validate_rich_rule_logic(
-            Some("192.168.1.0/24"), 
-            None, 
-            Some("ssh"), 
-            None, 
-            None
-        ).is_ok());
-        
-        assert!(validate_rich_rule_logic(
-            None, 
-            Some("10.0.0.1"), 
-            None, 
-            Some(("80", "tcp")), 
-            None
-        ).is_ok());
+        assert!(
+            validate_rich_rule_logic(Some("192.168.1.0/24"), None, Some("ssh"), None, None).is_ok()
+        );
 
-        assert!(validate_rich_rule_logic(
-            None, 
-            None, 
-            None, 
-            None, 
-            Some("tcp")
-        ).is_ok());
+        assert!(
+            validate_rich_rule_logic(None, Some("10.0.0.1"), None, Some(("80", "tcp")), None)
+                .is_ok()
+        );
+
+        assert!(validate_rich_rule_logic(None, None, None, None, Some("tcp")).is_ok());
 
         // Invalid combinations
-        assert!(validate_rich_rule_logic(
-            None, 
-            None, 
-            Some("ssh"), 
-            Some(("80", "tcp")), 
-            None
-        ).is_err()); // Service and port conflict
+        assert!(
+            validate_rich_rule_logic(None, None, Some("ssh"), Some(("80", "tcp")), None).is_err()
+        ); // Service and port conflict
 
-        assert!(validate_rich_rule_logic(
-            None, 
-            None, 
-            Some("ssh"), 
-            None, 
-            Some("tcp")
-        ).is_err()); // Service and protocol conflict
+        assert!(validate_rich_rule_logic(None, None, Some("ssh"), None, Some("tcp")).is_err()); // Service and protocol conflict
 
         // Invalid addresses
-        assert!(validate_rich_rule_logic(
-            Some("invalid-ip"), 
-            None, 
-            None, 
-            None, 
-            None
-        ).is_err());
+        assert!(validate_rich_rule_logic(Some("invalid-ip"), None, None, None, None).is_err());
     }
 }

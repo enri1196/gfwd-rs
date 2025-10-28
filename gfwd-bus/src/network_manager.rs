@@ -23,7 +23,7 @@ pub trait Device {
     /// The name of the device's control (and often data) interface
     #[zbus(property)]
     fn interface(&self) -> zbus::Result<String>;
-    
+
     /// The device type
     #[zbus(property)]
     fn device_type(&self) -> zbus::Result<u32>;

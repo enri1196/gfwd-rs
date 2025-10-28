@@ -97,17 +97,17 @@ impl FactoryComponent for PortItem {
             set_accessible_role: gtk::AccessibleRole::ListItem,
 
             add_prefix = &gtk::Image {
-                set_icon_name: Some(if self.forwarding.is_some() { 
-                    icons::GO_JUMP 
-                } else { 
-                    icons::NETWORK_WIRED 
+                set_icon_name: Some(if self.forwarding.is_some() {
+                    icons::GO_JUMP
+                } else {
+                    icons::NETWORK_WIRED
                 }),
                 set_pixel_size: 16,
                 set_accessible_role: gtk::AccessibleRole::Img,
-                add_css_class: if self.forwarding.is_some() { 
-                    css_classes::ACCENT 
-                } else { 
-                    css_classes::SUCCESS 
+                add_css_class: if self.forwarding.is_some() {
+                    css_classes::ACCENT
+                } else {
+                    css_classes::SUCCESS
                 },
             },
 

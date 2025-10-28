@@ -9,12 +9,17 @@ use crate::core::FwdBroker;
 use crate::messages::port::PortDialogResponse;
 use crate::messages::zone::{ZoneViewRequest, ZoneViewResponse};
 
-use crate::ui::components::{PortItem, PortItemResponse, IcmpItem, IcmpItemResponse, InterfaceItem, InterfaceItemResponse, SourceItem, SourceItemResponse, RichRuleItem, RichRuleItemResponse};
-use crate::ui::dialogs::{AddPortDialog, AddIcmpDialog, AddInterfaceDialog, AddSourceDialog, RichRuleDialog};
 use crate::messages::icmp::IcmpDialogResponse;
 use crate::messages::interface::InterfaceDialogResponse;
-use crate::messages::source::SourceDialogResponse;
 use crate::messages::rich_rule::RichRuleDialogResponse;
+use crate::messages::source::SourceDialogResponse;
+use crate::ui::components::{
+    IcmpItem, IcmpItemResponse, InterfaceItem, InterfaceItemResponse, PortItem, PortItemResponse,
+    RichRuleItem, RichRuleItemResponse, SourceItem, SourceItemResponse,
+};
+use crate::ui::dialogs::{
+    AddIcmpDialog, AddInterfaceDialog, AddPortDialog, AddSourceDialog, RichRuleDialog,
+};
 
 // Service item for the services list
 #[derive(Debug, Clone)]
@@ -619,16 +624,15 @@ impl AsyncComponent for ZoneView {
 
         // Get available interfaces for the dialog
         let available_interfaces = broker.get_interfaces().await.unwrap_or_default();
-        
+
         // Initialize interface dialog
-        let interface_dialog =
-            AddInterfaceDialog::builder()
-                .launch(available_interfaces)
-                .forward(sender.input_sender(), |msg| match msg {
-                    InterfaceDialogResponse::InterfaceAdded { name } => {
-                        ZoneViewRequest::AddInterface(name)
-                    }
-                });
+        let interface_dialog = AddInterfaceDialog::builder()
+            .launch(available_interfaces)
+            .forward(sender.input_sender(), |msg| match msg {
+                InterfaceDialogResponse::InterfaceAdded { name } => {
+                    ZoneViewRequest::AddInterface(name)
+                }
+            });
 
         // Initialize source dialog
         let source_dialog =
@@ -685,9 +689,7 @@ impl AsyncComponent for ZoneView {
             FactoryVecDeque::builder()
                 .launch_default()
                 .forward(sender.input_sender(), |msg| match msg {
-                    IcmpItemResponse::RemoveIcmp { name } => {
-                        ZoneViewRequest::RemoveIcmpBlock(name)
-                    }
+                    IcmpItemResponse::RemoveIcmp { name } => ZoneViewRequest::RemoveIcmpBlock(name),
                 });
 
         let interfaces =
@@ -730,14 +732,14 @@ impl AsyncComponent for ZoneView {
 
         // Load available services
         sender.input(ZoneViewRequest::LoadServices);
-        
+
         // Load ICMP blocks
         sender.input(ZoneViewRequest::LoadIcmpTypes);
-        
+
         // Load interfaces and sources
         sender.input(ZoneViewRequest::LoadInterfaces);
         sender.input(ZoneViewRequest::LoadSources);
-        
+
         // Load rich rules
         sender.input(ZoneViewRequest::LoadRichRules);
 
@@ -852,7 +854,10 @@ impl AsyncComponent for ZoneView {
                         broker.remove_masquerade(&zone_name).await
                     };
                     if let Err(e) = result {
-                        crate::core::error_handling::async_helpers::log_error(&e, "Failed to toggle masquerading");
+                        crate::core::error_handling::async_helpers::log_error(
+                            &e,
+                            "Failed to toggle masquerading",
+                        );
                     }
                 });
             }
@@ -897,15 +902,18 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateZoneSettings(settings));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to update zone content");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to update zone content",
+                            );
                         }
                     }
                 });
-                
+
                 // Load interfaces and sources for the new zone
                 sender.input(ZoneViewRequest::LoadInterfaces);
                 sender.input(ZoneViewRequest::LoadSources);
-                
+
                 // Load rich rules for the new zone
                 sender.input(ZoneViewRequest::LoadRichRules);
             }
@@ -948,11 +956,11 @@ impl AsyncComponent for ZoneView {
 
                 // Update ICMP blocks
                 sender.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
-                
+
                 // Update interfaces and sources
                 sender.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
                 sender.input(ZoneViewRequest::UpdateSources(settings.sources));
-                
+
                 // Update rich rules
                 sender.input(ZoneViewRequest::UpdateRichRules(settings.rich_rules));
 
@@ -974,7 +982,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateAvailableServices(services));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load services");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to load services",
+                            );
                         }
                     }
                 });
@@ -1008,9 +1019,10 @@ impl AsyncComponent for ZoneView {
                                         zone_name.clone(),
                                     ));
                                 }
-                                Err(e) => {
-                                    crate::core::error_handling::async_helpers::log_error(&e, "Could not delete zone")
-                                }
+                                Err(e) => crate::core::error_handling::async_helpers::log_error(
+                                    &e,
+                                    "Could not delete zone",
+                                ),
                             };
                         });
                     }
@@ -1037,7 +1049,10 @@ impl AsyncComponent for ZoneView {
                         broker.stop_firewalld().await
                     };
                     if let Err(e) = result {
-                        crate::core::error_handling::async_helpers::log_error(&e, "Failed to toggle firewalld");
+                        crate::core::error_handling::async_helpers::log_error(
+                            &e,
+                            "Failed to toggle firewalld",
+                        );
                     }
                     let is_running = broker.is_firewalld_active().await.unwrap_or(false);
                     let _ = sender.input(ZoneViewRequest::SetFirewalldRunning(is_running));
@@ -1090,7 +1105,10 @@ impl AsyncComponent for ZoneView {
                         )
                         .await
                     {
-                        crate::core::error_handling::async_helpers::log_error(&err, "Could not remove forward port");
+                        crate::core::error_handling::async_helpers::log_error(
+                            &err,
+                            "Could not remove forward port",
+                        );
                     } else {
                         if let Ok(settings) = broker.get_zone_settings(&zone_name).await {
                             let _ =
@@ -1149,7 +1167,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add ICMP block");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to add ICMP block",
+                            );
                         }
                     }
                 });
@@ -1165,7 +1186,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadIcmpTypes);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove ICMP block");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to remove ICMP block",
+                            );
                         }
                     }
                 });
@@ -1178,25 +1202,29 @@ impl AsyncComponent for ZoneView {
                     // Get current ICMP blocks for this zone
                     match broker.get_zone_settings(&zone_name).await {
                         Ok(settings) => {
-                            sender_clone.input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
+                            sender_clone
+                                .input(ZoneViewRequest::UpdateIcmpBlocks(settings.icmp_blocks));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load ICMP blocks");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to load ICMP blocks",
+                            );
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateIcmpBlocks(icmp_blocks) => {
                 self.set_icmp_block_list(icmp_blocks.clone());
-                
+
                 // Update the ICMP blocks display
                 let mut icmp_list = self.icmp_blocks.guard();
                 icmp_list.clear();
-                
+
                 for icmp_type in icmp_blocks {
                     icmp_list.push_back(IcmpItem::from(icmp_type));
                 }
-                
+
                 glib::g_log!(
                     LogLevel::Debug,
                     "ICMP blocks updated: {} blocks",
@@ -1208,13 +1236,19 @@ impl AsyncComponent for ZoneView {
                 let zone_name = self.current_zone_name.clone();
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
-                    match broker.add_interface_to_zone(&zone_name, &interface_name).await {
+                    match broker
+                        .add_interface_to_zone(&zone_name, &interface_name)
+                        .await
+                    {
                         Ok(()) => {
                             // Reload interfaces to update the display
                             sender_clone.input(ZoneViewRequest::LoadInterfaces);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add interface");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to add interface",
+                            );
                         }
                     }
                 });
@@ -1224,13 +1258,19 @@ impl AsyncComponent for ZoneView {
                 let zone_name = self.current_zone_name.clone();
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
-                    match broker.remove_interface_from_zone(&zone_name, &interface_name).await {
+                    match broker
+                        .remove_interface_from_zone(&zone_name, &interface_name)
+                        .await
+                    {
                         Ok(()) => {
                             // Reload interfaces to update the display
                             sender_clone.input(ZoneViewRequest::LoadInterfaces);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove interface");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to remove interface",
+                            );
                         }
                     }
                 });
@@ -1243,25 +1283,29 @@ impl AsyncComponent for ZoneView {
                     // Get current interfaces for this zone
                     match broker.get_zone_settings(&zone_name).await {
                         Ok(settings) => {
-                            sender_clone.input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
+                            sender_clone
+                                .input(ZoneViewRequest::UpdateInterfaces(settings.interfaces));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load interfaces");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to load interfaces",
+                            );
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateInterfaces(interfaces) => {
                 self.set_interface_list(interfaces.clone());
-                
+
                 // Update the interfaces display
                 let mut interface_list = self.interfaces.guard();
                 interface_list.clear();
-                
+
                 for interface_name in interfaces {
                     interface_list.push_back(InterfaceItem::from(interface_name));
                 }
-                
+
                 glib::g_log!(
                     LogLevel::Debug,
                     "Interfaces updated: {} interfaces",
@@ -1279,7 +1323,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadSources);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add source");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to add source",
+                            );
                         }
                     }
                 });
@@ -1289,13 +1336,19 @@ impl AsyncComponent for ZoneView {
                 let zone_name = self.current_zone_name.clone();
                 let sender_clone = sender.clone();
                 relm4::spawn(async move {
-                    match broker.remove_source_from_zone(&zone_name, &source_address).await {
+                    match broker
+                        .remove_source_from_zone(&zone_name, &source_address)
+                        .await
+                    {
                         Ok(()) => {
                             // Reload sources to update the display
                             sender_clone.input(ZoneViewRequest::LoadSources);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove source");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to remove source",
+                            );
                         }
                     }
                 });
@@ -1311,22 +1364,25 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateSources(settings.sources));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load sources");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to load sources",
+                            );
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateSources(sources) => {
                 self.set_source_list(sources.clone());
-                
+
                 // Update the sources display
                 let mut source_list = self.sources.guard();
                 source_list.clear();
-                
+
                 for source_address in sources {
                     source_list.push_back(SourceItem::from(source_address));
                 }
-                
+
                 glib::g_log!(
                     LogLevel::Debug,
                     "Sources updated: {} sources",
@@ -1344,7 +1400,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadRichRules);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to add rich rule");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to add rich rule",
+                            );
                         }
                     }
                 });
@@ -1360,7 +1419,10 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::LoadRichRules);
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to remove rich rule");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to remove rich rule",
+                            );
                         }
                     }
                 });
@@ -1376,22 +1438,25 @@ impl AsyncComponent for ZoneView {
                             sender_clone.input(ZoneViewRequest::UpdateRichRules(rich_rules));
                         }
                         Err(e) => {
-                            crate::core::error_handling::async_helpers::log_error(&e, "Failed to load rich rules");
+                            crate::core::error_handling::async_helpers::log_error(
+                                &e,
+                                "Failed to load rich rules",
+                            );
                         }
                     }
                 });
             }
             ZoneViewRequest::UpdateRichRules(rich_rules) => {
                 self.set_rich_rule_list(rich_rules.clone());
-                
+
                 // Update the rich rules display
                 let mut rich_rule_list = self.rich_rules.guard();
                 rich_rule_list.clear();
-                
+
                 for rule_xml in rich_rules {
                     rich_rule_list.push_back(rule_xml);
                 }
-                
+
                 glib::g_log!(
                     LogLevel::Debug,
                     "Rich rules updated: {} rules",
@@ -1414,14 +1479,18 @@ impl ZoneView {
 
         // Filter services based on search term with a limit to prevent UI freezing
         let filter_lower = self.service_filter.to_lowercase();
-        let max_display_services = if self.service_filter.is_empty() { 200 } else { 50 };
-        
+        let max_display_services = if self.service_filter.is_empty() {
+            200
+        } else {
+            50
+        };
+
         let mut count = 0;
         for service in &self.available_services {
             if count >= max_display_services {
                 break;
             }
-            
+
             if self.service_filter.is_empty() || service.to_lowercase().contains(&filter_lower) {
                 let is_enabled = self.active_services.contains(service);
                 services_list.push_back((service.clone(), is_enabled));

@@ -363,15 +363,23 @@ impl FwdBroker {
             .path(path.as_str())?
             .build()
             .await?;
-            
+
         match proxy.add_icmp_block(icmp_type).await {
             Ok(_) => Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
                 if error_msg.contains("already enabled") || error_msg.contains("ALREADY_ENABLED") {
-                    Err(GfwdError::IcmpBlock(format!("ICMP type '{}' is already blocked in zone '{}'", icmp_type, zone_name)))
-                } else if error_msg.contains("invalid icmp") || error_msg.contains("INVALID_ICMPTYPE") {
-                    Err(GfwdError::IcmpType(format!("ICMP type '{}' not found or not available", icmp_type)))
+                    Err(GfwdError::IcmpBlock(format!(
+                        "ICMP type '{}' is already blocked in zone '{}'",
+                        icmp_type, zone_name
+                    )))
+                } else if error_msg.contains("invalid icmp")
+                    || error_msg.contains("INVALID_ICMPTYPE")
+                {
+                    Err(GfwdError::IcmpType(format!(
+                        "ICMP type '{}' not found or not available",
+                        icmp_type
+                    )))
                 } else {
                     Err(GfwdError::from(e))
                 }
@@ -391,15 +399,23 @@ impl FwdBroker {
             .path(path.as_str())?
             .build()
             .await?;
-            
+
         match proxy.remove_icmp_block(icmp_type).await {
             Ok(_) => Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
                 if error_msg.contains("not enabled") || error_msg.contains("NOT_ENABLED") {
-                    Err(GfwdError::IcmpBlock(format!("ICMP type '{}' is not blocked in zone '{}'", icmp_type, zone_name)))
-                } else if error_msg.contains("invalid icmp") || error_msg.contains("INVALID_ICMPTYPE") {
-                    Err(GfwdError::IcmpType(format!("ICMP type '{}' not found or not available", icmp_type)))
+                    Err(GfwdError::IcmpBlock(format!(
+                        "ICMP type '{}' is not blocked in zone '{}'",
+                        icmp_type, zone_name
+                    )))
+                } else if error_msg.contains("invalid icmp")
+                    || error_msg.contains("INVALID_ICMPTYPE")
+                {
+                    Err(GfwdError::IcmpType(format!(
+                        "ICMP type '{}' not found or not available",
+                        icmp_type
+                    )))
                 } else {
                     Err(GfwdError::from(e))
                 }
@@ -562,7 +578,7 @@ impl FwdBroker {
     pub async fn create_ipset(&self, settings: IPSetSettings) -> Result<(), GfwdError> {
         // Validate IP set name
         crate::core::validation::validate_ipset_name(&settings.name)?;
-        
+
         // Validate IP set type
         crate::core::validation::validate_ipset_type(&settings.ipset_type)?;
 
@@ -573,21 +589,24 @@ impl FwdBroker {
 
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let ipset_settings: gfwd_bus::config_firewalld1::IPSetSettings = (
-            "1.0".to_string(),      // version
-            settings.name.clone(),   // name
-            "".to_string(),         // description (empty by default)
-            settings.ipset_type,    // type
-            settings.options,       // options
-            settings.entries,       // entries
+            "1.0".to_string(),     // version
+            settings.name.clone(), // name
+            "".to_string(),        // description (empty by default)
+            settings.ipset_type,   // type
+            settings.options,      // options
+            settings.entries,      // entries
         );
-        
+
         match cfg.add_ipset(&settings.name, &ipset_settings).await {
             Ok(_) => Ok(()),
             Err(e) => {
                 // Check for specific D-Bus errors and convert to more specific error types
                 let error_msg = e.to_string();
                 if error_msg.contains("already exists") || error_msg.contains("ALREADY_ENABLED") {
-                    Err(GfwdError::IPSet(format!("IP set '{}' already exists", settings.name)))
+                    Err(GfwdError::IPSet(format!(
+                        "IP set '{}' already exists",
+                        settings.name
+                    )))
                 } else {
                     Err(GfwdError::from(e))
                 }
@@ -598,36 +617,62 @@ impl FwdBroker {
     /// Delete an IP set
     pub async fn delete_ipset(&self, ipset_name: &str) -> Result<(), GfwdError> {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
-        
+
         // First check if the IP set exists
         let path = match cfg.get_ipset_by_name(ipset_name).await {
             Ok(path) => path,
             Err(e) => {
                 let error_msg = e.to_string();
                 if error_msg.contains("not found") || error_msg.contains("INVALID_IPSET") {
-                    return Err(GfwdError::IPSet(format!("IP set '{}' not found", ipset_name)));
+                    return Err(GfwdError::IPSet(format!(
+                        "IP set '{}' not found",
+                        ipset_name
+                    )));
                 } else {
                     return Err(GfwdError::from(e));
                 }
             }
         };
-        
+
         let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
             .path(path.as_str())?
             .build()
             .await?;
-            
+
         match proxy.remove().await {
             Ok(_) => Ok(()),
             Err(e) => {
                 let error_msg = e.to_string();
                 if error_msg.contains("in use") || error_msg.contains("IPSET_IN_USE") {
-                    Err(GfwdError::IPSet(format!("IP set '{}' is currently in use and cannot be deleted", ipset_name)))
+                    Err(GfwdError::IPSet(format!(
+                        "IP set '{}' is currently in use and cannot be deleted",
+                        ipset_name
+                    )))
                 } else {
                     Err(GfwdError::from(e))
                 }
             }
         }
+    }
+
+    /// Get detailed information for a specific IP set including entries and options
+    pub async fn get_ipset_details(&self, ipset_name: &str) -> Result<IPSetSettings, GfwdError> {
+        let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = gfwd_bus::config_ipset::ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+
+        let (_version, name, _description, ipset_type, options, entries) =
+            proxy.get_settings().await?;
+
+        Ok(IPSetSettings {
+            name,
+            ipset_type,
+            options,
+            entries,
+        })
     }
 
     /// Get entries for a specific IP set
@@ -648,7 +693,7 @@ impl FwdBroker {
     pub async fn add_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), GfwdError> {
         // Get IP set type for validation
         let ipset_type = self.get_ipset_type(ipset_name).await?;
-        
+
         // Validate entry
         crate::core::validation::validate_ipset_entry(entry, &ipset_type)?;
 
@@ -754,7 +799,9 @@ mod tests {
         // Test rule with port and reject action
         let rule = RichRule::new()
             .with_port("80".to_string(), "tcp".to_string())
-            .with_action(RichRuleAction::Reject(Some("icmp-port-unreachable".to_string())));
+            .with_action(RichRuleAction::Reject(Some(
+                "icmp-port-unreachable".to_string(),
+            )));
         let xml = rule.to_xml();
         assert!(xml.contains("<port port=\"80\" protocol=\"tcp\"/>"));
         assert!(xml.contains("<reject type=\"icmp-port-unreachable\"/>"));
@@ -786,7 +833,7 @@ mod tests {
             .with_service("ssh".to_string())
             .with_action(RichRuleAction::Accept);
         let xml = rule.to_xml();
-        
+
         // This should pass validation
         assert!(crate::core::validation::validate_rich_rule_xml(&xml).is_ok());
 
@@ -804,8 +851,14 @@ mod tests {
         let reject_rule = RichRule::new().with_action(RichRuleAction::Reject(None));
         assert!(reject_rule.to_xml().contains("<reject/>"));
 
-        let reject_with_type = RichRule::new().with_action(RichRuleAction::Reject(Some("icmp-host-prohibited".to_string())));
-        assert!(reject_with_type.to_xml().contains("<reject type=\"icmp-host-prohibited\"/>"));
+        let reject_with_type = RichRule::new().with_action(RichRuleAction::Reject(Some(
+            "icmp-host-prohibited".to_string(),
+        )));
+        assert!(
+            reject_with_type
+                .to_xml()
+                .contains("<reject type=\"icmp-host-prohibited\"/>")
+        );
 
         let drop_rule = RichRule::new().with_action(RichRuleAction::Drop);
         assert!(drop_rule.to_xml().contains("<drop/>"));

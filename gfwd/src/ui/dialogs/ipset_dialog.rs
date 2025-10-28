@@ -1,7 +1,7 @@
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 
-use crate::core::validation::{validate_ipset_name, validate_ipset_type, validate_ipset_entry};
+use crate::core::validation::{validate_ipset_entry, validate_ipset_name, validate_ipset_type};
 use crate::messages::ipset::{IPSetDialogRequest, IPSetDialogResponse};
 use crate::models::IPSetSettings;
 
@@ -113,7 +113,7 @@ impl SimpleAsyncComponent for IPSetDialog {
                                     set_subtitle: "Select the IP set type",
                                     set_model: Some(&gtk::StringList::new(&[
                                         "hash:ip",
-                                        "hash:net", 
+                                        "hash:net",
                                         "hash:ip,port",
                                         "hash:net,port",
                                         "hash:mac",
@@ -267,34 +267,30 @@ impl SimpleAsyncComponent for IPSetDialog {
                 self.set_name(name);
                 sender.input(IPSetDialogRequest::ValidateName);
             }
-            IPSetDialogRequest::ValidateName => {
-                match validate_ipset_name(&self.name) {
-                    Ok(_) => {
-                        self.set_name_valid(true);
-                        self.set_name_error(None);
-                    }
-                    Err(e) => {
-                        self.set_name_valid(false);
-                        self.set_name_error(Some(e.user_message().to_string()));
-                    }
+            IPSetDialogRequest::ValidateName => match validate_ipset_name(&self.name) {
+                Ok(_) => {
+                    self.set_name_valid(true);
+                    self.set_name_error(None);
                 }
-            }
+                Err(e) => {
+                    self.set_name_valid(false);
+                    self.set_name_error(Some(e.user_message().to_string()));
+                }
+            },
             IPSetDialogRequest::SetType(ipset_type) => {
                 self.set_ipset_type(ipset_type);
                 sender.input(IPSetDialogRequest::ValidateType);
             }
-            IPSetDialogRequest::ValidateType => {
-                match validate_ipset_type(&self.ipset_type) {
-                    Ok(_) => {
-                        self.set_type_valid(true);
-                        self.set_type_error(None);
-                    }
-                    Err(e) => {
-                        self.set_type_valid(false);
-                        self.set_type_error(Some(e.user_message().to_string()));
-                    }
+            IPSetDialogRequest::ValidateType => match validate_ipset_type(&self.ipset_type) {
+                Ok(_) => {
+                    self.set_type_valid(true);
+                    self.set_type_error(None);
                 }
-            }
+                Err(e) => {
+                    self.set_type_valid(false);
+                    self.set_type_error(Some(e.user_message().to_string()));
+                }
+            },
             IPSetDialogRequest::SetCurrentEntry(entry) => {
                 self.set_current_entry(entry);
                 sender.input(IPSetDialogRequest::ValidateCurrentEntry);

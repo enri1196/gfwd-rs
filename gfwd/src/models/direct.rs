@@ -21,10 +21,11 @@ impl DirectRule {
     /// Get a human-readable representation of the rule
     #[allow(dead_code)]
     pub fn display_rule(&self) -> String {
-        format!("{} {} [{}] {}", 
-            self.table, 
-            self.chain, 
-            self.priority, 
+        format!(
+            "{} {} [{}] {}",
+            self.table,
+            self.chain,
+            self.priority,
             self.args.join(" ")
         )
     }

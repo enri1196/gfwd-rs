@@ -87,9 +87,7 @@ impl GfwdError {
                     )
                 }
             }
-            GfwdError::Validation(_) => {
-                Some("Check the input format and try again".to_string())
-            }
+            GfwdError::Validation(_) => Some("Check the input format and try again".to_string()),
             _ => None,
         }
     }

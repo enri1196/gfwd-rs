@@ -1,6 +1,6 @@
 use relm4::{abstractions::Toaster, prelude::*};
 
-use crate::core::error::{GfwdError, ErrorCategory};
+use crate::core::error::{ErrorCategory, GfwdError};
 use crate::utils::constants::{TOAST_TIMEOUT_ERROR, TOAST_TIMEOUT_SUCCESS, TOAST_TIMEOUT_WARNING};
 
 #[derive(Debug, Clone)]
@@ -77,7 +77,8 @@ pub fn show_toast(toaster: &Toaster, message: ToastMessage) {
         if let Some(action_target) = &message.action_target {
             toast_builder = toast_builder.action_name("toast.help");
             // Store the help text in the toast's action target
-            toast_builder = toast_builder.action_target(&relm4::gtk::glib::Variant::from(action_target.as_str()));
+            toast_builder = toast_builder
+                .action_target(&relm4::gtk::glib::Variant::from(action_target.as_str()));
         }
     }
 
@@ -93,8 +94,7 @@ pub fn show_toast(toaster: &Toaster, message: ToastMessage) {
         }
         ToastType::Warning => {
             toast.set_priority(adw::ToastPriority::High);
-        }
-        // Removed unused Info case
+        } // Removed unused Info case
     }
 
     toaster.add_toast(toast);

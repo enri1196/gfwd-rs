@@ -134,7 +134,10 @@ impl SimpleAsyncComponent for SidebarView {
                         }
                         self.default_zone = default_zone;
                     }
-                    Err(error) => crate::core::error_handling::async_helpers::log_error(&error, "Default Zone Error"),
+                    Err(error) => crate::core::error_handling::async_helpers::log_error(
+                        &error,
+                        "Default Zone Error",
+                    ),
                 }
                 sender.input(SidebarRequest::SetActiveZones);
             }
@@ -150,7 +153,10 @@ impl SimpleAsyncComponent for SidebarView {
                             .for_each(|zone| zone.set_is_active(zone.name == self.default_zone));
                     }
                 }
-                Err(error) => crate::core::error_handling::async_helpers::log_error(&error, "Active Zone Error"),
+                Err(error) => crate::core::error_handling::async_helpers::log_error(
+                    &error,
+                    "Active Zone Error",
+                ),
             },
             SidebarRequest::ShowAddZoneDialog => {
                 let _ = sender.output(SidebarResponse::ShowAddZoneDialog);

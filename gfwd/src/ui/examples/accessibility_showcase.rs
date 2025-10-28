@@ -163,7 +163,7 @@ impl SimpleAsyncComponent for AccessibilityShowcaseDialog {
                                     set_can_focus: true,
                                     set_model: Some(&gtk::StringList::new(&[
                                         "Option 1 - Network Configuration",
-                                        "Option 2 - Security Settings", 
+                                        "Option 2 - Security Settings",
                                         "Option 3 - Advanced Features",
                                     ])),
                                     #[track(model.changed(AccessibilityShowcaseDialog::selected_option()))]
@@ -344,7 +344,7 @@ impl SimpleAsyncComponent for AccessibilityShowcaseDialog {
 
     async fn update(&mut self, msg: Self::Input, sender: AsyncComponentSender<Self>) {
         self.reset();
-        
+
         match msg {
             ShowcaseRequest::SetText(text) => {
                 self.set_sample_text(text);
