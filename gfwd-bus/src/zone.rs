@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(
@@ -72,11 +72,6 @@ pub trait Zone {
         timeout: i32,
     ) -> ZResult<String>;
 
-    /// Deprecated. Use `change_zone_of_interface` instead.
-    #[deprecated(note = "Use `change_zone_of_interface` instead.")]
-    #[zbus(name = "changeZone")]
-    fn change_zone(&self, zone: &str, interface: &str) -> ZResult<String>;
-
     /// Change the zone an interface is bound to.
     #[zbus(name = "changeZoneOfInterface")]
     fn change_zone_of_interface(&self, zone: &str, interface: &str) -> ZResult<String>;
@@ -140,11 +135,6 @@ pub trait Zone {
     /// Get all predefined zones.
     #[zbus(name = "getZones")]
     fn get_zones(&self) -> ZResult<Vec<String>>;
-
-    /// Deprecated.
-    #[deprecated]
-    #[zbus(name = "isImmutable")]
-    fn is_immutable(&self, zone: &str) -> ZResult<bool>;
 
     /// Query whether an IPv4 forward port has been added to a zone.
     #[zbus(name = "queryForwardPort")]
@@ -357,11 +347,6 @@ pub trait Zone {
     #[zbus(signal, name = "SourceRemoved")]
     fn source_removed(&self, zone: &str, source: &str) -> ZResult<()>;
 
-    /// Deprecated.
-    #[deprecated]
-    #[zbus(signal, name = "ZoneChanged")]
-    fn zone_changed(&self, zone: &str, interface: &str) -> ZResult<()>;
-
     /// Signal: emitted when an interface's zone has changed.
     #[zbus(signal, name = "ZoneOfInterfaceChanged")]
     fn zone_of_interface_changed(&self, zone: &str, interface: &str) -> ZResult<()>;
@@ -369,9 +354,4 @@ pub trait Zone {
     /// Signal: emitted when a source's zone has changed.
     #[zbus(signal, name = "ZoneOfSourceChanged")]
     fn zone_of_source_changed(&self, zone: &str, source: &str) -> ZResult<()>;
-}
-
-pub async fn new_zone_proxy() -> ZResult<ZoneProxy<'static>> {
-    let conn = Connection::system().await?;
-    ZoneProxy::<'static>::new(&conn).await
 }

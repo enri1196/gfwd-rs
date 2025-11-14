@@ -1,4 +1,3 @@
-use zbus::Connection;
 use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
@@ -143,11 +142,4 @@ pub trait Direct {
         priority: i32,
         args: Vec<String>,
     ) -> ZResult<()>;
-}
-
-#[deprecated(note = "Create proxies with an external Connection: DirectProxy::new(&conn)")]
-pub async fn new_firewalld_proxy() -> ZResult<DirectProxy<'static>> {
-    unreachable!(
-        "Use DirectProxy::new(&Connection) instead of opening a new system connection here"
-    )
 }

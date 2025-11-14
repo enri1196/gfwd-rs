@@ -1,4 +1,4 @@
-use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(
@@ -103,25 +103,4 @@ pub trait ConfigIcmpType {
     /// Property: The path to the configuration file directory.
     #[zbus(property)]
     fn path(&self) -> ZResult<String>;
-}
-
-/// Creates a new proxy for a specific ICMP type configuration.
-///
-/// # Arguments
-///
-/// * `icmptype_name` - The name of the ICMP type (e.g., "echo-reply").
-pub async fn new_config_icmptype_proxy(
-    icmptype_name: &str,
-) -> ZResult<ConfigIcmpTypeProxy<'static>> {
-    let conn = Connection::system().await?;
-    let path_str = format!(
-        "/org/fedoraproject/FirewallD1/config/icmptype/{}",
-        icmptype_name
-    );
-    let path = ObjectPath::try_from(path_str)?;
-
-    ConfigIcmpTypeProxy::builder(&conn)
-        .path(path)?
-        .build()
-        .await
 }

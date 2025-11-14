@@ -1,20 +1,7 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 use zvariant::OwnedValue;
-
-/// Type alias for deprecated permanent service settings.
-/// (version, name, description, ports, modules, destinations, protocols, source_ports)
-pub type ServiceSettings = (
-    String,
-    String,
-    String,
-    Vec<(String, String)>,
-    Vec<String>,
-    HashMap<String, String>,
-    Vec<String>,
-    Vec<(String, String)>,
-);
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1.config.service",
@@ -25,11 +12,6 @@ pub type ServiceSettings = (
 ///
 /// Interface for permanent service configuration.
 pub trait ConfigService {
-    /// Deprecated. Use `helpers` in `update2` instead.
-    #[deprecated(note = "Use `helpers` in `update2` instead.")]
-    #[zbus(name = "addModule")]
-    fn add_module(&self, module: &str) -> ZResult<()>;
-
     /// Permanently add a port to the service.
     #[zbus(name = "addPort")]
     fn add_port(&self, port: &str, protocol: &str) -> ZResult<()>;
@@ -54,11 +36,6 @@ pub trait ConfigService {
     #[zbus(name = "getDestinations")]
     fn get_destinations(&self) -> ZResult<HashMap<String, String>>;
 
-    /// Deprecated. Use `helpers` in `get_settings2` instead.
-    #[deprecated(note = "Use `helpers` in `get_settings2` instead.")]
-    #[zbus(name = "getModules")]
-    fn get_modules(&self) -> ZResult<Vec<String>>;
-
     /// Get the list of ports defined in the service.
     #[zbus(name = "getPorts")]
     fn get_ports(&self) -> ZResult<Vec<(String, String)>>;
@@ -66,11 +43,6 @@ pub trait ConfigService {
     /// Get the array of protocols defined in the service.
     #[zbus(name = "getProtocols")]
     fn get_protocols(&self) -> ZResult<Vec<String>>;
-
-    /// Deprecated. Use `get_settings2` instead.
-    #[deprecated(note = "Use `get_settings2` instead.")]
-    #[zbus(name = "getSettings")]
-    fn get_settings(&self) -> ZResult<ServiceSettings>;
 
     /// Get the settings of the service.
     #[zbus(name = "getSettings2")]
@@ -96,11 +68,6 @@ pub trait ConfigService {
     #[zbus(name = "queryDestination")]
     fn query_destination(&self, family: &str, address: &str) -> ZResult<bool>;
 
-    /// Deprecated. Use `helpers` in `get_settings2` instead.
-    #[deprecated(note = "Use `helpers` in `get_settings2` instead.")]
-    #[zbus(name = "queryModule")]
-    fn query_module(&self, module: &str) -> ZResult<bool>;
-
     /// Return whether a port is in the list of ports in the service.
     #[zbus(name = "queryPort")]
     fn query_port(&self, port: &str, protocol: &str) -> ZResult<bool>;
@@ -120,11 +87,6 @@ pub trait ConfigService {
     /// Permanently remove a destination from the service.
     #[zbus(name = "removeDestination")]
     fn remove_destination(&self, family: &str) -> ZResult<()>;
-
-    /// Deprecated. Use `helpers` in `update2` instead.
-    #[deprecated(note = "Use `helpers` in `update2` instead.")]
-    #[zbus(name = "removeModule")]
-    fn remove_module(&self, module: &str) -> ZResult<()>;
 
     /// Permanently remove a port from the service.
     #[zbus(name = "removePort")]
@@ -154,11 +116,6 @@ pub trait ConfigService {
     #[zbus(name = "setDestinations")]
     fn set_destinations(&self, destinations: &HashMap<String, String>) -> ZResult<()>;
 
-    /// Deprecated. Use `helpers` in `update2` instead.
-    #[deprecated(note = "Use `helpers` in `update2` instead.")]
-    #[zbus(name = "setModules")]
-    fn set_modules(&self, modules: Vec<String>) -> ZResult<()>;
-
     /// Permanently set the ports of the service.
     #[zbus(name = "setPorts")]
     fn set_ports(&self, ports: Vec<(String, String)>) -> ZResult<()>;
@@ -178,11 +135,6 @@ pub trait ConfigService {
     /// Permanently set the version of the service.
     #[zbus(name = "setVersion")]
     fn set_version(&self, version: &str) -> ZResult<()>;
-
-    /// Deprecated. Use `update2` instead.
-    #[deprecated(note = "Use `update2` instead.")]
-    #[zbus(name = "update")]
-    fn update(&self, settings: &ServiceSettings) -> ZResult<()>;
 
     /// Update the settings of the service.
     #[zbus(name = "update2")]
@@ -219,20 +171,4 @@ pub trait ConfigService {
     /// Property: The path to the configuration directory.
     #[zbus(property)]
     fn path(&self) -> ZResult<String>;
-}
-
-/// Creates a new proxy for a specific service's permanent configuration.
-///
-/// # Arguments
-///
-/// * `service_name` - The name of the service to configure (e.g., "ssh").
-pub async fn new_config_service_proxy(service_name: &str) -> ZResult<ConfigServiceProxy<'static>> {
-    let conn = Connection::system().await?;
-    let path_str = format!(
-        "/org/fedoraproject/FirewallD1/config/service/{}",
-        service_name
-    );
-    let path = ObjectPath::try_from(path_str)?;
-
-    ConfigServiceProxy::builder(&conn).path(path)?.build().await
 }

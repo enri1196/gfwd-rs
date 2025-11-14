@@ -1,4 +1,4 @@
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 /// Type alias for permanent lockdown whitelist settings.
@@ -91,9 +91,4 @@ pub trait ConfigPolicies {
     /// Signal: emitted when the permanent lockdown whitelist has been updated.
     #[zbus(signal, name = "LockdownWhitelistUpdated")]
     fn lockdown_whitelist_updated(&self) -> ZResult<()>;
-}
-
-pub async fn new_config_policies_proxy() -> ZResult<ConfigPoliciesProxy<'static>> {
-    let conn = Connection::system().await?;
-    ConfigPoliciesProxy::<'static>::new(&conn).await
 }

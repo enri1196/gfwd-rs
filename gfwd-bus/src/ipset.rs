@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(
@@ -60,9 +60,4 @@ pub trait IPSet {
     /// Signal: emitted when an entry has been removed from `ipset`.
     #[zbus(signal, name = "EntryRemoved")]
     fn entry_removed(&self, ipset: &str, entry: &str) -> ZResult<()>;
-}
-
-#[deprecated(note = "Create proxies with an external Connection: IPSetProxy::new(&conn)")]
-pub async fn new_ipset_proxy() -> ZResult<IPSetProxy<'static>> {
-    unreachable!("Use IPSetProxy::new(&Connection) instead of opening a new system connection here")
 }
