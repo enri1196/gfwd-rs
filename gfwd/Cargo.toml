@@ -4,16 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zbus = "5.11"
+async-trait = "0.1.83"
+zbus = { version = "5.12.0", optional = true }
 derive_more = { version = "2.0.1", features = ["display"] }
 
-relm4 = { version = "0.10", features = ["all", "gnome_47"] }
+relm4 = { version = "0.10.0", features = ["all", "gnome_47"] }
 tracker = "0.2.2"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 
-gfwd-bus = { path = "../gfwd-bus", features = [
+gfwd-bus = { path = "../gfwd-bus", optional = true, features = [
     "zone",
     "config_firewalld1",
     "config_zone",
     "systemd",
 ] }
+
+[features]
+default = ["dbus-backend"]
+dbus-backend = ["zbus", "gfwd-bus"]
+mock-backend = []

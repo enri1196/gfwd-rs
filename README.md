@@ -46,6 +46,17 @@ cargo build --release
 cargo run
 ```
 
+### Developing Without firewalld
+If you're working on a platform without firewalld (for example macOS) you can enable the
+mock backend, which simulates a few zones entirely in-memory and skips every D-Bus call:
+
+```bash
+cargo run -p gfwd --no-default-features --features mock-backend
+```
+
+When both the real and mock backends are compiled you can also pick the mock backend at
+runtime by setting `GFWD_BACKEND=mock` before launching the application.
+
 ## Usage
 
 ### Starting the Application
