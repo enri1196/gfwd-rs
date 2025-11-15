@@ -25,7 +25,7 @@ impl DbusFirewalld {
         let cfg = gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy::new(&self.conn).await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         gfwd_bus::config_zone::ConfigZoneProxy::builder(&self.conn)
-            .path(path.as_str())?
+            .path(path)?
             .build()
             .await
             .map_err(GfwdError::from)
