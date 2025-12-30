@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cosmic Gfwd
+Comment=A libcosmic GUI for Firewalld made in Rust
+Type=Application
+Icon=com.github.enri1196.cosmic-gfwd
+Exec=cosmic-gfwd %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=
