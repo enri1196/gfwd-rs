@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 
 use cosmic::widget::nav_bar;
-// use cosmic::widget::icon;
+
+use crate::fl;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SidebarItem {
+    IpSets,
     Zone(String),
     Loading,
     Empty,
@@ -14,21 +16,19 @@ pub enum SidebarItem {
 impl SidebarItem {
     fn label(&self) -> Cow<'static, str> {
         match self {
+            SidebarItem::IpSets => Cow::Owned(fl!("sidebar-ipsets")),
             SidebarItem::Zone(name) => Cow::Owned(name.clone()),
-            SidebarItem::Loading => Cow::Borrowed("Loading zones..."),
-            SidebarItem::Empty => Cow::Borrowed("No zones found"),
-            SidebarItem::Error(_) => Cow::Borrowed("Failed to load zones"),
+            SidebarItem::Loading => Cow::Owned(fl!("sidebar-loading-zones")),
+            SidebarItem::Empty => Cow::Owned(fl!("sidebar-empty-zones")),
+            SidebarItem::Error(_) => Cow::Owned(fl!("sidebar-error-zones")),
         }
     }
+}
 
-    // fn icon_name(&self) -> &'static str {
-    //     match self {
-    //         SidebarItem::Zone(_) => "network-firewall-symbolic",
-    //         SidebarItem::Loading => "view-refresh-symbolic",
-    //         SidebarItem::Empty => "list-remove-symbolic",
-    //         SidebarItem::Error(_) => "dialog-warning-symbolic",
-    //     }
-    // }
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ActiveSidebarItem {
+    IpSets,
+    Zone(String),
 }
 
 pub struct Sidebar {
@@ -74,9 +74,10 @@ impl Sidebar {
         self.set_items(vec![SidebarItem::Error(message.into())]);
     }
 
-    fn active_zone(&self) -> Option<&str> {
+    fn active_key(&self) -> Option<ActiveSidebarItem> {
         match self.active_item() {
-            Some(SidebarItem::Zone(name)) => Some(name.as_str()),
+            Some(SidebarItem::IpSets) => Some(ActiveSidebarItem::IpSets),
+            Some(SidebarItem::Zone(name)) => Some(ActiveSidebarItem::Zone(name.clone())),
             _ => None,
         }
     }
@@ -86,27 +87,35 @@ impl Sidebar {
             items.push(SidebarItem::Empty);
         }
 
-        let active_zone = self.active_zone().map(str::to_string);
+        let active_key = self.active_key();
         self.nav.clear();
 
         let mut first_id = None;
         let mut active_id = None;
+        let mut all_items = Vec::with_capacity(items.len() + 1);
+        all_items.push(SidebarItem::IpSets);
+        all_items.extend(items);
 
-        for item in items {
+        let mut added_separator = false;
+
+        for item in all_items {
             let label = item.label();
-            // let icon_name = item.icon_name();
-            let is_active = match (&item, &active_zone) {
-                (SidebarItem::Zone(name), Some(active)) => name == active,
+            let is_active = match (&item, &active_key) {
+                (SidebarItem::IpSets, Some(ActiveSidebarItem::IpSets)) => true,
+                (SidebarItem::Zone(name), Some(ActiveSidebarItem::Zone(active))) => {
+                    name == active
+                }
                 _ => false,
             };
 
-            let id = self
-                .nav
-                .insert()
-                .text(label)
-                .data(item)
-                // .icon(icon::from_name(icon_name))
-                .id();
+            let needs_divider = !added_separator && !matches!(item, SidebarItem::IpSets);
+            let mut entry = self.nav.insert().text(label).data(item);
+            if needs_divider {
+                entry = entry.divider_above(true);
+                added_separator = true;
+            }
+
+            let id = entry.id();
 
             if first_id.is_none() {
                 first_id = Some(id);

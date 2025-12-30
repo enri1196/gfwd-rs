@@ -3,18 +3,19 @@
 use crate::config::Config;
 use crate::core::{BrokerError, FwdBroker};
 use crate::fl;
-use crate::models::ZoneDetails;
+use crate::models::{IpSetDetails, ZoneDetails};
 use crate::ui::{
     drawer_footer, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
-    source_drawer, target_from_index, view_zone_content, DialogKind, DialogMessage, DialogState,
-    Sidebar, SidebarItem, ZoneViewState,
+    source_drawer, target_from_index, view_ipset_content, view_zone_content, DialogKind,
+    DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
+    ZoneViewState,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
-use cosmic::widget::{self, about::About, menu, nav_bar};
 use cosmic::prelude::*;
+use cosmic::widget::{self, about::About, menu, nav_bar};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -33,6 +34,8 @@ pub struct AppModel {
     sidebar: Sidebar,
     /// State for the current zone detail view.
     zone_view: ZoneViewState,
+    /// State for the IP set view.
+    ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
     dialogs: DialogState,
     /// Key bindings for the application's menu bar.
@@ -47,11 +50,25 @@ pub enum Message {
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
     Dialog(DialogMessage),
+    IpSetAction(IpSetViewAction),
     UpdateConfig(Config),
     ZonesLoaded(Result<Vec<String>, BrokerError>),
     ZoneDetailsLoaded {
         zone_name: String,
         result: Result<ZoneDetails, BrokerError>,
+    },
+    IpSetsLoaded(Result<Vec<String>, BrokerError>),
+    IpSetDetailsLoaded {
+        ipset_name: String,
+        result: Result<IpSetDetails, BrokerError>,
+    },
+    IpSetEntryAdded {
+        ipset_name: String,
+        result: Result<(), BrokerError>,
+    },
+    IpSetCreated {
+        ipset_name: String,
+        result: Result<(), BrokerError>,
     },
 }
 
@@ -99,6 +116,7 @@ impl cosmic::Application for AppModel {
             about,
             sidebar,
             zone_view: ZoneViewState::Empty,
+            ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
@@ -115,8 +133,6 @@ impl cosmic::Application for AppModel {
                 })
                 .unwrap_or_default(),
         };
-
-        
 
         let command = Task::batch(vec![
             app.update_title(),
@@ -265,8 +281,10 @@ impl cosmic::Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         let space_m = cosmic::theme::spacing().space_m;
-        let zone_content = view_zone_content(&self.zone_view);
-        let content: Element<_> = zone_content;
+        let content: Element<_> = match self.sidebar.active_item() {
+            Some(SidebarItem::IpSets) => view_ipset_content(&self.ipset_view, Message::IpSetAction),
+            _ => view_zone_content(&self.zone_view),
+        };
 
         widget::container(content)
             .width(Length::Fill)
@@ -322,7 +340,11 @@ impl cosmic::Application for AppModel {
             }
 
             Message::Dialog(dialog_message) => {
-                self.handle_dialog_message(dialog_message);
+                return self.handle_dialog_message(dialog_message);
+            }
+
+            Message::IpSetAction(action) => {
+                return self.handle_ipset_action(action);
             }
 
             Message::UpdateConfig(config) => {
@@ -376,6 +398,72 @@ impl cosmic::Application for AppModel {
                     },
                 };
             }
+            Message::IpSetsLoaded(result) => {
+                self.ipset_view.list_loading = false;
+                match result {
+                    Ok(ipsets) => {
+                        self.ipset_view.ipsets = ipsets;
+                        let selected = self.ipset_view.selected.clone();
+                        if let Some(name) = selected {
+                            if self.ipset_view.ipsets.iter().any(|item| item == &name) {
+                                if self.ipset_view.details.is_none() {
+                                    return self.start_ipset_details_load(name);
+                                }
+                            } else {
+                                self.ipset_view.selected = None;
+                                self.ipset_view.details = None;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        self.ipset_view.ipsets.clear();
+                        self.ipset_view.entry_error = Some(error.to_string());
+                        self.ipset_view.details = None;
+                    }
+                }
+            }
+            Message::IpSetDetailsLoaded { ipset_name, result } => {
+                let is_active = self.ipset_view.selected.as_deref() == Some(ipset_name.as_str());
+                if !is_active {
+                    return Task::none();
+                }
+
+                self.ipset_view.details_loading = false;
+                match result {
+                    Ok(details) => {
+                        self.ipset_view.details = Some(details);
+                        self.ipset_view.entry_error = None;
+                    }
+                    Err(error) => {
+                        self.ipset_view.details = None;
+                        self.ipset_view.entry_error = Some(error.to_string());
+                    }
+                }
+            }
+            Message::IpSetEntryAdded { ipset_name, result } => match result {
+                Ok(()) => {
+                    self.ipset_view.entry_input.clear();
+                    self.ipset_view.entry_error = None;
+                    return self.start_ipset_details_load(ipset_name);
+                }
+                Err(error) => {
+                    self.ipset_view.entry_error = Some(error.to_string());
+                }
+            },
+            Message::IpSetCreated { ipset_name, result } => match result {
+                Ok(()) => {
+                    self.ipset_view.selected = Some(ipset_name.clone());
+                    self.ipset_view.entry_input.clear();
+                    self.ipset_view.entry_error = None;
+                    return Task::batch(vec![
+                        self.start_ipsets_load(),
+                        self.start_ipset_details_load(ipset_name),
+                    ]);
+                }
+                Err(error) => {
+                    self.ipset_view.entry_error = Some(error.to_string());
+                }
+            },
         }
         Task::none()
     }
@@ -387,6 +475,7 @@ impl cosmic::Application for AppModel {
 
         let task = match self.sidebar.active_item() {
             Some(SidebarItem::Zone(name)) => self.start_zone_load(name.clone()),
+            Some(SidebarItem::IpSets) => self.start_ipsets_load(),
             _ => {
                 self.zone_view = ZoneViewState::Empty;
                 Task::none()
@@ -408,7 +497,7 @@ impl AppModel {
         self.core.window.show_context = false;
     }
 
-    fn handle_dialog_message(&mut self, message: DialogMessage) {
+    fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
         match message {
             DialogMessage::ZoneNameChanged(value) => {
                 self.dialogs.zone.name = value;
@@ -457,11 +546,51 @@ impl AppModel {
             DialogMessage::IpSetEntriesChanged(value) => {
                 self.dialogs.ipset.entries = value;
             }
+            DialogMessage::Submit(DialogKind::IpSet) => {
+                let name = self.dialogs.ipset.name.trim().to_string();
+                let ipset_type = self.dialogs.ipset.ipset_type.trim().to_string();
+                let entries = split_ipset_entries(&self.dialogs.ipset.entries);
+                self.dialogs.reset(DialogKind::IpSet);
+                self.close_context_drawer();
+                if name.is_empty() || ipset_type.is_empty() {
+                    return Task::none();
+                }
+                return self.start_ipset_create(name, ipset_type, entries);
+            }
             DialogMessage::Submit(kind) | DialogMessage::Cancel(kind) => {
                 self.dialogs.reset(kind);
                 self.close_context_drawer();
             }
         }
+        Task::none()
+    }
+
+    fn handle_ipset_action(&mut self, action: IpSetViewAction) -> Task<cosmic::Action<Message>> {
+        match action {
+            IpSetViewAction::Select(name) => {
+                self.ipset_view.selected = Some(name.clone());
+                self.ipset_view.details = None;
+                self.ipset_view.entry_error = None;
+                self.ipset_view.entry_input.clear();
+                return self.start_ipset_details_load(name);
+            }
+            IpSetViewAction::EntryInputChanged(value) => {
+                self.ipset_view.entry_input = value;
+                self.ipset_view.entry_error = None;
+            }
+            IpSetViewAction::AddEntry => {
+                let Some(ipset_name) = self.ipset_view.selected.clone() else {
+                    return Task::none();
+                };
+                let entry = self.ipset_view.entry_input.trim();
+                if entry.is_empty() {
+                    return Task::none();
+                }
+                return self.start_ipset_entry_add(ipset_name, entry.to_string());
+            }
+        }
+
+        Task::none()
     }
 
     async fn load_zones() -> Result<Vec<String>, BrokerError> {
@@ -472,6 +601,30 @@ impl AppModel {
     async fn load_zone_details(zone_name: String) -> Result<ZoneDetails, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_zone_details(&zone_name).await
+    }
+
+    async fn load_ipsets() -> Result<Vec<String>, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_ipsets().await
+    }
+
+    async fn load_ipset_details(ipset_name: String) -> Result<IpSetDetails, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_ipset_details(&ipset_name).await
+    }
+
+    async fn add_ipset_entry(ipset_name: String, entry: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_ipset_entry(&ipset_name, &entry).await
+    }
+
+    async fn create_ipset(
+        name: String,
+        ipset_type: String,
+        entries: Vec<String>,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.create_ipset(&name, &ipset_type, entries).await
     }
 
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
@@ -486,6 +639,56 @@ impl AppModel {
                 result,
             })
         })
+    }
+
+    fn start_ipsets_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.ipset_view.list_loading = true;
+        Task::perform(Self::load_ipsets(), |result| {
+            cosmic::Action::from(Message::IpSetsLoaded(result))
+        })
+    }
+
+    fn start_ipset_details_load(&mut self, ipset_name: String) -> Task<cosmic::Action<Message>> {
+        self.ipset_view.details_loading = true;
+        let ipset_name_for_task = ipset_name.clone();
+        Task::perform(Self::load_ipset_details(ipset_name), move |result| {
+            cosmic::Action::from(Message::IpSetDetailsLoaded {
+                ipset_name: ipset_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_ipset_entry_add(
+        &mut self,
+        ipset_name: String,
+        entry: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let ipset_name_for_task = ipset_name.clone();
+        Task::perform(Self::add_ipset_entry(ipset_name, entry), move |result| {
+            cosmic::Action::from(Message::IpSetEntryAdded {
+                ipset_name: ipset_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_ipset_create(
+        &mut self,
+        ipset_name: String,
+        ipset_type: String,
+        entries: Vec<String>,
+    ) -> Task<cosmic::Action<Message>> {
+        let ipset_name_for_task = ipset_name.clone();
+        Task::perform(
+            Self::create_ipset(ipset_name, ipset_type, entries),
+            move |result| {
+                cosmic::Action::from(Message::IpSetCreated {
+                    ipset_name: ipset_name_for_task.clone(),
+                    result,
+                })
+            },
+        )
     }
 
     /// Updates the header and window titles.
@@ -503,6 +706,15 @@ impl AppModel {
             Task::none()
         }
     }
+}
+
+fn split_ipset_entries(entries: &str) -> Vec<String> {
+    entries
+        .split(|c| c == ',' || c == '\n')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| entry.to_string())
+        .collect()
 }
 
 /// The context page to display in the context drawer.
