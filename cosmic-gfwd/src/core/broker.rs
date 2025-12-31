@@ -85,6 +85,133 @@ impl FwdBroker {
         proxy.remove().await?;
         Ok(())
     }
+    pub async fn remove_service(
+        &self,
+        zone_name: &str,
+        service: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_service(service).await?;
+        Ok(())
+    }
+
+    pub async fn remove_interface(
+        &self,
+        zone_name: &str,
+        interface: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_interface(interface).await?;
+        Ok(())
+    }
+
+    pub async fn remove_source(
+        &self,
+        zone_name: &str,
+        source: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_source(source).await?;
+        Ok(())
+    }
+
+    pub async fn remove_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_port(port, protocol).await?;
+        Ok(())
+    }
+
+    pub async fn remove_forward_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+        to_port: &str,
+        to_addr: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy
+            .remove_forward_port(port, protocol, to_port, to_addr)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove_source_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_source_port(port, protocol).await?;
+        Ok(())
+    }
+
+    pub async fn remove_icmp_block(
+        &self,
+        zone_name: &str,
+        icmp: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_icmp_block(icmp).await?;
+        Ok(())
+    }
+
+    pub async fn remove_rich_rule(
+        &self,
+        zone_name: &str,
+        rule: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_rich_rule(rule).await?;
+        Ok(())
+    }
+
 
     pub async fn get_zone_details(&self, zone_name: &str) -> Result<ZoneDetails, BrokerError> {
         let cfg = self.config().await?;
@@ -185,6 +312,21 @@ impl FwdBroker {
         proxy.add_entry(entry).await?;
         Ok(())
     }
+    pub async fn remove_ipset_entry(
+        &self,
+        ipset_name: &str,
+        entry: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        let proxy = ConfigIPSetProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove_entry(entry).await?;
+        Ok(())
+    }
+
 
     pub async fn create_ipset(
         &self,

@@ -9,4 +9,4 @@ pub use dialog_drawers::{
 };
 pub use ipset_view::{view_ipset_content, IpSetViewAction, IpSetViewState};
 pub use sidebar::{Sidebar, SidebarItem};
-pub use zone_view::{view_zone_content, ZoneViewState};
+pub use zone_view::{view_zone_content, ZoneViewAction, ZoneViewState};

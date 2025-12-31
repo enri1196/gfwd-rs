@@ -8,7 +8,7 @@ use crate::ui::{
     drawer_footer, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
     source_drawer, target_from_index, view_ipset_content, view_zone_content, DialogKind,
     DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewState,
+    ZoneViewAction, ZoneViewState,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -51,6 +51,7 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     Dialog(DialogMessage),
     NavMenuAction(NavMenuAction),
+    ZoneAction(ZoneViewAction),
     IpSetAction(IpSetViewAction),
     UpdateConfig(Config),
     ZonesLoaded(Result<Vec<String>, BrokerError>),
@@ -64,7 +65,15 @@ pub enum Message {
         zone_name: String,
         result: Result<(), BrokerError>,
     },
+    ZoneItemRemoved {
+        zone_name: String,
+        result: Result<(), BrokerError>,
+    },
     IpSetsLoaded(Result<Vec<String>, BrokerError>),
+    IpSetEntryRemoved {
+        ipset_name: String,
+        result: Result<(), BrokerError>,
+    },
     IpSetDetailsLoaded {
         ipset_name: String,
         result: Result<IpSetDetails, BrokerError>,
@@ -317,7 +326,7 @@ impl cosmic::Application for AppModel {
         let space_m = cosmic::theme::spacing().space_m;
         let content: Element<_> = match self.sidebar.active_item() {
             Some(SidebarItem::IpSets) => view_ipset_content(&self.ipset_view, Message::IpSetAction),
-            _ => view_zone_content(&self.zone_view),
+            _ => view_zone_content(&self.zone_view, Message::ZoneAction),
         };
 
         widget::container(content)
@@ -379,6 +388,10 @@ impl cosmic::Application for AppModel {
 
             Message::NavMenuAction(action) => {
                 return self.handle_nav_menu_action(action);
+            }
+
+            Message::ZoneAction(action) => {
+                return self.handle_zone_action(action);
             }
 
             Message::IpSetAction(action) => {
@@ -479,6 +492,27 @@ impl cosmic::Application for AppModel {
                     }
                 }
             },
+            Message::ZoneItemRemoved { zone_name, result } => match result {
+                Ok(()) => {
+                    if matches!(
+                        self.sidebar.active_item(),
+                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
+                    ) {
+                        return self.start_zone_load(zone_name);
+                    }
+                }
+                Err(error) => {
+                    if matches!(
+                        self.sidebar.active_item(),
+                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
+                    ) {
+                        self.zone_view = ZoneViewState::Error {
+                            zone: zone_name,
+                            message: error.to_string(),
+                        };
+                    }
+                }
+            },
             Message::IpSetsLoaded(result) => {
                 self.ipset_view.list_loading = false;
                 match result {
@@ -524,6 +558,15 @@ impl cosmic::Application for AppModel {
             Message::IpSetEntryAdded { ipset_name, result } => match result {
                 Ok(()) => {
                     self.ipset_view.entry_input.clear();
+                    self.ipset_view.entry_error = None;
+                    return self.start_ipset_details_load(ipset_name);
+                }
+                Err(error) => {
+                    self.ipset_view.entry_error = Some(error.to_string());
+                }
+            },
+            Message::IpSetEntryRemoved { ipset_name, result } => match result {
+                Ok(()) => {
                     self.ipset_view.entry_error = None;
                     return self.start_ipset_details_load(ipset_name);
                 }
@@ -591,6 +634,15 @@ impl AppModel {
                 self.start_zone_delete(zone_name)
             }
         }
+    }
+
+    fn handle_zone_action(&mut self, action: ZoneViewAction) -> Task<cosmic::Action<Message>> {
+        let zone_name = match &self.zone_view {
+            ZoneViewState::Ready(details) => details.name.clone(),
+            _ => return Task::none(),
+        };
+
+        self.start_zone_item_remove(zone_name, action)
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
@@ -684,6 +736,12 @@ impl AppModel {
                 }
                 return self.start_ipset_entry_add(ipset_name, entry.to_string());
             }
+            IpSetViewAction::RemoveEntry(entry) => {
+                let Some(ipset_name) = self.ipset_view.selected.clone() else {
+                    return Task::none();
+                };
+                return self.start_ipset_entry_remove(ipset_name, entry);
+            }
         }
 
         Task::none()
@@ -712,6 +770,67 @@ impl AppModel {
     async fn remove_zone(zone_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.remove_zone(&zone_name).await
+    }
+
+    async fn remove_service(zone_name: String, service: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_service(&zone_name, &service).await
+    }
+
+    async fn remove_interface(zone_name: String, interface: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_interface(&zone_name, &interface).await
+    }
+
+    async fn remove_source(zone_name: String, source: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_source(&zone_name, &source).await
+    }
+
+    async fn remove_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_port(&zone_name, &port, &protocol).await
+    }
+
+    async fn remove_forward_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+        to_port: String,
+        to_addr: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker
+            .remove_forward_port(&zone_name, &port, &protocol, &to_port, &to_addr)
+            .await
+    }
+
+    async fn remove_source_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_source_port(&zone_name, &port, &protocol).await
+    }
+
+    async fn remove_icmp_block(zone_name: String, icmp: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_icmp_block(&zone_name, &icmp).await
+    }
+
+    async fn remove_rich_rule(zone_name: String, rule: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_rich_rule(&zone_name, &rule).await
+    }
+
+    async fn remove_ipset_entry(ipset_name: String, entry: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_ipset_entry(&ipset_name, &entry).await
     }
 
     async fn load_ipsets() -> Result<Vec<String>, BrokerError> {
@@ -767,6 +886,86 @@ impl AppModel {
         })
     }
 
+    fn start_zone_item_remove(
+        &mut self,
+        zone_name: String,
+        action: ZoneViewAction,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        match action {
+            ZoneViewAction::RemoveService(service) => {
+                Task::perform(Self::remove_service(zone_name, service), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemoveInterface(interface) => {
+                Task::perform(Self::remove_interface(zone_name, interface), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemoveSource(source) => {
+                Task::perform(Self::remove_source(zone_name, source), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemovePort { port, protocol } => {
+                Task::perform(Self::remove_port(zone_name, port, protocol), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemoveForwardPort {
+                port,
+                protocol,
+                to_port,
+                to_addr,
+            } => Task::perform(
+                Self::remove_forward_port(zone_name, port, protocol, to_port, to_addr),
+                move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                },
+            ),
+            ZoneViewAction::RemoveSourcePort { port, protocol } => {
+                Task::perform(Self::remove_source_port(zone_name, port, protocol), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemoveIcmpBlock(icmp) => {
+                Task::perform(Self::remove_icmp_block(zone_name, icmp), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+            ZoneViewAction::RemoveRichRule(rule) => {
+                Task::perform(Self::remove_rich_rule(zone_name, rule), move |result| {
+                    cosmic::Action::from(Message::ZoneItemRemoved {
+                        zone_name: zone_name_for_task.clone(),
+                        result,
+                    })
+                })
+            }
+        }
+    }
+
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
         self.zone_view = ZoneViewState::Loading {
             zone: zone_name.clone(),
@@ -807,6 +1006,20 @@ impl AppModel {
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::add_ipset_entry(ipset_name, entry), move |result| {
             cosmic::Action::from(Message::IpSetEntryAdded {
+                ipset_name: ipset_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_ipset_entry_remove(
+        &mut self,
+        ipset_name: String,
+        entry: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let ipset_name_for_task = ipset_name.clone();
+        Task::perform(Self::remove_ipset_entry(ipset_name, entry), move |result| {
+            cosmic::Action::from(Message::IpSetEntryRemoved {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
             })

@@ -1,8 +1,12 @@
 use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, button, settings};
+use cosmic::widget::{self, button, icon, settings};
 
 use crate::fl;
 use crate::models::IpSetDetails;
+
+const MAX_LIST_ITEMS: usize = 5;
+const LIST_ITEM_HEIGHT: f32 = 28.0;
+const REMOVE_ICON: &str = "user-trash-symbolic";
 
 #[derive(Debug, Clone)]
 pub struct IpSetViewState {
@@ -34,6 +38,7 @@ pub enum IpSetViewAction {
     Select(String),
     EntryInputChanged(String),
     AddEntry,
+    RemoveEntry(String),
 }
 
 pub fn view_ipset_content<'a, Message: 'static + Clone>(
@@ -48,6 +53,11 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
     } else if state.ipsets.is_empty() {
         list_section = list_section.add(widget::text::caption(fl!("ipset-empty")));
     } else {
+        let spacing = cosmic::theme::spacing().space_xxs;
+        let mut list = widget::column::with_capacity(state.ipsets.len())
+            .spacing(spacing)
+            .width(Length::Fill);
+
         for ipset in &state.ipsets {
             let is_selected = state.selected.as_deref() == Some(ipset.as_str());
             let button = if is_selected {
@@ -55,10 +65,14 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
             } else {
                 button::text(ipset.as_str())
             }
+            .width(Length::Fill)
             .on_press(map(IpSetViewAction::Select(ipset.clone())));
 
-            list_section = list_section.add(button);
+            list = list.push(button);
         }
+
+        let list_element = list_with_scroll(list, state.ipsets.len());
+        list_section = list_section.add(list_element);
     }
 
     sections.push(list_section.into());
@@ -101,7 +115,7 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
 
         let can_add_entry = !state.entry_input.trim().is_empty() && state.selected.is_some();
         let add_message = can_add_entry.then_some(map(IpSetViewAction::AddEntry));
-        let entry_row = widget::row::with_capacity(2)
+        let entry_input_row = widget::row::with_capacity(2)
             .push(
                 widget::text_input::text_input(
                     fl!("ipset-entry-placeholder"),
@@ -116,7 +130,7 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
 
         let mut entries_section = settings::section()
             .title(fl!("ipset-section-entries"))
-            .add(entry_row);
+            .add(entry_input_row);
 
         if let Some(error) = &state.entry_error {
             entries_section = entries_section.add(widget::text::caption(error.as_str()));
@@ -125,12 +139,15 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
         if details.entries.is_empty() {
             entries_section = entries_section.add(widget::text::caption(fl!("ipset-entry-empty")));
         } else {
-            entries_section = entries_section.extend(
-                details
-                    .entries
-                    .iter()
-                    .map(|entry| widget::text::body(entry.as_str())),
-            );
+            let spacing = cosmic::theme::spacing().space_xxs;
+            let entries_list = widget::column::with_capacity(details.entries.len())
+                .spacing(spacing)
+                .width(Length::Fill)
+                .extend(details.entries.iter().map(|entry| {
+                    entry_item_row(entry, map)
+                }));
+            let entries_element = list_with_scroll(entries_list, details.entries.len());
+            entries_section = entries_section.add(entries_element);
         }
 
         sections.push(entries_section.into());
@@ -142,4 +159,37 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+fn entry_item_row<'a, Message: 'static + Clone>(
+    entry: &'a str,
+    map: impl Fn(IpSetViewAction) -> Message + Copy + 'static,
+) -> cosmic::Element<'a, Message> {
+    let spacing = cosmic::theme::spacing();
+    let remove = button::icon(icon::from_name(REMOVE_ICON))
+        .tooltip(fl!("action-remove"))
+        .extra_small()
+        .on_press(map(IpSetViewAction::RemoveEntry(entry.to_string())));
+
+    widget::row::with_capacity(2)
+        .push(widget::text::body(entry).width(Length::Fill))
+        .push(remove)
+        .spacing(spacing.space_s)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+fn list_with_scroll<'a, Message: 'static>(
+    list: widget::Column<'a, Message>,
+    item_count: usize,
+) -> cosmic::Element<'a, Message> {
+    if item_count > MAX_LIST_ITEMS {
+        let max_height = LIST_ITEM_HEIGHT * MAX_LIST_ITEMS as f32;
+        widget::scrollable::scrollable(list)
+            .height(Length::Fixed(max_height))
+            .width(Length::Fill)
+            .into()
+    } else {
+        list.into()
+    }
 }

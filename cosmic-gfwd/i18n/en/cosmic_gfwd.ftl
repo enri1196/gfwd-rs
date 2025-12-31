@@ -16,6 +16,7 @@ action-add-source = Add Source
 action-add-icmp = Add ICMP Block
 action-add-rich-rule = Add Rich Rule
 action-add-ipset = Create IP Set
+action-remove = Remove
 sidebar-ipsets = IP Sets
 sidebar-loading-zones = Loading zones...
 sidebar-empty-zones = No zones
