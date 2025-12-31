@@ -16,7 +16,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, about::About, menu, nav_bar};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -50,12 +50,19 @@ pub enum Message {
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
     Dialog(DialogMessage),
+    NavMenuAction(NavMenuAction),
     IpSetAction(IpSetViewAction),
     UpdateConfig(Config),
     ZonesLoaded(Result<Vec<String>, BrokerError>),
     ZoneDetailsLoaded {
         zone_name: String,
         result: Result<ZoneDetails, BrokerError>,
+    },
+    DefaultZoneLoaded(Result<String, BrokerError>),
+    ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
+    ZoneDeleted {
+        zone_name: String,
+        result: Result<(), BrokerError>,
     },
     IpSetsLoaded(Result<Vec<String>, BrokerError>),
     IpSetDetailsLoaded {
@@ -134,12 +141,7 @@ impl cosmic::Application for AppModel {
                 .unwrap_or_default(),
         };
 
-        let command = Task::batch(vec![
-            app.update_title(),
-            Task::perform(Self::load_zones(), |zones| {
-                cosmic::Action::from(Message::ZonesLoaded(zones))
-            }),
-        ]);
+        let command = Task::batch(vec![app.update_title(), app.start_zones_load()]);
 
         (app, command)
     }
@@ -209,6 +211,38 @@ impl cosmic::Application for AppModel {
     /// Enables the COSMIC application to create a nav bar with this model.
     fn nav_model(&self) -> Option<&nav_bar::Model> {
         Some(self.sidebar.nav_model())
+    }
+
+    /// The context menu to display for the given nav bar item ID.
+    fn nav_context_menu(
+        &self,
+        id: nav_bar::Id,
+    ) -> Option<Vec<menu::Tree<cosmic::Action<Self::Message>>>> {
+        let Some(item) = self.sidebar.item_for_id(id) else {
+            return None;
+        };
+
+        match item {
+            SidebarItem::Zone { .. } => {
+                let key_binds = HashMap::new();
+                Some(menu::items(
+                    &key_binds,
+                    vec![
+                        menu::Item::Button(
+                            fl!("context-open-zone"),
+                            None,
+                            NavMenuAction::OpenZone(id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-delete-zone"),
+                            None,
+                            NavMenuAction::DeleteZone(id),
+                        ),
+                    ],
+                ))
+            }
+            _ => None,
+        }
     }
 
     /// Display a context drawer if the context page is requested.
@@ -343,6 +377,10 @@ impl cosmic::Application for AppModel {
                 return self.handle_dialog_message(dialog_message);
             }
 
+            Message::NavMenuAction(action) => {
+                return self.handle_nav_menu_action(action);
+            }
+
             Message::IpSetAction(action) => {
                 return self.handle_ipset_action(action);
             }
@@ -358,8 +396,13 @@ impl cosmic::Application for AppModel {
                 }
             },
             Message::ZonesLoaded(result) => {
+                let mut tasks = Vec::new();
                 match result {
-                    Ok(zones) => self.sidebar.set_zones(zones),
+                    Ok(zones) => {
+                        self.sidebar.set_zones(zones);
+                        tasks.push(self.start_default_zone_load());
+                        tasks.push(self.start_active_zones_load());
+                    }
                     Err(error) => {
                         eprintln!("failed to load zones: {error}");
                         self.sidebar.set_error(error.to_string());
@@ -370,7 +413,7 @@ impl cosmic::Application for AppModel {
                     }
                 }
                 let task = match self.sidebar.active_item() {
-                    Some(SidebarItem::Zone(name)) => self.start_zone_load(name.clone()),
+                    Some(SidebarItem::Zone { name, .. }) => self.start_zone_load(name.clone()),
                     _ => {
                         if !matches!(self.zone_view, ZoneViewState::Error { .. }) {
                             self.zone_view = ZoneViewState::Empty;
@@ -379,12 +422,14 @@ impl cosmic::Application for AppModel {
                     }
                 };
 
-                return Task::batch(vec![self.update_title(), task]);
+                tasks.push(self.update_title());
+                tasks.push(task);
+                return Task::batch(tasks);
             }
             Message::ZoneDetailsLoaded { zone_name, result } => {
                 let is_active = matches!(
                     self.sidebar.active_item(),
-                    Some(SidebarItem::Zone(name)) if name == &zone_name
+                    Some(SidebarItem::Zone { name, .. }) if name == &zone_name
                 );
                 if !is_active {
                     return Task::none();
@@ -398,6 +443,42 @@ impl cosmic::Application for AppModel {
                     },
                 };
             }
+            Message::DefaultZoneLoaded(result) => match result {
+                Ok(zone) => self.sidebar.set_default_zone(Some(zone)),
+                Err(error) => {
+                    eprintln!("failed to load default zone: {error}");
+                    self.sidebar.set_default_zone(None);
+                }
+            },
+            Message::ActiveZonesLoaded(result) => match result {
+                Ok(active_zones) => self.sidebar.set_active_zones(active_zones),
+                Err(error) => {
+                    eprintln!("failed to load active zones: {error}");
+                    self.sidebar.set_active_zones(HashSet::new());
+                }
+            },
+            Message::ZoneDeleted { zone_name, result } => match result {
+                Ok(()) => {
+                    if matches!(
+                        self.sidebar.active_item(),
+                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
+                    ) {
+                        self.zone_view = ZoneViewState::Empty;
+                    }
+                    return self.start_zones_load();
+                }
+                Err(error) => {
+                    if matches!(
+                        self.sidebar.active_item(),
+                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
+                    ) {
+                        self.zone_view = ZoneViewState::Error {
+                            zone: zone_name,
+                            message: error.to_string(),
+                        };
+                    }
+                }
+            },
             Message::IpSetsLoaded(result) => {
                 self.ipset_view.list_loading = false;
                 match result {
@@ -470,19 +551,7 @@ impl cosmic::Application for AppModel {
 
     /// Called when a nav item is selected.
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
-        // Activate the page in the model.
-        self.sidebar.activate(id);
-
-        let task = match self.sidebar.active_item() {
-            Some(SidebarItem::Zone(name)) => self.start_zone_load(name.clone()),
-            Some(SidebarItem::IpSets) => self.start_ipsets_load(),
-            _ => {
-                self.zone_view = ZoneViewState::Empty;
-                Task::none()
-            }
-        };
-
-        Task::batch(vec![self.update_title(), task])
+        self.handle_nav_select(id)
     }
 }
 
@@ -495,6 +564,33 @@ impl AppModel {
 
     fn close_context_drawer(&mut self) {
         self.core.window.show_context = false;
+    }
+
+    fn handle_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Message>> {
+        self.sidebar.activate(id);
+
+        let task = match self.sidebar.active_item() {
+            Some(SidebarItem::Zone { name, .. }) => self.start_zone_load(name.clone()),
+            Some(SidebarItem::IpSets) => self.start_ipsets_load(),
+            _ => {
+                self.zone_view = ZoneViewState::Empty;
+                Task::none()
+            }
+        };
+
+        Task::batch(vec![self.update_title(), task])
+    }
+
+    fn handle_nav_menu_action(&mut self, action: NavMenuAction) -> Task<cosmic::Action<Message>> {
+        match action {
+            NavMenuAction::OpenZone(id) => self.handle_nav_select(id),
+            NavMenuAction::DeleteZone(id) => {
+                let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
+                    return Task::none();
+                };
+                self.start_zone_delete(zone_name)
+            }
+        }
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
@@ -603,6 +699,21 @@ impl AppModel {
         broker.get_zone_details(&zone_name).await
     }
 
+    async fn load_default_zone() -> Result<String, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_default_zone().await
+    }
+
+    async fn load_active_zones() -> Result<HashSet<String>, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_active_zones().await
+    }
+
+    async fn remove_zone(zone_name: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_zone(&zone_name).await
+    }
+
     async fn load_ipsets() -> Result<Vec<String>, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_ipsets().await
@@ -625,6 +736,35 @@ impl AppModel {
     ) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.create_ipset(&name, &ipset_type, entries).await
+    }
+
+    fn start_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.sidebar.set_loading();
+        Task::perform(Self::load_zones(), |result| {
+            cosmic::Action::from(Message::ZonesLoaded(result))
+        })
+    }
+
+    fn start_default_zone_load(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::perform(Self::load_default_zone(), |result| {
+            cosmic::Action::from(Message::DefaultZoneLoaded(result))
+        })
+    }
+
+    fn start_active_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::perform(Self::load_active_zones(), |result| {
+            cosmic::Action::from(Message::ActiveZonesLoaded(result))
+        })
+    }
+
+    fn start_zone_delete(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::remove_zone(zone_name), move |result| {
+            cosmic::Action::from(Message::ZoneDeleted {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
     }
 
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
@@ -697,7 +837,7 @@ impl AppModel {
 
         if let Some(page) = self.sidebar.active_label() {
             window_title.push_str(" — ");
-            window_title.push_str(page);
+            window_title.push_str(&page);
         }
 
         if let Some(id) = self.core.main_window_id() {
@@ -741,6 +881,20 @@ fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
         ContextPage::AddRichRule => Some(DialogKind::RichRule),
         ContextPage::AddIpSet => Some(DialogKind::IpSet),
         ContextPage::About => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NavMenuAction {
+    OpenZone(nav_bar::Id),
+    DeleteZone(nav_bar::Id),
+}
+
+impl menu::action::MenuAction for NavMenuAction {
+    type Message = cosmic::Action<Message>;
+
+    fn message(&self) -> Self::Message {
+        cosmic::Action::App(Message::NavMenuAction(*self))
     }
 }
 

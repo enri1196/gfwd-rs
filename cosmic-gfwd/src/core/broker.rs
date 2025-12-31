@@ -1,8 +1,11 @@
 use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use gfwd_bus::config_ipset::ConfigIPSetProxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
+use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
+
+use std::collections::HashSet;
 
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 
@@ -59,6 +62,28 @@ impl FwdBroker {
         let mut zones = cfg.get_zone_names().await?;
         zones.sort();
         Ok(zones)
+    }
+
+    pub async fn get_default_zone(&self) -> Result<String, BrokerError> {
+        let cfg = self.config().await?;
+        Ok(cfg.default_zone().await?)
+    }
+
+    pub async fn get_active_zones(&self) -> Result<HashSet<String>, BrokerError> {
+        let proxy = ZoneProxy::new(&self.conn).await?;
+        let active = proxy.get_active_zones().await?;
+        Ok(active.into_keys().collect())
+    }
+
+    pub async fn remove_zone(&self, zone_name: &str) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.remove().await?;
+        Ok(())
     }
 
     pub async fn get_zone_details(&self, zone_name: &str) -> Result<ZoneDetails, BrokerError> {
