@@ -3,7 +3,7 @@
 use crate::config::Config;
 use crate::core::{BrokerError, FwdBroker};
 use crate::fl;
-use crate::models::{IpSetDetails, ZoneDetails};
+use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     drawer_footer, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
     source_drawer, target_from_index, view_ipset_content, view_zone_content, DialogKind,
@@ -61,7 +61,15 @@ pub enum Message {
     },
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
+    ZoneCreated {
+        zone_name: String,
+        result: Result<(), BrokerError>,
+    },
     ZoneDeleted {
+        zone_name: String,
+        result: Result<(), BrokerError>,
+    },
+    ZoneItemAdded {
         zone_name: String,
         result: Result<(), BrokerError>,
     },
@@ -470,6 +478,17 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
+            Message::ZoneCreated { zone_name, result } => match result {
+                Ok(()) => {
+                    return self.start_zones_load();
+                }
+                Err(error) => {
+                    self.zone_view = ZoneViewState::Error {
+                        zone: zone_name,
+                        message: error.to_string(),
+                    };
+                }
+            },
             Message::ZoneDeleted { zone_name, result } => match result {
                 Ok(()) => {
                     if matches!(
@@ -492,7 +511,8 @@ impl cosmic::Application for AppModel {
                     }
                 }
             },
-            Message::ZoneItemRemoved { zone_name, result } => match result {
+            Message::ZoneItemAdded { zone_name, result }
+            | Message::ZoneItemRemoved { zone_name, result } => match result {
                 Ok(()) => {
                     if matches!(
                         self.sidebar.active_item(),
@@ -609,6 +629,13 @@ impl AppModel {
         self.core.window.show_context = false;
     }
 
+    fn current_zone_name(&self) -> Option<String> {
+        match &self.zone_view {
+            ZoneViewState::Ready(details) => Some(details.name.clone()),
+            _ => None,
+        }
+    }
+
     fn handle_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Message>> {
         self.sidebar.activate(id);
 
@@ -694,6 +721,87 @@ impl AppModel {
             DialogMessage::IpSetEntriesChanged(value) => {
                 self.dialogs.ipset.entries = value;
             }
+            DialogMessage::Submit(DialogKind::Zone) => {
+                let name = self.dialogs.zone.name.trim().to_string();
+                let description = self.dialogs.zone.description.trim().to_string();
+                let target = self.dialogs.zone.target.clone();
+                self.dialogs.reset(DialogKind::Zone);
+                self.close_context_drawer();
+                if name.is_empty() {
+                    return Task::none();
+                }
+                return self.start_zone_create(name, description, target);
+            }
+            DialogMessage::Submit(DialogKind::Port) => {
+                let port = self.dialogs.port.port.trim().to_string();
+                let protocol = self.dialogs.port.protocol.trim().to_string();
+                let forwarding = self.dialogs.port.forwarding;
+                let dest_ip = self.dialogs.port.dest_ip.trim().to_string();
+                let dest_port = self.dialogs.port.dest_port.trim().to_string();
+                self.dialogs.reset(DialogKind::Port);
+                self.close_context_drawer();
+                if port.is_empty() || protocol.is_empty() {
+                    return Task::none();
+                }
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                if forwarding {
+                    if dest_port.is_empty() {
+                        return Task::none();
+                    }
+                    return self.start_forward_port_add(zone_name, port, protocol, dest_port, dest_ip);
+                }
+                return self.start_port_add(zone_name, port, protocol);
+            }
+            DialogMessage::Submit(DialogKind::Interface) => {
+                let interface = self.dialogs.interface.interface.trim().to_string();
+                self.dialogs.reset(DialogKind::Interface);
+                self.close_context_drawer();
+                if interface.is_empty() {
+                    return Task::none();
+                }
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_interface_add(zone_name, interface);
+            }
+            DialogMessage::Submit(DialogKind::Source) => {
+                let source = self.dialogs.source.source.trim().to_string();
+                self.dialogs.reset(DialogKind::Source);
+                self.close_context_drawer();
+                if source.is_empty() {
+                    return Task::none();
+                }
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_source_add(zone_name, source);
+            }
+            DialogMessage::Submit(DialogKind::Icmp) => {
+                let icmp_type = self.dialogs.icmp.icmp_type.trim().to_string();
+                self.dialogs.reset(DialogKind::Icmp);
+                self.close_context_drawer();
+                if icmp_type.is_empty() {
+                    return Task::none();
+                }
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_icmp_add(zone_name, icmp_type);
+            }
+            DialogMessage::Submit(DialogKind::RichRule) => {
+                let rule = self.dialogs.rich_rule.rule.trim().to_string();
+                self.dialogs.reset(DialogKind::RichRule);
+                self.close_context_drawer();
+                if rule.is_empty() {
+                    return Task::none();
+                }
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_rich_rule_add(zone_name, rule);
+            }
             DialogMessage::Submit(DialogKind::IpSet) => {
                 let name = self.dialogs.ipset.name.trim().to_string();
                 let ipset_type = self.dialogs.ipset.ipset_type.trim().to_string();
@@ -705,7 +813,7 @@ impl AppModel {
                 }
                 return self.start_ipset_create(name, ipset_type, entries);
             }
-            DialogMessage::Submit(kind) | DialogMessage::Cancel(kind) => {
+            DialogMessage::Cancel(kind) => {
                 self.dialogs.reset(kind);
                 self.close_context_drawer();
             }
@@ -770,6 +878,57 @@ impl AppModel {
     async fn remove_zone(zone_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.remove_zone(&zone_name).await
+    }
+
+    async fn add_zone(
+        name: String,
+        description: String,
+        target: ZoneTarget,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_zone(&name, &description, &target).await
+    }
+
+    async fn add_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_port(&zone_name, &port, &protocol).await
+    }
+
+    async fn add_forward_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+        to_port: String,
+        to_addr: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker
+            .add_forward_port(&zone_name, &port, &protocol, &to_port, &to_addr)
+            .await
+    }
+
+    async fn add_interface(zone_name: String, interface: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_interface(&zone_name, &interface).await
+    }
+
+    async fn add_source(zone_name: String, source: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_source(&zone_name, &source).await
+    }
+
+    async fn add_icmp_block(zone_name: String, icmp: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_icmp_block(&zone_name, &icmp).await
+    }
+
+    async fn add_rich_rule(zone_name: String, rule: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_rich_rule(&zone_name, &rule).await
     }
 
     async fn remove_service(zone_name: String, service: String) -> Result<(), BrokerError> {
@@ -873,6 +1032,112 @@ impl AppModel {
     fn start_active_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
         Task::perform(Self::load_active_zones(), |result| {
             cosmic::Action::from(Message::ActiveZonesLoaded(result))
+        })
+    }
+
+    fn start_zone_create(
+        &mut self,
+        name: String,
+        description: String,
+        target: ZoneTarget,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = name.clone();
+        Task::perform(Self::add_zone(name, description, target), move |result| {
+            cosmic::Action::from(Message::ZoneCreated {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_port_add(
+        &mut self,
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_port(zone_name, port, protocol), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_forward_port_add(
+        &mut self,
+        zone_name: String,
+        port: String,
+        protocol: String,
+        to_port: String,
+        to_addr: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(
+            Self::add_forward_port(zone_name, port, protocol, to_port, to_addr),
+            move |result| {
+                cosmic::Action::from(Message::ZoneItemAdded {
+                    zone_name: zone_name_for_task.clone(),
+                    result,
+                })
+            },
+        )
+    }
+
+    fn start_interface_add(
+        &mut self,
+        zone_name: String,
+        interface: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_interface(zone_name, interface), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_source_add(
+        &mut self,
+        zone_name: String,
+        source: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_source(zone_name, source), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_icmp_add(
+        &mut self,
+        zone_name: String,
+        icmp: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_icmp_block(zone_name, icmp), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_rich_rule_add(
+        &mut self,
+        zone_name: String,
+        rule: String,
+    ) -> Task<cosmic::Action<Message>> {
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_rich_rule(zone_name, rule), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
         })
     }
 

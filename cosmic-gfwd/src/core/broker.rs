@@ -75,6 +75,130 @@ impl FwdBroker {
         Ok(active.into_keys().collect())
     }
 
+    pub async fn add_zone(
+        &self,
+        name: &str,
+        description: &str,
+        target: &ZoneTarget,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let settings: gfwd_bus::config_firewalld1::ZoneSettings = (
+            "1.0".to_string(),
+            name.to_string(),
+            description.to_string(),
+            false,
+            target.to_string(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        cfg.add_zone(name, &settings).await?;
+        Ok(())
+    }
+
+    pub async fn add_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_port(port, protocol).await?;
+        Ok(())
+    }
+
+    pub async fn add_forward_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+        to_port: &str,
+        to_addr: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy
+            .add_forward_port(port, protocol, to_port, to_addr)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn add_interface(
+        &self,
+        zone_name: &str,
+        interface: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_interface(interface).await?;
+        Ok(())
+    }
+
+    pub async fn add_source(
+        &self,
+        zone_name: &str,
+        source: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_source(source).await?;
+        Ok(())
+    }
+
+    pub async fn add_icmp_block(
+        &self,
+        zone_name: &str,
+        icmp: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_icmp_block(icmp).await?;
+        Ok(())
+    }
+
+    pub async fn add_rich_rule(
+        &self,
+        zone_name: &str,
+        rule: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_rich_rule(rule).await?;
+        Ok(())
+    }
+
     pub async fn remove_zone(&self, zone_name: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
