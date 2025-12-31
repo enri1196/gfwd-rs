@@ -36,6 +36,7 @@ pub enum DialogMessage {
     PortForwardingToggled(bool),
     PortForwardDestIpChanged(String),
     PortForwardDestPortChanged(String),
+    InterfaceSelected(usize),
     InterfaceNameChanged(String),
     SourceAddressChanged(String),
     IcmpTypeChanged(String),
@@ -124,9 +125,19 @@ impl Default for PortFormState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct InterfaceFormState {
     pub interface: String,
+    pub error: Option<String>,
+}
+
+impl Default for InterfaceFormState {
+    fn default() -> Self {
+        Self {
+            interface: String::new(),
+            error: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -285,22 +296,75 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
         .into()
 }
 
-pub fn interface_drawer<'a>(state: &'a InterfaceFormState) -> cosmic::Element<'a, DialogMessage> {
-    let content = settings::view_column(vec![
-        settings::section()
-            .title(fl!("dialog-interface-section"))
-            .add(
-                settings::item::builder(fl!("dialog-interface-name-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-interface-name-placeholder"),
-                        &state.interface,
-                    )
-                    .on_input(DialogMessage::InterfaceNameChanged)
-                    .width(Length::Fill),
-                ),
-            )
-            .into(),
-    ]);
+pub fn interface_drawer<'a>(
+    state: &'a InterfaceFormState,
+    interfaces: &'a [String],
+    loading: bool,
+    error: Option<&'a str>,
+) -> cosmic::Element<'a, DialogMessage> {
+    let mut section = settings::section().title(fl!("dialog-interface-section"));
+    let show_manual_entry = interfaces.is_empty() && !loading;
+
+    if loading {
+        section = section.add(widget::text::caption(fl!("dialog-interface-loading")));
+    } else if interfaces.is_empty() {
+        section = section.add(widget::text::caption(fl!("dialog-interface-empty")));
+    } else {
+        section = section.add(widget::text::caption(fl!(
+            "dialog-interface-count",
+            count = interfaces.len()
+        )));
+    }
+
+    if show_manual_entry {
+        section = section.add(widget::text::caption(fl!("dialog-interface-manual-info")));
+    }
+
+    if let Some(error) = error {
+        section = section.add(widget::text::caption(error));
+    }
+
+    let mut options = Vec::with_capacity(interfaces.len() + 1);
+    let placeholder = if loading {
+        fl!("dialog-interface-loading")
+    } else if interfaces.is_empty() {
+        fl!("dialog-interface-empty")
+    } else {
+        fl!("dialog-interface-select-placeholder")
+    };
+    options.push(placeholder.to_string());
+    options.extend(interfaces.iter().cloned());
+
+    let selected = if state.interface.is_empty() {
+        Some(0)
+    } else {
+        interfaces
+            .iter()
+            .position(|iface| iface == &state.interface)
+            .map(|index| index + 1)
+            .or(Some(0))
+    };
+
+    section = section.add(
+        settings::item::builder(fl!("dialog-interface-name-label")).control(
+            dropdown(options, selected, DialogMessage::InterfaceSelected).width(Length::Fill),
+        ),
+    );
+
+    if show_manual_entry {
+        section = section.add(
+            settings::item::builder(fl!("dialog-interface-manual-label")).control(
+                widget::text_input::text_input(
+                    fl!("dialog-interface-name-placeholder"),
+                    &state.interface,
+                )
+                .on_input(DialogMessage::InterfaceNameChanged)
+                .width(Length::Fill),
+            ),
+        );
+    }
+
+    let content = settings::view_column(vec![section.into()]);
 
     widget::scrollable::scrollable(content)
         .width(Length::Fill)
@@ -420,13 +484,21 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
 }
 
 pub fn drawer_footer(kind: DialogKind) -> cosmic::Element<'static, DialogMessage> {
+    drawer_footer_with_submit(kind, true)
+}
+
+pub fn drawer_footer_with_submit(
+    kind: DialogKind,
+    can_submit: bool,
+) -> cosmic::Element<'static, DialogMessage> {
     let spacing = cosmic::theme::spacing();
     let submit_label = submit_label(kind);
+    let submit_message = can_submit.then_some(DialogMessage::Submit(kind));
 
     widget::row::with_capacity(3)
         .push(widget::horizontal_space())
         .push(button::text(fl!("dialog-cancel")).on_press(DialogMessage::Cancel(kind)))
-        .push(button::suggested(submit_label).on_press(DialogMessage::Submit(kind)))
+        .push(button::suggested(submit_label).on_press_maybe(submit_message))
         .spacing(spacing.space_s)
         .align_y(Alignment::Center)
         .into()

@@ -2,6 +2,7 @@ use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use gfwd_bus::config_ipset::ConfigIPSetProxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
 use gfwd_bus::firewalld1::FirewallD1Proxy;
+use gfwd_bus::network_manager::{DeviceProxy, NetworkManagerProxy};
 use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
@@ -80,6 +81,61 @@ impl FwdBroker {
         let proxy = ZoneProxy::new(&self.conn).await?;
         let active = proxy.get_active_zones().await?;
         Ok(active.into_keys().collect())
+    }
+
+    pub async fn get_interfaces(&self) -> Result<Vec<String>, BrokerError> {
+        match self.get_interfaces_from_networkmanager().await {
+            Ok(interfaces) if !interfaces.is_empty() => Ok(interfaces),
+            Ok(_) | Err(_) => self.get_interfaces_from_sysfs().await,
+        }
+    }
+
+    async fn get_interfaces_from_networkmanager(&self) -> Result<Vec<String>, BrokerError> {
+        let proxy = NetworkManagerProxy::new(&self.conn).await?;
+        let devices = proxy.get_devices().await?;
+        let mut interfaces = Vec::with_capacity(devices.len());
+
+        for path in devices {
+            let device = DeviceProxy::builder(&self.conn)
+                .path(path.as_str())?
+                .build()
+                .await?;
+            let name = device.interface().await?;
+            if should_include_interface(&name) {
+                interfaces.push(name);
+            }
+        }
+
+        interfaces.sort();
+        interfaces.dedup();
+        Ok(interfaces)
+    }
+
+    async fn get_interfaces_from_sysfs(&self) -> Result<Vec<String>, BrokerError> {
+        use std::fs;
+
+        let entries = match fs::read_dir("/sys/class/net") {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!("failed to read /sys/class/net: {error}");
+                return Ok(Vec::new());
+            }
+        };
+
+        let mut interfaces = Vec::new();
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if let Some(name) = entry.file_name().to_str() {
+                    if should_include_interface(name) {
+                        interfaces.push(name.to_string());
+                    }
+                }
+            }
+        }
+
+        interfaces.sort();
+        interfaces.dedup();
+        Ok(interfaces)
     }
 
     pub async fn add_zone(
@@ -440,4 +496,15 @@ impl FwdBroker {
         cfg.add_ipset(name, &settings).await?;
         Ok(())
     }
+}
+
+fn should_include_interface(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    !(name == "lo"
+        || name.starts_with("docker")
+        || name.starts_with("veth")
+        || name.starts_with("br-"))
 }

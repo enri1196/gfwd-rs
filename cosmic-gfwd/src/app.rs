@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 
 use crate::config::Config;
-use crate::core::{BrokerError, FwdBroker};
+use crate::core::{BrokerError, FwdBroker, validate_interface_name};
 use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState, drawer_footer, icmp_drawer, interface_drawer, ipset_drawer,
-    port_drawer, rich_rule_drawer, source_drawer, target_from_index, view_ipset_content,
-    view_zone_content,
+    ZoneViewAction, ZoneViewState, drawer_footer, drawer_footer_with_submit, icmp_drawer,
+    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, source_drawer, target_from_index,
+    view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -39,6 +39,12 @@ pub struct AppModel {
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
     dialogs: DialogState,
+    /// Available network interfaces for the interface dialog.
+    interface_options: Vec<String>,
+    /// Whether interface discovery is in progress.
+    interface_loading: bool,
+    /// Error message when interface discovery fails.
+    interface_error: Option<String>,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
@@ -62,6 +68,7 @@ pub enum Message {
     },
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
+    InterfacesLoaded(Result<Vec<String>, BrokerError>),
     DefaultZoneSet(Result<(), BrokerError>),
     ZoneCreated {
         zone_name: String,
@@ -144,6 +151,9 @@ impl cosmic::Application for AppModel {
             zone_view: ZoneViewState::Empty,
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
+            interface_options: Vec::new(),
+            interface_loading: false,
+            interface_error: None,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -282,6 +292,15 @@ impl cosmic::Application for AppModel {
             return None;
         }
 
+        let interface_error = self
+            .dialogs
+            .interface
+            .error
+            .as_deref()
+            .or(self.interface_error.as_deref());
+        let can_submit_interface = self.dialogs.interface.error.is_none()
+            && !self.dialogs.interface.interface.trim().is_empty();
+
         Some(match self.context_page {
             ContextPage::About => context_drawer::about(
                 &self.about,
@@ -303,11 +322,19 @@ impl cosmic::Application for AppModel {
             .footer(drawer_footer(DialogKind::Port))
             .map(Message::Dialog),
             ContextPage::AddInterface => context_drawer::context_drawer(
-                interface_drawer(&self.dialogs.interface),
+                interface_drawer(
+                    &self.dialogs.interface,
+                    &self.interface_options,
+                    self.interface_loading,
+                    interface_error,
+                ),
                 DialogMessage::Cancel(DialogKind::Interface),
             )
             .title("Add Interface")
-            .footer(drawer_footer(DialogKind::Interface))
+            .footer(drawer_footer_with_submit(
+                DialogKind::Interface,
+                can_submit_interface,
+            ))
             .map(Message::Dialog),
             ContextPage::AddSource => context_drawer::context_drawer(
                 source_drawer(&self.dialogs.source),
@@ -391,6 +418,7 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::ToggleContextPage(context_page) => {
+                let mut tasks = Vec::new();
                 if self.context_page == context_page {
                     // Close the context drawer if the toggled context page is the same.
                     self.core.window.show_context = !self.core.window.show_context;
@@ -401,6 +429,12 @@ impl cosmic::Application for AppModel {
                 }
                 if self.core.window.show_context {
                     self.reset_dialog_for_context(context_page);
+                    if context_page == ContextPage::AddInterface {
+                        tasks.push(self.start_interfaces_load());
+                    }
+                }
+                if !tasks.is_empty() {
+                    return Task::batch(tasks);
                 }
             }
 
@@ -492,6 +526,28 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
+            Message::InterfacesLoaded(result) => {
+                self.interface_loading = false;
+                match result {
+                    Ok(interfaces) => {
+                        self.interface_options = interfaces;
+                        self.interface_error = None;
+                        if !self.interface_options.is_empty()
+                            && !self
+                                .interface_options
+                                .iter()
+                                .any(|iface| iface == &self.dialogs.interface.interface)
+                        {
+                            self.dialogs.interface.interface.clear();
+                            self.dialogs.interface.error = None;
+                        }
+                    }
+                    Err(error) => {
+                        self.interface_options.clear();
+                        self.interface_error = Some(error.to_string());
+                    }
+                }
+            }
             Message::DefaultZoneSet(result) => match result {
                 Ok(()) => {
                     return self.start_default_zone_load();
@@ -662,6 +718,20 @@ impl AppModel {
         }
     }
 
+    fn validate_interface_value(&mut self) -> bool {
+        let interface = self.dialogs.interface.interface.trim();
+        match validate_interface_name(interface) {
+            Ok(()) => {
+                self.dialogs.interface.error = None;
+                true
+            }
+            Err(message) => {
+                self.dialogs.interface.error = Some(message);
+                false
+            }
+        }
+    }
+
     fn handle_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Message>> {
         self.sidebar.activate(id);
 
@@ -688,7 +758,7 @@ impl AppModel {
                 self.context_page = ContextPage::AddInterface;
                 self.core.window.show_context = true;
                 self.reset_dialog_for_context(ContextPage::AddInterface);
-                task
+                Task::batch(vec![task, self.start_interfaces_load()])
             }
             NavMenuAction::SetDefaultZone(id) => {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
@@ -740,8 +810,18 @@ impl AppModel {
             DialogMessage::PortForwardDestPortChanged(value) => {
                 self.dialogs.port.dest_port = value;
             }
+            DialogMessage::InterfaceSelected(index) => {
+                if index == 0 {
+                    self.dialogs.interface.interface.clear();
+                    self.dialogs.interface.error = None;
+                } else if let Some(interface) = self.interface_options.get(index - 1) {
+                    self.dialogs.interface.interface = interface.clone();
+                    self.validate_interface_value();
+                }
+            }
             DialogMessage::InterfaceNameChanged(value) => {
                 self.dialogs.interface.interface = value;
+                self.validate_interface_value();
             }
             DialogMessage::SourceAddressChanged(value) => {
                 self.dialogs.source.source = value;
@@ -796,12 +876,12 @@ impl AppModel {
                 return self.start_port_add(zone_name, port, protocol);
             }
             DialogMessage::Submit(DialogKind::Interface) => {
+                if !self.validate_interface_value() {
+                    return Task::none();
+                }
                 let interface = self.dialogs.interface.interface.trim().to_string();
                 self.dialogs.reset(DialogKind::Interface);
                 self.close_context_drawer();
-                if interface.is_empty() {
-                    return Task::none();
-                }
                 let Some(zone_name) = self.current_zone_name() else {
                     return Task::none();
                 };
@@ -914,6 +994,11 @@ impl AppModel {
     async fn load_active_zones() -> Result<HashSet<String>, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_active_zones().await
+    }
+
+    async fn load_interfaces() -> Result<Vec<String>, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_interfaces().await
     }
 
     async fn set_default_zone(zone_name: String) -> Result<(), BrokerError> {
@@ -1080,6 +1165,15 @@ impl AppModel {
     fn start_active_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
         Task::perform(Self::load_active_zones(), |result| {
             cosmic::Action::from(Message::ActiveZonesLoaded(result))
+        })
+    }
+
+    fn start_interfaces_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.interface_loading = true;
+        self.interface_error = None;
+        self.interface_options.clear();
+        Task::perform(Self::load_interfaces(), |result| {
+            cosmic::Action::from(Message::InterfacesLoaded(result))
         })
     }
 

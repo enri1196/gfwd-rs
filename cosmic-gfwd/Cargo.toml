@@ -8,7 +8,7 @@ repository = "https://github.com/pop-os/cosmic-app-template"
 
 [dependencies]
 futures-util = "0.3.31"
-gfwd-bus = { path = "../gfwd-bus", features = ["config_firewalld1", "config_ipset", "config_zone", "firewalld1", "zone"] }
+gfwd-bus = { path = "../gfwd-bus", features = ["config_firewalld1", "config_ipset", "config_zone", "firewalld1", "network_manager", "zone"] }
 i18n-embed = { version = "0.16", features = [
     "fluent-system",
     "desktop-requester",

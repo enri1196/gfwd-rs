@@ -9,7 +9,7 @@ use zbus_macros::proxy;
 /// Proxy for the `org.freedesktop.NetworkManager` interface
 pub trait NetworkManager {
     /// Get the list of realized network devices
-    #[zbus(name = "getDevices")]
+    #[zbus(name = "GetDevices")]
     fn get_devices(&self) -> zbus::Result<Vec<zvariant::OwnedObjectPath>>;
 }
 
