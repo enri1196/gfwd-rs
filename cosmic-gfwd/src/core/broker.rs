@@ -1,6 +1,7 @@
 use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use gfwd_bus::config_ipset::ConfigIPSetProxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
+use gfwd_bus::firewalld1::FirewallD1Proxy;
 use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
@@ -67,6 +68,12 @@ impl FwdBroker {
     pub async fn get_default_zone(&self) -> Result<String, BrokerError> {
         let cfg = self.config().await?;
         Ok(cfg.default_zone().await?)
+    }
+
+    pub async fn set_default_zone(&self, zone_name: &str) -> Result<(), BrokerError> {
+        let proxy = FirewallD1Proxy::new(&self.conn).await?;
+        proxy.set_default_zone(zone_name).await?;
+        Ok(())
     }
 
     pub async fn get_active_zones(&self) -> Result<HashSet<String>, BrokerError> {

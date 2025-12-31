@@ -16,6 +16,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, about::About, menu, nav_bar};
+use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -61,6 +62,7 @@ pub enum Message {
     },
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
+    DefaultZoneSet(Result<(), BrokerError>),
     ZoneCreated {
         zone_name: String,
         result: Result<(), BrokerError>,
@@ -231,8 +233,14 @@ impl cosmic::Application for AppModel {
         &self,
         id: nav_bar::Id,
     ) -> Option<Vec<menu::Tree<cosmic::Action<Self::Message>>>> {
-        let Some(item) = self.sidebar.item_for_id(id) else {
-            return None;
+        let context_id = if id.is_null() {
+            self.sidebar.nav_model().active()
+        } else {
+            id
+        };
+
+        let Some(item) = self.sidebar.item_for_id(context_id) else {
+            return Some(Vec::new());
         };
 
         match item {
@@ -244,17 +252,27 @@ impl cosmic::Application for AppModel {
                         menu::Item::Button(
                             fl!("context-open-zone"),
                             None,
-                            NavMenuAction::OpenZone(id),
+                            NavMenuAction::OpenZone(context_id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-activate-zone"),
+                            None,
+                            NavMenuAction::ActivateZone(context_id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-set-default-zone"),
+                            None,
+                            NavMenuAction::SetDefaultZone(context_id),
                         ),
                         menu::Item::Button(
                             fl!("context-delete-zone"),
                             None,
-                            NavMenuAction::DeleteZone(id),
+                            NavMenuAction::DeleteZone(context_id),
                         ),
                     ],
                 ))
             }
-            _ => None,
+            _ => Some(Vec::new()),
         }
     }
 
@@ -474,6 +492,14 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
+            Message::DefaultZoneSet(result) => match result {
+                Ok(()) => {
+                    return self.start_default_zone_load();
+                }
+                Err(error) => {
+                    eprintln!("failed to set default zone: {error}");
+                }
+            },
             Message::ZoneCreated { zone_name, result } => match result {
                 Ok(()) => {
                     return self.start_zones_load();
@@ -510,12 +536,15 @@ impl cosmic::Application for AppModel {
             Message::ZoneItemAdded { zone_name, result }
             | Message::ZoneItemRemoved { zone_name, result } => match result {
                 Ok(()) => {
-                    if matches!(
+                    let is_active = matches!(
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    ) {
-                        return self.start_zone_load(zone_name);
+                    );
+                    let active_task = self.start_active_zones_load();
+                    if is_active {
+                        return Task::batch(vec![self.start_zone_load(zone_name), active_task]);
                     }
+                    return active_task;
                 }
                 Err(error) => {
                     if matches!(
@@ -628,6 +657,7 @@ impl AppModel {
     fn current_zone_name(&self) -> Option<String> {
         match &self.zone_view {
             ZoneViewState::Ready(details) => Some(details.name.clone()),
+            ZoneViewState::Loading { zone } => Some(zone.clone()),
             _ => None,
         }
     }
@@ -650,6 +680,22 @@ impl AppModel {
     fn handle_nav_menu_action(&mut self, action: NavMenuAction) -> Task<cosmic::Action<Message>> {
         match action {
             NavMenuAction::OpenZone(id) => self.handle_nav_select(id),
+            NavMenuAction::ActivateZone(id) => {
+                if self.sidebar.zone_name_for_id(id).is_none() {
+                    return Task::none();
+                }
+                let task = self.handle_nav_select(id);
+                self.context_page = ContextPage::AddInterface;
+                self.core.window.show_context = true;
+                self.reset_dialog_for_context(ContextPage::AddInterface);
+                task
+            }
+            NavMenuAction::SetDefaultZone(id) => {
+                let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
+                    return Task::none();
+                };
+                self.start_default_zone_set(zone_name)
+            }
             NavMenuAction::DeleteZone(id) => {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
                     return Task::none();
@@ -870,6 +916,11 @@ impl AppModel {
         broker.get_active_zones().await
     }
 
+    async fn set_default_zone(zone_name: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.set_default_zone(&zone_name).await
+    }
+
     async fn remove_zone(zone_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.remove_zone(&zone_name).await
@@ -1029,6 +1080,12 @@ impl AppModel {
     fn start_active_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
         Task::perform(Self::load_active_zones(), |result| {
             cosmic::Action::from(Message::ActiveZonesLoaded(result))
+        })
+    }
+
+    fn start_default_zone_set(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        Task::perform(Self::set_default_zone(zone_name), |result| {
+            cosmic::Action::from(Message::DefaultZoneSet(result))
         })
     }
 
@@ -1361,6 +1418,8 @@ fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NavMenuAction {
     OpenZone(nav_bar::Id),
+    ActivateZone(nav_bar::Id),
+    SetDefaultZone(nav_bar::Id),
     DeleteZone(nav_bar::Id),
 }
 

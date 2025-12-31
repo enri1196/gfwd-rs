@@ -1082,6 +1082,7 @@ dependencies = [
  "libcosmic",
  "open",
  "rust-embed",
+ "slotmap",
  "tokio",
  "zbus 5.12.0",
 ]
