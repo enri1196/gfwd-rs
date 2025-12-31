@@ -4,9 +4,9 @@ pub mod sidebar;
 pub mod zone_view;
 
 pub use dialog_drawers::{
-    drawer_footer, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
-    source_drawer, target_from_index, DialogKind, DialogMessage, DialogState,
+    DialogKind, DialogMessage, DialogState, drawer_footer, icmp_drawer, interface_drawer,
+    ipset_drawer, port_drawer, rich_rule_drawer, source_drawer, target_from_index,
 };
-pub use ipset_view::{view_ipset_content, IpSetViewAction, IpSetViewState};
+pub use ipset_view::{IpSetViewAction, IpSetViewState, view_ipset_content};
 pub use sidebar::{Sidebar, SidebarItem};
-pub use zone_view::{view_zone_content, ZoneViewAction, ZoneViewState};
+pub use zone_view::{ZoneViewAction, ZoneViewState, view_zone_content};

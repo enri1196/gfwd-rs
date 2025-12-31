@@ -5,10 +5,10 @@ use crate::core::{BrokerError, FwdBroker};
 use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
-    drawer_footer, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
-    source_drawer, target_from_index, view_ipset_content, view_zone_content, DialogKind,
-    DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState,
+    DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
+    ZoneViewAction, ZoneViewState, drawer_footer, icmp_drawer, interface_drawer, ipset_drawer,
+    port_drawer, rich_rule_drawer, source_drawer, target_from_index, view_ipset_content,
+    view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -189,11 +189,7 @@ impl cosmic::Application for AppModel {
                             MenuAction::AddRichRule,
                         ),
                         menu::Item::Button(fl!("action-add-icmp"), None, MenuAction::AddIcmp),
-                        menu::Item::Button(
-                            fl!("action-add-source"),
-                            None,
-                            MenuAction::AddSource,
-                        ),
+                        menu::Item::Button(fl!("action-add-source"), None, MenuAction::AddSource),
                         menu::Item::Button(
                             fl!("action-add-interface"),
                             None,
@@ -687,8 +683,7 @@ impl AppModel {
                 self.dialogs.port.port = value;
             }
             DialogMessage::PortProtocolSelected(index) => {
-                self.dialogs.port.protocol =
-                    crate::ui::dialog_drawers::protocol_from_index(index);
+                self.dialogs.port.protocol = crate::ui::dialog_drawers::protocol_from_index(index);
             }
             DialogMessage::PortForwardingToggled(value) => {
                 self.dialogs.port.forwarding = value;
@@ -715,8 +710,7 @@ impl AppModel {
                 self.dialogs.ipset.name = value;
             }
             DialogMessage::IpSetTypeSelected(index) => {
-                self.dialogs.ipset.ipset_type =
-                    crate::ui::dialog_drawers::ipset_from_index(index);
+                self.dialogs.ipset.ipset_type = crate::ui::dialog_drawers::ipset_from_index(index);
             }
             DialogMessage::IpSetEntriesChanged(value) => {
                 self.dialogs.ipset.entries = value;
@@ -750,7 +744,8 @@ impl AppModel {
                     if dest_port.is_empty() {
                         return Task::none();
                     }
-                    return self.start_forward_port_add(zone_name, port, protocol, dest_port, dest_ip);
+                    return self
+                        .start_forward_port_add(zone_name, port, protocol, dest_port, dest_ip);
                 }
                 return self.start_port_add(zone_name, port, protocol);
             }
@@ -974,7 +969,9 @@ impl AppModel {
         protocol: String,
     ) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
-        broker.remove_source_port(&zone_name, &port, &protocol).await
+        broker
+            .remove_source_port(&zone_name, &port, &protocol)
+            .await
     }
 
     async fn remove_icmp_block(zone_name: String, icmp: String) -> Result<(), BrokerError> {
@@ -1113,11 +1110,7 @@ impl AppModel {
         })
     }
 
-    fn start_icmp_add(
-        &mut self,
-        zone_name: String,
-        icmp: String,
-    ) -> Task<cosmic::Action<Message>> {
+    fn start_icmp_add(&mut self, zone_name: String, icmp: String) -> Task<cosmic::Action<Message>> {
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_icmp_block(zone_name, icmp), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1166,14 +1159,15 @@ impl AppModel {
                     })
                 })
             }
-            ZoneViewAction::RemoveInterface(interface) => {
-                Task::perform(Self::remove_interface(zone_name, interface), move |result| {
+            ZoneViewAction::RemoveInterface(interface) => Task::perform(
+                Self::remove_interface(zone_name, interface),
+                move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
                     })
-                })
-            }
+                },
+            ),
             ZoneViewAction::RemoveSource(source) => {
                 Task::perform(Self::remove_source(zone_name, source), move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {
@@ -1182,14 +1176,15 @@ impl AppModel {
                     })
                 })
             }
-            ZoneViewAction::RemovePort { port, protocol } => {
-                Task::perform(Self::remove_port(zone_name, port, protocol), move |result| {
+            ZoneViewAction::RemovePort { port, protocol } => Task::perform(
+                Self::remove_port(zone_name, port, protocol),
+                move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
                     })
-                })
-            }
+                },
+            ),
             ZoneViewAction::RemoveForwardPort {
                 port,
                 protocol,
@@ -1204,14 +1199,15 @@ impl AppModel {
                     })
                 },
             ),
-            ZoneViewAction::RemoveSourcePort { port, protocol } => {
-                Task::perform(Self::remove_source_port(zone_name, port, protocol), move |result| {
+            ZoneViewAction::RemoveSourcePort { port, protocol } => Task::perform(
+                Self::remove_source_port(zone_name, port, protocol),
+                move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
                     })
-                })
-            }
+                },
+            ),
             ZoneViewAction::RemoveIcmpBlock(icmp) => {
                 Task::perform(Self::remove_icmp_block(zone_name, icmp), move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {

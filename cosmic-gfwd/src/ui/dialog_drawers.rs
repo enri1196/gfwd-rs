@@ -170,9 +170,12 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
             .title(fl!("dialog-zone-section-basic"))
             .add(
                 settings::item::builder(fl!("dialog-zone-name-label")).control(
-                    widget::text_input::text_input(fl!("dialog-zone-name-placeholder"), &state.name)
-                        .on_input(DialogMessage::ZoneNameChanged)
-                        .width(Length::Fill),
+                    widget::text_input::text_input(
+                        fl!("dialog-zone-name-placeholder"),
+                        &state.name,
+                    )
+                    .on_input(DialogMessage::ZoneNameChanged)
+                    .width(Length::Fill),
                 ),
             )
             .add(
@@ -181,8 +184,8 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-zone-description-placeholder"),
                         &state.description,
                     )
-                        .on_input(DialogMessage::ZoneDescriptionChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::ZoneDescriptionChanged)
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -190,8 +193,12 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
             .title(fl!("dialog-zone-section-target"))
             .add(
                 settings::item::builder(fl!("dialog-zone-target-label")).control(
-                    dropdown(target_labels, target_selected, DialogMessage::ZoneTargetSelected)
-                        .width(Length::Fill),
+                    dropdown(
+                        target_labels,
+                        target_selected,
+                        DialogMessage::ZoneTargetSelected,
+                    )
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -212,18 +219,19 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
             .title(fl!("dialog-port-section"))
             .add(
                 settings::item::builder(fl!("dialog-port-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-port-placeholder"),
-                        &state.port,
-                    )
+                    widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)
                         .on_input(DialogMessage::PortNumberChanged)
                         .width(Length::Fill),
                 ),
             )
             .add(
                 settings::item::builder(fl!("dialog-port-protocol-label")).control(
-                    dropdown(&PORT_PROTOCOLS, protocol_selected, DialogMessage::PortProtocolSelected)
-                        .width(Length::Fill),
+                    dropdown(
+                        &PORT_PROTOCOLS,
+                        protocol_selected,
+                        DialogMessage::PortProtocolSelected,
+                    )
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -233,10 +241,10 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
         settings::section()
             .title(fl!("dialog-port-forwarding-section"))
             .add(
-                settings::item::builder(fl!("dialog-port-forwarding-toggle"))
-                    .control(widget::toggler(state.forwarding).on_toggle(
-                        DialogMessage::PortForwardingToggled,
-                    )),
+                settings::item::builder(fl!("dialog-port-forwarding-toggle")).control(
+                    widget::toggler(state.forwarding)
+                        .on_toggle(DialogMessage::PortForwardingToggled),
+                ),
             )
             .into(),
     );
@@ -251,8 +259,8 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                             fl!("dialog-port-dest-ip-placeholder"),
                             &state.dest_ip,
                         )
-                            .on_input(DialogMessage::PortForwardDestIpChanged)
-                            .width(Length::Fill),
+                        .on_input(DialogMessage::PortForwardDestIpChanged)
+                        .width(Length::Fill),
                     ),
                 )
                 .add(
@@ -261,8 +269,8 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                             fl!("dialog-port-dest-port-placeholder"),
                             &state.dest_port,
                         )
-                            .on_input(DialogMessage::PortForwardDestPortChanged)
-                            .width(Length::Fill),
+                        .on_input(DialogMessage::PortForwardDestPortChanged)
+                        .width(Length::Fill),
                     ),
                 )
                 .into(),
@@ -287,8 +295,8 @@ pub fn interface_drawer<'a>(state: &'a InterfaceFormState) -> cosmic::Element<'a
                         fl!("dialog-interface-name-placeholder"),
                         &state.interface,
                     )
-                        .on_input(DialogMessage::InterfaceNameChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::InterfaceNameChanged)
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -306,10 +314,7 @@ pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Dial
             .title(fl!("dialog-source-section"))
             .add(
                 settings::item::builder(fl!("dialog-source-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-source-placeholder"),
-                        &state.source,
-                    )
+                    widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
                         .on_input(DialogMessage::SourceAddressChanged)
                         .width(Length::Fill),
                 ),
@@ -333,8 +338,8 @@ pub fn icmp_drawer<'a>(state: &'a IcmpFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-icmp-type-placeholder"),
                         &state.icmp_type,
                     )
-                        .on_input(DialogMessage::IcmpTypeChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::IcmpTypeChanged)
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -356,8 +361,8 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                         fl!("dialog-rich-rule-placeholder"),
                         &state.rule,
                     )
-                        .on_input(DialogMessage::RichRuleChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::RichRuleChanged)
+                    .width(Length::Fill),
                 ),
             )
             .into(),
@@ -381,14 +386,18 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
                         fl!("dialog-ipset-name-placeholder"),
                         &state.name,
                     )
-                        .on_input(DialogMessage::IpSetNameChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::IpSetNameChanged)
+                    .width(Length::Fill),
                 ),
             )
             .add(
                 settings::item::builder(fl!("dialog-ipset-type-label")).control(
-                    dropdown(&IPSET_TYPES, type_selected, DialogMessage::IpSetTypeSelected)
-                        .width(Length::Fill),
+                    dropdown(
+                        &IPSET_TYPES,
+                        type_selected,
+                        DialogMessage::IpSetTypeSelected,
+                    )
+                    .width(Length::Fill),
                 ),
             )
             .add(
@@ -397,8 +406,8 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
                         fl!("dialog-ipset-entries-placeholder"),
                         &state.entries,
                     )
-                        .on_input(DialogMessage::IpSetEntriesChanged)
-                        .width(Length::Fill),
+                    .on_input(DialogMessage::IpSetEntriesChanged)
+                    .width(Length::Fill),
                 ),
             )
             .into(),

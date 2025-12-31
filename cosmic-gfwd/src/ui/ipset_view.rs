@@ -91,24 +91,20 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
             settings::section()
                 .title(fl!("ipset-section-details"))
                 .add(
-                    settings::item::builder(fl!("ipset-detail-name")).control(widget::text(
-                        details.name.as_str(),
-                    )),
+                    settings::item::builder(fl!("ipset-detail-name"))
+                        .control(widget::text(details.name.as_str())),
                 )
                 .add(
-                    settings::item::builder(fl!("ipset-detail-type")).control(widget::text(
-                        details.ipset_type.as_str(),
-                    )),
+                    settings::item::builder(fl!("ipset-detail-type"))
+                        .control(widget::text(details.ipset_type.as_str())),
                 )
                 .add(
-                    settings::item::builder(fl!("ipset-detail-entries")).control(widget::text(
-                        details.entries.len().to_string(),
-                    )),
+                    settings::item::builder(fl!("ipset-detail-entries"))
+                        .control(widget::text(details.entries.len().to_string())),
                 )
                 .add(
-                    settings::item::builder(fl!("ipset-detail-options")).control(widget::text(
-                        details.options.len().to_string(),
-                    )),
+                    settings::item::builder(fl!("ipset-detail-options"))
+                        .control(widget::text(details.options.len().to_string())),
                 )
                 .into(),
         );
@@ -117,12 +113,9 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
         let add_message = can_add_entry.then_some(map(IpSetViewAction::AddEntry));
         let entry_input_row = widget::row::with_capacity(2)
             .push(
-                widget::text_input::text_input(
-                    fl!("ipset-entry-placeholder"),
-                    &state.entry_input,
-                )
-                .on_input(move |value| map(IpSetViewAction::EntryInputChanged(value)))
-                .width(Length::Fill),
+                widget::text_input::text_input(fl!("ipset-entry-placeholder"), &state.entry_input)
+                    .on_input(move |value| map(IpSetViewAction::EntryInputChanged(value)))
+                    .width(Length::Fill),
             )
             .push(button::suggested(fl!("ipset-entry-add")).on_press_maybe(add_message))
             .spacing(cosmic::theme::spacing().space_s)
@@ -143,9 +136,12 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
             let entries_list = widget::column::with_capacity(details.entries.len())
                 .spacing(spacing)
                 .width(Length::Fill)
-                .extend(details.entries.iter().map(|entry| {
-                    entry_item_row(entry, map)
-                }));
+                .extend(
+                    details
+                        .entries
+                        .iter()
+                        .map(|entry| entry_item_row(entry, map)),
+                );
             let entries_element = list_with_scroll(entries_list, details.entries.len());
             entries_section = entries_section.add(entries_element);
         }

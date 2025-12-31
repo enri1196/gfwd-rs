@@ -21,14 +21,20 @@ pub enum ZoneViewAction {
     RemoveService(String),
     RemoveInterface(String),
     RemoveSource(String),
-    RemovePort { port: String, protocol: String },
+    RemovePort {
+        port: String,
+        protocol: String,
+    },
     RemoveForwardPort {
         port: String,
         protocol: String,
         to_port: String,
         to_addr: String,
     },
-    RemoveSourcePort { port: String, protocol: String },
+    RemoveSourcePort {
+        port: String,
+        protocol: String,
+    },
     RemoveIcmpBlock(String),
     RemoveRichRule(String),
 }
@@ -39,9 +45,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
 ) -> cosmic::Element<'a, Message> {
     let content = match state {
         ZoneViewState::Empty => centered_message("Select a zone to view details"),
-        ZoneViewState::Loading { zone } => {
-            centered_message(format!("Loading {zone} settings..."))
-        }
+        ZoneViewState::Loading { zone } => centered_message(format!("Loading {zone} settings...")),
         ZoneViewState::Error { zone, message } => error_message(zone, message),
         ZoneViewState::Ready(details) => zone_details(details, map),
     };
@@ -69,16 +73,20 @@ fn zone_details<'a, Message: 'static + Clone>(
     let overview = settings::section()
         .title("Overview")
         .add(settings::item::builder("Target").control(widget::text(details.target.to_string())))
-        .add(settings::item::builder("Masquerading").control(widget::text(bool_label(
-            details.masquerade,
-        ))))
+        .add(
+            settings::item::builder("Masquerading")
+                .control(widget::text(bool_label(details.masquerade))),
+        )
         .add(
             settings::item::builder("ICMP Block Inversion")
                 .control(widget::text(bool_label(details.icmp_block_inversion))),
         )
-        .add(settings::item::builder("Protocols").control(widget::text(
-            list_or_none(&details.protocols, "No protocols configured"),
-        )));
+        .add(
+            settings::item::builder("Protocols").control(widget::text(list_or_none(
+                &details.protocols,
+                "No protocols configured",
+            ))),
+        );
 
     let services = list_section(
         "Services",
@@ -98,10 +106,12 @@ fn zone_details<'a, Message: 'static + Clone>(
             .interfaces
             .iter()
             .cloned()
-            .map(|interface| (
-                interface.clone(),
-                ZoneViewAction::RemoveInterface(interface),
-            ))
+            .map(|interface| {
+                (
+                    interface.clone(),
+                    ZoneViewAction::RemoveInterface(interface),
+                )
+            })
             .collect(),
         "No interfaces assigned",
         map,
@@ -125,10 +135,12 @@ fn zone_details<'a, Message: 'static + Clone>(
             .ports
             .iter()
             .cloned()
-            .map(|(port, protocol)| (
-                format!("{}/{}", port, protocol),
-                ZoneViewAction::RemovePort { port, protocol },
-            ))
+            .map(|(port, protocol)| {
+                (
+                    format!("{}/{}", port, protocol),
+                    ZoneViewAction::RemovePort { port, protocol },
+                )
+            })
             .collect(),
         "No ports configured",
         map,
@@ -140,19 +152,21 @@ fn zone_details<'a, Message: 'static + Clone>(
             .forward_ports
             .iter()
             .cloned()
-            .map(|(port, protocol, to_port, to_addr)| (
-                if to_addr.is_empty() {
-                    format!("{}/{} -> {}", port, protocol, to_port)
-                } else {
-                    format!("{}/{} -> {} ({})", port, protocol, to_port, to_addr)
-                },
-                ZoneViewAction::RemoveForwardPort {
-                    port,
-                    protocol,
-                    to_port,
-                    to_addr,
-                },
-            ))
+            .map(|(port, protocol, to_port, to_addr)| {
+                (
+                    if to_addr.is_empty() {
+                        format!("{}/{} -> {}", port, protocol, to_port)
+                    } else {
+                        format!("{}/{} -> {} ({})", port, protocol, to_port, to_addr)
+                    },
+                    ZoneViewAction::RemoveForwardPort {
+                        port,
+                        protocol,
+                        to_port,
+                        to_addr,
+                    },
+                )
+            })
             .collect(),
         "No forwarded ports configured",
         map,
@@ -164,10 +178,12 @@ fn zone_details<'a, Message: 'static + Clone>(
             .source_ports
             .iter()
             .cloned()
-            .map(|(port, protocol)| (
-                format!("{}/{}", port, protocol),
-                ZoneViewAction::RemoveSourcePort { port, protocol },
-            ))
+            .map(|(port, protocol)| {
+                (
+                    format!("{}/{}", port, protocol),
+                    ZoneViewAction::RemoveSourcePort { port, protocol },
+                )
+            })
             .collect(),
         "No source ports configured",
         map,
@@ -228,7 +244,9 @@ fn zone_details<'a, Message: 'static + Clone>(
         .into()
 }
 
-fn zone_description<'a, Message: 'static>(details: &'a ZoneDetails) -> cosmic::Element<'a, Message> {
+fn zone_description<'a, Message: 'static>(
+    details: &'a ZoneDetails,
+) -> cosmic::Element<'a, Message> {
     if details.description.trim().is_empty() {
         widget::text::caption("Firewall zone configuration").into()
     } else {
@@ -253,9 +271,11 @@ fn list_section<'a, Message: 'static + Clone>(
     let list = widget::column::with_capacity(items_len)
         .spacing(spacing)
         .width(Length::Fill)
-        .extend(items.into_iter().map(|(label, action)| {
-            list_item_row(label, action, map)
-        }));
+        .extend(
+            items
+                .into_iter()
+                .map(|(label, action)| list_item_row(label, action, map)),
+        );
 
     let list_element: cosmic::Element<'a, Message> = if items_len > MAX_LIST_ITEMS {
         let max_height = LIST_ITEM_HEIGHT * MAX_LIST_ITEMS as f32;
@@ -297,13 +317,8 @@ fn list_or_none(items: &[String], empty_label: &str) -> String {
     }
 }
 
-
 fn bool_label(value: bool) -> &'static str {
-    if value {
-        "Enabled"
-    } else {
-        "Disabled"
-    }
+    if value { "Enabled" } else { "Disabled" }
 }
 
 fn centered_message<'a, Message: 'static>(
@@ -318,10 +333,7 @@ fn centered_message<'a, Message: 'static>(
         .into()
 }
 
-fn error_message<'a, Message: 'static>(
-    zone: &str,
-    message: &str,
-) -> cosmic::Element<'a, Message> {
+fn error_message<'a, Message: 'static>(zone: &str, message: &str) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let content = widget::column::with_capacity(2)
         .push(widget::text::title2(format!("Failed to load {zone}")))

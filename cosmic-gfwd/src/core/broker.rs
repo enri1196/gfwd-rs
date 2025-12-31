@@ -139,11 +139,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn add_interface(
-        &self,
-        zone_name: &str,
-        interface: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn add_interface(&self, zone_name: &str, interface: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -154,11 +150,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn add_source(
-        &self,
-        zone_name: &str,
-        source: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn add_source(&self, zone_name: &str, source: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -169,11 +161,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn add_icmp_block(
-        &self,
-        zone_name: &str,
-        icmp: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn add_icmp_block(&self, zone_name: &str, icmp: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -184,11 +172,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn add_rich_rule(
-        &self,
-        zone_name: &str,
-        rule: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn add_rich_rule(&self, zone_name: &str, rule: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -209,11 +193,7 @@ impl FwdBroker {
         proxy.remove().await?;
         Ok(())
     }
-    pub async fn remove_service(
-        &self,
-        zone_name: &str,
-        service: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn remove_service(&self, zone_name: &str, service: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -239,11 +219,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn remove_source(
-        &self,
-        zone_name: &str,
-        source: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn remove_source(&self, zone_name: &str, source: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -306,11 +282,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn remove_icmp_block(
-        &self,
-        zone_name: &str,
-        icmp: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn remove_icmp_block(&self, zone_name: &str, icmp: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -321,11 +293,7 @@ impl FwdBroker {
         Ok(())
     }
 
-    pub async fn remove_rich_rule(
-        &self,
-        zone_name: &str,
-        rule: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn remove_rich_rule(&self, zone_name: &str, rule: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_zone_by_name(zone_name).await?;
         let proxy = ConfigZoneProxy::builder(&self.conn)
@@ -335,7 +303,6 @@ impl FwdBroker {
         proxy.remove_rich_rule(rule).await?;
         Ok(())
     }
-
 
     pub async fn get_zone_details(&self, zone_name: &str) -> Result<ZoneDetails, BrokerError> {
         let cfg = self.config().await?;
@@ -422,11 +389,7 @@ impl FwdBroker {
         })
     }
 
-    pub async fn add_ipset_entry(
-        &self,
-        ipset_name: &str,
-        entry: &str,
-    ) -> Result<(), BrokerError> {
+    pub async fn add_ipset_entry(&self, ipset_name: &str, entry: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;
         let path = cfg.get_ipset_by_name(ipset_name).await?;
         let proxy = ConfigIPSetProxy::builder(&self.conn)
@@ -450,7 +413,6 @@ impl FwdBroker {
         proxy.remove_entry(entry).await?;
         Ok(())
     }
-
 
     pub async fn create_ipset(
         &self,
