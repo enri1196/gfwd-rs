@@ -5,8 +5,9 @@ pub mod validation;
 
 pub use broker::{BrokerError, FirewalldStatus, FwdBroker};
 pub use reconciliation::{
-    CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliation, ZoneSetting,
-    ZoneSettingDifference, ZoneSettingsParseError, ZoneSettingsSnapshot,
+    CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliation,
+    ZoneReconciliationData, ZoneReconciliationState, ZoneSetting, ZoneSettingDifference,
+    ZoneSettingsParseError, ZoneSettingsSnapshot,
 };
 pub use rich_rule::{RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec};
 pub use validation::{

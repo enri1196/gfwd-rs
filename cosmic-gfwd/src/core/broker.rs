@@ -9,6 +9,7 @@ use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
 
+use super::reconciliation::{ZoneReconciliationData, ZoneSettingsParseError, ZoneSettingsSnapshot};
 use std::collections::HashSet;
 
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
@@ -55,6 +56,12 @@ impl From<zbus::Error> for BrokerError {
     }
 }
 
+impl From<ZoneSettingsParseError> for BrokerError {
+    fn from(error: ZoneSettingsParseError) -> Self {
+        Self::new(error.to_string())
+    }
+}
+
 #[derive(Debug)]
 /// Shared owner of all firewalld, systemd, and NetworkManager D-Bus proxies.
 pub struct FwdBroker {
@@ -85,6 +92,37 @@ impl FwdBroker {
             .path(path)?
             .build()
             .await?)
+    }
+
+    /// Load and decode every known permanent setting for a zone.
+    pub async fn permanent_zone_snapshot(
+        &self,
+        zone_name: &str,
+    ) -> Result<ZoneSettingsSnapshot, BrokerError> {
+        let settings = self.zone(zone_name).await?.get_settings2().await?;
+        Ok(ZoneSettingsSnapshot::from_settings(settings)?)
+    }
+
+    /// Load and decode every known runtime setting for a zone.
+    pub async fn runtime_zone_snapshot(
+        &self,
+        zone_name: &str,
+    ) -> Result<ZoneSettingsSnapshot, BrokerError> {
+        let settings = ZoneProxy::new(&self.conn)
+            .await?
+            .get_settings2(zone_name)
+            .await?;
+        Ok(ZoneSettingsSnapshot::from_settings(settings)?)
+    }
+
+    /// Load both selected-zone snapshots and compute their pure reconciliation.
+    pub async fn reconcile_zone(
+        &self,
+        zone_name: &str,
+    ) -> Result<ZoneReconciliationData, BrokerError> {
+        let permanent = self.permanent_zone_snapshot(zone_name).await?;
+        let runtime = self.runtime_zone_snapshot(zone_name).await?;
+        Ok(ZoneReconciliationData::new(permanent, runtime))
     }
 
     /// Permanently enables or disables masquerading for a zone.

@@ -292,6 +292,113 @@ pub struct ZoneReconciliation {
     pub completeness: ComparisonCompleteness,
 }
 
+/// Snapshots and their computed reconciliation for one selected zone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZoneReconciliationData {
+    /// Permanent zone settings.
+    pub permanent: ZoneSettingsSnapshot,
+    /// Runtime zone settings.
+    pub runtime: ZoneSettingsSnapshot,
+    /// Typed comparison of the snapshots.
+    pub reconciliation: ZoneReconciliation,
+}
+
+impl ZoneReconciliationData {
+    /// Build combined reconciliation data from two decoded snapshots.
+    pub fn new(permanent: ZoneSettingsSnapshot, runtime: ZoneSettingsSnapshot) -> Self {
+        let reconciliation = ZoneReconciliation::compare(&permanent, &runtime);
+        Self {
+            permanent,
+            runtime,
+            reconciliation,
+        }
+    }
+}
+
+/// Independently loaded reconciliation state for the selected zone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ZoneReconciliationState {
+    /// The comparison request is in flight.
+    Loading {
+        /// Zone being compared.
+        zone: String,
+    },
+    /// Every known setting matches and all dictionary keys were understood.
+    InSync {
+        /// Zone that was compared.
+        zone: String,
+        /// Loaded snapshots and comparison.
+        data: Box<ZoneReconciliationData>,
+    },
+    /// Known permanent and runtime settings differ.
+    Different {
+        /// Zone that was compared.
+        zone: String,
+        /// Loaded snapshots and comparison.
+        data: Box<ZoneReconciliationData>,
+    },
+    /// Known settings were compared, but unknown keys prevent a definitive result.
+    Incomplete {
+        /// Zone that was compared.
+        zone: String,
+        /// Loaded snapshots and comparison.
+        data: Box<ZoneReconciliationData>,
+    },
+    /// Runtime comparison is not currently available.
+    Unavailable {
+        /// Selected zone, when one exists.
+        zone: Option<String>,
+    },
+    /// A comparison request failed without invalidating permanent zone content.
+    Error {
+        /// Zone whose comparison failed.
+        zone: String,
+        /// Actionable loading error.
+        message: String,
+    },
+}
+
+impl Default for ZoneReconciliationState {
+    fn default() -> Self {
+        Self::Unavailable { zone: None }
+    }
+}
+
+impl ZoneReconciliationState {
+    /// Classify successfully loaded reconciliation data.
+    pub fn from_data(zone: String, data: ZoneReconciliationData) -> Self {
+        if data.reconciliation.is_in_sync() {
+            Self::InSync {
+                zone,
+                data: Box::new(data),
+            }
+        } else if matches!(
+            data.reconciliation.completeness,
+            ComparisonCompleteness::Incomplete { .. }
+        ) {
+            Self::Incomplete {
+                zone,
+                data: Box::new(data),
+            }
+        } else {
+            Self::Different {
+                zone,
+                data: Box::new(data),
+            }
+        }
+    }
+
+    /// Access loaded comparison data for any successful state.
+    pub fn data(&self) -> Option<&ZoneReconciliationData> {
+        match self {
+            Self::InSync { data, .. }
+            | Self::Different { data, .. }
+            | Self::Incomplete { data, .. } => Some(data),
+            Self::Loading { .. } | Self::Unavailable { .. } | Self::Error { .. } => None,
+        }
+    }
+}
+
 impl ZoneReconciliation {
     /// Compare two snapshots without depending on collection ordering.
     pub fn compare(permanent: &ZoneSettingsSnapshot, runtime: &ZoneSettingsSnapshot) -> Self {

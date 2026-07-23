@@ -2,7 +2,8 @@
 
 use crate::config::Config;
 use crate::core::{
-    BrokerError, FirewalldStatus, FwdBroker, validate_interface_name, validate_ipset_entry,
+    BrokerError, FirewalldStatus, FwdBroker, ZoneReconciliationData, ZoneReconciliationState,
+    validate_interface_name, validate_ipset_entry,
 };
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
@@ -38,6 +39,10 @@ pub struct AppModel {
     sidebar: Sidebar,
     /// State for the current zone detail view.
     zone_view: ZoneViewState,
+    /// Runtime/permanent comparison loaded independently from permanent details.
+    zone_reconciliation: ZoneReconciliationState,
+    /// Monotonic identity used to reject late selected-zone comparison results.
+    zone_generation: u64,
     /// State for the IP set view.
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
@@ -90,6 +95,11 @@ pub enum Message {
     ZoneDetailsLoaded {
         zone_name: String,
         result: Result<ZoneDetails, BrokerError>,
+    },
+    ZoneReconciliationLoaded {
+        zone_name: String,
+        generation: u64,
+        result: Result<ZoneReconciliationData, BrokerError>,
     },
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
@@ -196,6 +206,8 @@ impl cosmic::Application for AppModel {
             about,
             sidebar,
             zone_view: ZoneViewState::Empty,
+            zone_reconciliation: ZoneReconciliationState::default(),
+            zone_generation: 0,
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             interface_options: Vec::new(),
@@ -668,6 +680,15 @@ impl cosmic::Application for AppModel {
                     Ok(status) => status,
                     Err(error) => FirewalldStatus::Error(error.to_string()),
                 };
+                if self.firewalld_status == FirewalldStatus::Active {
+                    if let ZoneViewState::Ready(details) = &self.zone_view {
+                        return self.start_zone_reconciliation(details.name.clone());
+                    }
+                } else {
+                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+                        zone: self.current_zone_name(),
+                    };
+                }
             }
             Message::FirewalldControlFinished {
                 apply_permanent,
@@ -714,6 +735,8 @@ impl cosmic::Application for AppModel {
                     _ => {
                         if !matches!(self.zone_view, ZoneViewState::Error { .. }) {
                             self.zone_view = ZoneViewState::Empty;
+                            self.zone_reconciliation =
+                                ZoneReconciliationState::Unavailable { zone: None };
                         }
                         Task::none()
                     }
@@ -732,9 +755,48 @@ impl cosmic::Application for AppModel {
                     return Task::none();
                 }
 
-                self.zone_view = match result {
-                    Ok(details) => ZoneViewState::Ready(Box::new(details)),
-                    Err(error) => ZoneViewState::Error {
+                match result {
+                    Ok(details) => {
+                        self.zone_view = ZoneViewState::Ready(Box::new(details));
+                        if self.firewalld_status == FirewalldStatus::Active {
+                            return self.start_zone_reconciliation(zone_name);
+                        }
+                        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+                            zone: Some(zone_name),
+                        };
+                    }
+                    Err(error) => {
+                        self.zone_view = ZoneViewState::Error {
+                            zone: zone_name.clone(),
+                            message: error.to_string(),
+                        };
+                        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+                            zone: Some(zone_name),
+                        };
+                    }
+                }
+            }
+            Message::ZoneReconciliationLoaded {
+                zone_name,
+                generation,
+                result,
+            } => {
+                let is_current = generation == self.zone_generation
+                    && matches!(
+                        self.sidebar.active_item(),
+                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
+                    )
+                    && matches!(
+                        &self.zone_view,
+                        ZoneViewState::Ready(details) if details.name == zone_name
+                    );
+                if !is_current {
+                    return Task::none();
+                }
+
+                self.zone_reconciliation = match result {
+                    Ok(data) => ZoneReconciliationState::from_data(zone_name, data),
+                    Err(error) => ZoneReconciliationState::Error {
                         zone: zone_name,
                         message: error.to_string(),
                     },
@@ -836,6 +898,8 @@ impl cosmic::Application for AppModel {
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
                     ) {
                         self.zone_view = ZoneViewState::Empty;
+                        self.zone_reconciliation =
+                            ZoneReconciliationState::Unavailable { zone: None };
                     }
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -1486,6 +1550,13 @@ impl AppModel {
         broker.get_zone_details(&zone_name).await
     }
 
+    async fn load_zone_reconciliation(
+        zone_name: String,
+    ) -> Result<ZoneReconciliationData, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.reconcile_zone(&zone_name).await
+    }
+
     async fn load_default_zone() -> Result<String, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_default_zone().await
@@ -2076,14 +2147,33 @@ impl AppModel {
     }
 
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        self.zone_generation = self.zone_generation.wrapping_add(1);
         self.zone_view = ZoneViewState::Loading {
             zone: zone_name.clone(),
+        };
+        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+            zone: Some(zone_name.clone()),
         };
 
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::load_zone_details(zone_name), move |result| {
             cosmic::Action::from(Message::ZoneDetailsLoaded {
                 zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_zone_reconciliation(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        let generation = self.zone_generation;
+        self.zone_reconciliation = ZoneReconciliationState::Loading {
+            zone: zone_name.clone(),
+        };
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::load_zone_reconciliation(zone_name), move |result| {
+            cosmic::Action::from(Message::ZoneReconciliationLoaded {
+                zone_name: zone_name_for_task.clone(),
+                generation,
                 result,
             })
         })
