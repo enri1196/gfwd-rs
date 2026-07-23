@@ -149,6 +149,7 @@ pub enum Message {
         apply_permanent: bool,
         result: Result<(), BrokerError>,
     },
+    RuntimeConfigurationPersisted(Result<(), BrokerError>),
     DismissToast(ToastId),
     CancelConfirmation,
     ConfirmDestructive,
@@ -161,6 +162,7 @@ enum Confirmation {
     DeleteIpSet(String),
     StopFirewalld,
     ApplyPermanentConfiguration,
+    SaveRuntimeConfiguration,
 }
 
 /// Create a COSMIC application from the app model
@@ -531,6 +533,11 @@ impl cosmic::Application for AppModel {
                 fl!("confirm-apply-permanent-body"),
                 fl!("confirm-apply-permanent-action"),
             ),
+            Confirmation::SaveRuntimeConfiguration => (
+                fl!("confirm-save-runtime-title"),
+                fl!("confirm-save-runtime-body"),
+                fl!("confirm-save-runtime-action"),
+            ),
         };
 
         Some(
@@ -690,6 +697,9 @@ impl cosmic::Application for AppModel {
                     Confirmation::DeleteIpSet(ipset_name) => self.start_ipset_delete(ipset_name),
                     Confirmation::StopFirewalld => self.start_firewalld_control(false),
                     Confirmation::ApplyPermanentConfiguration => self.start_permanent_apply(),
+                    Confirmation::SaveRuntimeConfiguration => {
+                        self.start_runtime_configuration_persist()
+                    }
                 };
             }
             Message::FirewalldStatusLoaded(result) => {
@@ -720,6 +730,20 @@ impl cosmic::Application for AppModel {
                 ];
                 if result.is_ok() && apply_permanent {
                     tasks.push(self.start_zones_load());
+                }
+                return Task::batch(tasks);
+            }
+            Message::RuntimeConfigurationPersisted(result) => {
+                let mut tasks = vec![self.finish_mutation(&result)];
+                if result.is_ok() {
+                    tasks.extend([
+                        self.start_firewalld_status_load(),
+                        self.start_zones_load(),
+                        self.start_ipsets_load(),
+                        self.start_services_load(),
+                        self.start_icmp_types_load(),
+                        self.start_interfaces_load(),
+                    ]);
                 }
                 return Task::batch(tasks);
             }
@@ -1230,6 +1254,10 @@ impl AppModel {
                 self.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
                 return Task::none();
             }
+            ZoneViewAction::SaveRuntimeConfiguration => {
+                self.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
+                return Task::none();
+            }
             ZoneViewAction::ReviewReconciliation => {
                 self.open_context_page(ContextPage::ReviewReconciliation);
                 return Task::none();
@@ -1654,6 +1682,11 @@ impl AppModel {
         broker.apply_permanent_configuration().await
     }
 
+    async fn persist_runtime_configuration() -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.persist_runtime_configuration().await
+    }
+
     async fn set_default_zone(zone_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.set_default_zone(&zone_name).await
@@ -1942,6 +1975,15 @@ impl AppModel {
         })
     }
 
+    fn start_runtime_configuration_persist(&mut self) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-save-runtime")) {
+            return Task::none();
+        }
+        Task::perform(Self::persist_runtime_configuration(), |result| {
+            cosmic::Action::from(Message::RuntimeConfigurationPersisted(result))
+        })
+    }
+
     fn start_default_zone_set(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
         if !self.begin_mutation(fl!("operation-set-default-zone")) {
             return Task::none();
@@ -2102,6 +2144,7 @@ impl AppModel {
             | ZoneViewAction::StartFirewalld
             | ZoneViewAction::StopFirewalld
             | ZoneViewAction::ApplyPermanentConfiguration
+            | ZoneViewAction::SaveRuntimeConfiguration
             | ZoneViewAction::ReviewReconciliation
             | ZoneViewAction::RefreshReconciliation => Task::none(),
             ZoneViewAction::AddService

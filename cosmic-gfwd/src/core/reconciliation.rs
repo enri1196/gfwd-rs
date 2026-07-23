@@ -525,6 +525,14 @@ impl ZoneReconciliation {
     pub fn is_in_sync(&self) -> bool {
         self.differences.is_empty() && self.completeness == ComparisonCompleteness::Complete
     }
+
+    /// Return whether persisting runtime could change permanent known settings.
+    pub fn has_runtime_only_differences(&self) -> bool {
+        self.differences.iter().any(|difference| match difference {
+            ZoneSettingDifference::Scalar { .. } => true,
+            ZoneSettingDifference::Collection { runtime_only, .. } => !runtime_only.is_empty(),
+        })
+    }
 }
 
 trait IntoScalarValue {

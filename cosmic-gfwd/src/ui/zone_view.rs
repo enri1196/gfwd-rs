@@ -30,6 +30,8 @@ pub enum ZoneViewAction {
     StopFirewalld,
     /// Reloads firewalld to apply permanent configuration to runtime.
     ApplyPermanentConfiguration,
+    /// Persists all runtime firewalld configuration permanently.
+    SaveRuntimeConfiguration,
     /// Opens the permanent/runtime difference review drawer.
     ReviewReconciliation,
     /// Reloads both selected-zone snapshots.

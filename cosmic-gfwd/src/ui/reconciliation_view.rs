@@ -20,7 +20,10 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     let has_differences = state
         .data()
         .is_some_and(|data| !data.reconciliation.differences.is_empty());
-    let actions = widget::row::with_capacity(2)
+    let has_runtime_only = state
+        .data()
+        .is_some_and(|data| data.reconciliation.has_runtime_only_differences());
+    let actions = widget::row::with_capacity(3)
         .push(
             button::standard(fl!("reconciliation-refresh")).on_press_maybe(
                 (!mutation_pending).then_some(map(ZoneViewAction::RefreshReconciliation)),
@@ -30,6 +33,12 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
             button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
                 (has_differences && !mutation_pending)
                     .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
+            ),
+        )
+        .push(
+            button::destructive(fl!("reconciliation-save-runtime")).on_press_maybe(
+                (has_runtime_only && !mutation_pending)
+                    .then_some(map(ZoneViewAction::SaveRuntimeConfiguration)),
             ),
         )
         .spacing(spacing.space_s);

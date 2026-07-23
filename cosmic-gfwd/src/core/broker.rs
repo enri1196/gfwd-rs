@@ -188,6 +188,15 @@ impl FwdBroker {
         Ok(())
     }
 
+    /// Persist all current runtime firewalld configuration globally.
+    pub async fn persist_runtime_configuration(&self) -> Result<(), BrokerError> {
+        FirewallD1Proxy::new(&self.conn)
+            .await?
+            .runtime_to_permanent()
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_zones(&self) -> Result<Vec<String>, BrokerError> {
         let cfg = self.config().await?;
         let mut zones = cfg.get_zone_names().await?;
