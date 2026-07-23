@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
 
 #[derive(Clone, Debug)]
+/// Error returned by broker-owned system-bus operations.
 pub struct BrokerError {
     message: String,
 }
@@ -55,6 +56,7 @@ impl From<zbus::Error> for BrokerError {
 }
 
 #[derive(Debug)]
+/// Shared owner of all firewalld, systemd, and NetworkManager D-Bus proxies.
 pub struct FwdBroker {
     conn: Connection,
 }
@@ -62,6 +64,7 @@ pub struct FwdBroker {
 static BROKER: OnceCell<FwdBroker> = OnceCell::const_new();
 
 impl FwdBroker {
+    /// Returns the lazily initialized system-bus broker.
     pub async fn get() -> Result<&'static FwdBroker, BrokerError> {
         BROKER
             .get_or_try_init(|| async {

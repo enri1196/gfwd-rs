@@ -1026,3 +1026,49 @@ fn target_labels() -> Vec<String> {
         fl!("dialog-target-reject"),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resetting_one_drawer_preserves_other_form_state() {
+        let mut dialogs = DialogState::default();
+        dialogs.zone.name = "kept-zone".to_string();
+        dialogs.rich_rule.raw_mode = true;
+        dialogs.rich_rule.raw_rule = "<rule><accept/></rule>".to_string();
+        dialogs.operation_error = Some("failure".to_string());
+
+        dialogs.reset(DialogKind::RichRule);
+
+        assert_eq!(dialogs.zone.name, "kept-zone");
+        assert!(!dialogs.rich_rule.raw_mode);
+        assert!(dialogs.rich_rule.raw_rule.is_empty());
+        assert!(dialogs.operation_error.is_none());
+    }
+
+    #[test]
+    fn switching_rich_rule_modes_preserves_raw_input() {
+        let mut state = RichRuleFormState {
+            raw_mode: true,
+            raw_rule: "  <rule><drop/></rule>  ".to_string(),
+            ..RichRuleFormState::default()
+        };
+        assert_eq!(
+            state.generated_rule().unwrap(),
+            "<rule><drop/></rule>".to_string()
+        );
+
+        state.raw_mode = false;
+        state.element_value = "https".to_string();
+        assert!(
+            state
+                .generated_rule()
+                .unwrap()
+                .contains("<service name=\"https\"/>")
+        );
+
+        state.raw_mode = true;
+        assert_eq!(state.raw_rule, "  <rule><drop/></rule>  ");
+    }
+}

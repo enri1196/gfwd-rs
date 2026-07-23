@@ -68,8 +68,8 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     match state {
-        ZoneViewState::Empty => centered_message("Select a zone to view details"),
-        ZoneViewState::Loading { zone } => centered_message(format!("Loading {zone} settings...")),
+        ZoneViewState::Empty => centered_message(fl!("zone-select-prompt")),
+        ZoneViewState::Loading { zone } => centered_message(fl!("zone-loading", zone = zone)),
         ZoneViewState::Error { zone, message } => error_message(zone, message),
         ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(
             details,
@@ -168,20 +168,20 @@ fn zone_details<'a, Message: 'static + Clone>(
         );
 
     let services = list_section(
-        "Services",
+        fl!("zone-section-services"),
         details
             .services
             .iter()
             .cloned()
             .map(|service| (service.clone(), ZoneViewAction::RemoveService(service)))
             .collect(),
-        "No services configured",
+        fl!("zone-empty-services"),
         Some((ZoneViewAction::AddService, fl!("action-add-service"))),
         map,
     );
 
     let interfaces = list_section(
-        "Interfaces",
+        fl!("zone-section-interfaces"),
         details
             .interfaces
             .iter()
@@ -193,26 +193,26 @@ fn zone_details<'a, Message: 'static + Clone>(
                 )
             })
             .collect(),
-        "No interfaces assigned",
-        Some((ZoneViewAction::AddInterface, "Add interface".to_string())),
+        fl!("zone-empty-interfaces"),
+        Some((ZoneViewAction::AddInterface, fl!("action-add-interface"))),
         map,
     );
 
     let sources = list_section(
-        "Sources",
+        fl!("zone-section-sources"),
         details
             .sources
             .iter()
             .cloned()
             .map(|source| (source.clone(), ZoneViewAction::RemoveSource(source)))
             .collect(),
-        "All sources allowed",
-        Some((ZoneViewAction::AddSource, "Add source".to_string())),
+        fl!("zone-empty-sources"),
+        Some((ZoneViewAction::AddSource, fl!("action-add-source"))),
         map,
     );
 
     let ports = list_section(
-        "Ports",
+        fl!("zone-section-ports"),
         details
             .ports
             .iter()
@@ -224,16 +224,16 @@ fn zone_details<'a, Message: 'static + Clone>(
                 )
             })
             .collect(),
-        "No ports configured",
+        fl!("zone-empty-ports"),
         Some((
             ZoneViewAction::AddPort { forwarding: false },
-            "Add port".to_string(),
+            fl!("action-add-port"),
         )),
         map,
     );
 
     let forward_ports = list_section(
-        "Forwarded Ports",
+        fl!("zone-section-forward-ports"),
         details
             .forward_ports
             .iter()
@@ -254,16 +254,16 @@ fn zone_details<'a, Message: 'static + Clone>(
                 )
             })
             .collect(),
-        "No forwarded ports configured",
+        fl!("zone-empty-forward-ports"),
         Some((
             ZoneViewAction::AddPort { forwarding: true },
-            "Add forwarded port".to_string(),
+            fl!("action-add-forward-port"),
         )),
         map,
     );
 
     let source_ports = list_section(
-        "Source Ports",
+        fl!("zone-section-source-ports"),
         details
             .source_ports
             .iter()
@@ -275,34 +275,34 @@ fn zone_details<'a, Message: 'static + Clone>(
                 )
             })
             .collect(),
-        "No source ports configured",
+        fl!("zone-empty-source-ports"),
         None,
         map,
     );
 
     let icmp_blocks = list_section(
-        "ICMP Blocks",
+        fl!("zone-section-icmp"),
         details
             .icmp_blocks
             .iter()
             .cloned()
             .map(|icmp| (icmp.clone(), ZoneViewAction::RemoveIcmpBlock(icmp)))
             .collect(),
-        "No ICMP blocks configured",
-        Some((ZoneViewAction::AddIcmpBlock, "Add ICMP block".to_string())),
+        fl!("zone-empty-icmp"),
+        Some((ZoneViewAction::AddIcmpBlock, fl!("action-add-icmp"))),
         map,
     );
 
     let rich_rules = list_section(
-        "Rich Rules",
+        fl!("zone-section-rich-rules"),
         details
             .rich_rules
             .iter()
             .cloned()
             .map(|rule| (rule.clone(), ZoneViewAction::RemoveRichRule(rule)))
             .collect(),
-        "No rich rules configured",
-        Some((ZoneViewAction::AddRichRule, "Add rich rule".to_string())),
+        fl!("zone-empty-rich-rules"),
+        Some((ZoneViewAction::AddRichRule, fl!("action-add-rich-rule"))),
         map,
     );
 
@@ -342,16 +342,16 @@ fn zone_description<'a, Message: 'static>(
     details: &'a ZoneDetails,
 ) -> cosmic::Element<'a, Message> {
     if details.description.trim().is_empty() {
-        widget::text::caption("Firewall zone configuration").into()
+        widget::text::caption(fl!("zone-description-fallback")).into()
     } else {
         widget::text::caption(details.description.as_str()).into()
     }
 }
 
 fn list_section<'a, Message: 'static + Clone>(
-    title: &'a str,
+    title: String,
     mut items: Vec<(String, ZoneViewAction)>,
-    empty_label: &'a str,
+    empty_label: String,
     add_action: Option<(ZoneViewAction, String)>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -391,7 +391,7 @@ fn list_section<'a, Message: 'static + Clone>(
 }
 
 fn section_header<'a, Message: 'static + Clone>(
-    title: &'a str,
+    title: String,
     action: ZoneViewAction,
     tooltip: String,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
@@ -450,7 +450,7 @@ fn centered_message<'a, Message: 'static>(
 fn error_message<'a, Message: 'static>(zone: &str, message: &str) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let content = widget::column::with_capacity(2)
-        .push(widget::text::title2(format!("Failed to load {zone}")))
+        .push(widget::text::title2(fl!("zone-load-error", zone = zone)))
         .push(widget::text::body(message.to_string()))
         .spacing(spacing.space_s);
 

@@ -386,7 +386,7 @@ impl cosmic::Application for AppModel {
                 ),
                 DialogMessage::Cancel(DialogKind::Zone),
             )
-            .title("Add Zone")
+            .title(fl!("drawer-title-zone"))
             .footer(drawer_footer_with_submit(
                 DialogKind::Zone,
                 can_submit && !self.dialogs.zone.name.trim().is_empty(),
@@ -412,7 +412,7 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(port_drawer(&self.dialogs.port), error),
                 DialogMessage::Cancel(DialogKind::Port),
             )
-            .title("Add Port")
+            .title(fl!("drawer-title-port"))
             .footer(drawer_footer_with_submit(
                 DialogKind::Port,
                 can_submit && self.dialogs.port.is_valid(),
@@ -430,7 +430,7 @@ impl cosmic::Application for AppModel {
                 ),
                 DialogMessage::Cancel(DialogKind::Interface),
             )
-            .title("Add Interface")
+            .title(fl!("drawer-title-interface"))
             .footer(drawer_footer_with_submit(
                 DialogKind::Interface,
                 can_submit && can_submit_interface,
@@ -440,7 +440,7 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(source_drawer(&self.dialogs.source), error),
                 DialogMessage::Cancel(DialogKind::Source),
             )
-            .title("Add Source")
+            .title(fl!("drawer-title-source"))
             .footer(drawer_footer_with_submit(
                 DialogKind::Source,
                 can_submit && self.dialogs.source.is_valid(),
@@ -459,14 +459,14 @@ impl cosmic::Application for AppModel {
                 ),
                 DialogMessage::Cancel(DialogKind::Icmp),
             )
-            .title("Add ICMP Block")
+            .title(fl!("drawer-title-icmp"))
             .footer(drawer_cancel_footer(DialogKind::Icmp))
             .map(Message::Dialog),
             ContextPage::AddRichRule => context_drawer::context_drawer(
                 drawer_with_error(rich_rule_drawer(&self.dialogs.rich_rule), error),
                 DialogMessage::Cancel(DialogKind::RichRule),
             )
-            .title("Add Rich Rule")
+            .title(fl!("drawer-title-rich-rule"))
             .footer(drawer_footer_with_submit(
                 DialogKind::RichRule,
                 can_submit && self.dialogs.rich_rule.generated_rule().is_ok(),
@@ -476,7 +476,7 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(ipset_drawer(&self.dialogs.ipset), error),
                 DialogMessage::Cancel(DialogKind::IpSet),
             )
-            .title("Create IP Set")
+            .title(fl!("drawer-title-ipset"))
             .footer(drawer_footer_with_submit(
                 DialogKind::IpSet,
                 can_submit && self.dialogs.ipset.is_valid(),
@@ -2199,6 +2199,19 @@ fn split_ipset_entries(entries: &str) -> Vec<String> {
         .filter(|entry| !entry.is_empty())
         .map(|entry| entry.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_ipset_entries;
+
+    #[test]
+    fn ipset_entry_lines_preserve_composite_tuple_commas() {
+        assert_eq!(
+            split_ipset_entries("192.0.2.1,443,198.51.100.2\n\n  2001:db8::1,53  \n"),
+            vec!["192.0.2.1,443,198.51.100.2", "2001:db8::1,53",]
+        );
+    }
 }
 
 /// The context page to display in the context drawer.
