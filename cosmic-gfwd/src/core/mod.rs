@@ -1,9 +1,11 @@
 pub mod broker;
+pub mod events;
 pub mod reconciliation;
 pub mod rich_rule;
 pub mod validation;
 
 pub use broker::{BrokerError, FirewalldStatus, FwdBroker};
+pub use events::ConfigurationEvent;
 pub use reconciliation::{
     CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliation,
     ZoneReconciliationData, ZoneReconciliationState, ZoneSetting, ZoneSettingDifference,

@@ -14,6 +14,7 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     state: &'a ZoneReconciliationState,
     mutation_pending: bool,
     operation_error: Option<&'a str>,
+    watch_warning: Option<&'a str>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
@@ -48,6 +49,12 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
         .spacing(spacing.space_m);
     if let Some(error) = operation_error {
         content = content.push(widget::text::body(error));
+    }
+    if let Some(error) = watch_warning {
+        content = content.push(widget::text::body(fl!(
+            "reconciliation-watch-warning",
+            error = error
+        )));
     }
 
     let Some(data) = state.data() else {

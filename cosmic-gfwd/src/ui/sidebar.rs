@@ -71,6 +71,7 @@ pub struct Sidebar {
     default_zone: Option<String>,
     active_zones: HashSet<String>,
     status: SidebarStatus,
+    active_zone_override: Option<String>,
 }
 
 impl Sidebar {
@@ -81,6 +82,7 @@ impl Sidebar {
             default_zone: None,
             active_zones: HashSet::new(),
             status: SidebarStatus::Loading,
+            active_zone_override: None,
         };
         sidebar.rebuild_items();
         sidebar
@@ -116,7 +118,6 @@ impl Sidebar {
 
     pub fn set_loading(&mut self) {
         self.status = SidebarStatus::Loading;
-        self.rebuild_items();
     }
 
     pub fn set_zones(&mut self, zones: Vec<String>) {
@@ -127,6 +128,16 @@ impl Sidebar {
             self.status = SidebarStatus::Ready;
         }
         self.rebuild_items();
+    }
+
+    /// Preserve selection across an externally initiated zone rename.
+    pub fn preserve_zone_rename(&mut self, old_name: &str, new_name: &str) {
+        if matches!(
+            self.active_item(),
+            Some(SidebarItem::Zone { name, .. }) if name == old_name
+        ) {
+            self.active_zone_override = Some(new_name.to_string());
+        }
     }
 
     pub fn set_default_zone(&mut self, zone: Option<String>) {
@@ -183,7 +194,11 @@ impl Sidebar {
             items.push(SidebarItem::Empty);
         }
 
-        let active_key = self.active_key();
+        let active_key = self
+            .active_zone_override
+            .take()
+            .map(ActiveSidebarItem::Zone)
+            .or_else(|| self.active_key());
         self.nav.clear();
 
         let mut first_id = None;

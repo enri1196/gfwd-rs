@@ -2,8 +2,8 @@
 
 use crate::config::Config;
 use crate::core::{
-    BrokerError, FirewalldStatus, FwdBroker, ZoneReconciliationData, ZoneReconciliationState,
-    validate_interface_name, validate_ipset_entry,
+    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, ZoneReconciliationData,
+    ZoneReconciliationState, validate_interface_name, validate_ipset_entry,
 };
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
@@ -20,6 +20,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, Toasts, about::About, menu, nav_bar};
+use futures_util::{StreamExt, stream::BoxStream};
 use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 
@@ -43,6 +44,12 @@ pub struct AppModel {
     zone_reconciliation: ZoneReconciliationState,
     /// Monotonic identity used to reject late selected-zone comparison results.
     zone_generation: u64,
+    /// Whether a signal-triggered refresh is currently loading.
+    configuration_refresh_in_flight: bool,
+    /// Whether one coalesced follow-up refresh is required.
+    configuration_refresh_pending: bool,
+    /// Persistent non-spamming warning when the event watcher fails.
+    configuration_watch_warning: Option<String>,
     /// State for the IP set view.
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
@@ -101,6 +108,7 @@ pub enum Message {
         generation: u64,
         result: Result<ZoneReconciliationData, BrokerError>,
     },
+    ConfigurationEvent(Result<ConfigurationEvent, BrokerError>),
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
     InterfacesLoaded(Result<Vec<String>, BrokerError>),
@@ -211,6 +219,9 @@ impl cosmic::Application for AppModel {
             zone_view: ZoneViewState::Empty,
             zone_reconciliation: ZoneReconciliationState::default(),
             zone_generation: 0,
+            configuration_refresh_in_flight: false,
+            configuration_refresh_pending: false,
+            configuration_watch_warning: None,
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             interface_options: Vec::new(),
@@ -399,6 +410,7 @@ impl cosmic::Application for AppModel {
                     &self.zone_reconciliation,
                     self.mutation_pending(),
                     self.dialogs.operation_error.as_deref(),
+                    self.configuration_watch_warning.as_deref(),
                     Message::ZoneAction,
                 ),
                 Message::ToggleContextPage(ContextPage::ReviewReconciliation),
@@ -584,6 +596,7 @@ impl cosmic::Application for AppModel {
                 &self.zone_view,
                 &self.firewalld_status,
                 &self.zone_reconciliation,
+                self.configuration_watch_warning.as_deref(),
                 self.mutation_pending(),
                 Message::ZoneAction,
             ),
@@ -608,7 +621,7 @@ impl cosmic::Application for AppModel {
     /// indefinitely.
     fn subscription(&self) -> Subscription<Self::Message> {
         // Add subscriptions which are always active.
-        let subscriptions = vec![
+        let mut subscriptions = vec![
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -620,6 +633,11 @@ impl cosmic::Application for AppModel {
                     Message::UpdateConfig(update.config)
                 }),
         ];
+        let selected_zone = self.current_zone_name();
+        subscriptions.push(Subscription::run_with_id(
+            ("firewalld-configuration-events", selected_zone.clone()),
+            configuration_event_messages(selected_zone),
+        ));
 
         Subscription::batch(subscriptions)
     }
@@ -702,12 +720,23 @@ impl cosmic::Application for AppModel {
                     }
                 };
             }
+            Message::ConfigurationEvent(result) => match result {
+                Ok(event) => {
+                    self.configuration_watch_warning = None;
+                    return self.schedule_configuration_refresh(event);
+                }
+                Err(error) => {
+                    self.configuration_watch_warning = Some(error.to_string());
+                }
+            },
             Message::FirewalldStatusLoaded(result) => {
                 self.firewalld_status = match result {
                     Ok(status) => status,
                     Err(error) => FirewalldStatus::Error(error.to_string()),
                 };
-                if self.firewalld_status == FirewalldStatus::Active {
+                if self.firewalld_status == FirewalldStatus::Active
+                    && !self.configuration_refresh_in_flight
+                {
                     if let ZoneViewState::Ready(details) = &self.zone_view {
                         return self.start_zone_reconciliation(details.name.clone());
                     }
@@ -783,7 +812,7 @@ impl cosmic::Application for AppModel {
                             self.zone_reconciliation =
                                 ZoneReconciliationState::Unavailable { zone: None };
                         }
-                        Task::none()
+                        self.finish_configuration_refresh()
                     }
                 };
 
@@ -809,6 +838,7 @@ impl cosmic::Application for AppModel {
                         self.zone_reconciliation = ZoneReconciliationState::Unavailable {
                             zone: Some(zone_name),
                         };
+                        return self.finish_configuration_refresh();
                     }
                     Err(error) => {
                         self.zone_view = ZoneViewState::Error {
@@ -818,6 +848,7 @@ impl cosmic::Application for AppModel {
                         self.zone_reconciliation = ZoneReconciliationState::Unavailable {
                             zone: Some(zone_name),
                         };
+                        return self.finish_configuration_refresh();
                     }
                 }
             }
@@ -846,6 +877,7 @@ impl cosmic::Application for AppModel {
                         message: error.to_string(),
                     },
                 };
+                return self.finish_configuration_refresh();
             }
             Message::DefaultZoneLoaded(result) => match result {
                 Ok(zone) => self.sidebar.set_default_zone(Some(zone)),
@@ -1138,7 +1170,74 @@ impl AppModel {
                 Toast::new(message)
             }
         };
-        self.toasts.push(toast).map(cosmic::Action::App)
+        let toast = self.toasts.push(toast).map(cosmic::Action::App);
+        if self.configuration_refresh_pending && !self.configuration_refresh_in_flight {
+            self.configuration_refresh_pending = false;
+            return Task::batch(vec![
+                toast,
+                self.schedule_configuration_refresh(ConfigurationEvent::Reloaded),
+            ]);
+        }
+        toast
+    }
+
+    fn schedule_configuration_refresh(
+        &mut self,
+        event: ConfigurationEvent,
+    ) -> Task<cosmic::Action<Message>> {
+        if self.mutation_pending()
+            || self.configuration_refresh_in_flight
+            || matches!(
+                self.zone_reconciliation,
+                ZoneReconciliationState::Loading { .. }
+            )
+        {
+            self.configuration_refresh_pending = true;
+            return Task::none();
+        }
+
+        self.configuration_refresh_in_flight = true;
+        match event {
+            ConfigurationEvent::Reloaded => Task::batch(vec![
+                self.start_firewalld_status_load(),
+                self.start_zones_load(),
+                self.start_ipsets_load(),
+                self.start_services_load(),
+                self.start_icmp_types_load(),
+                self.start_interfaces_load(),
+            ]),
+            ConfigurationEvent::RuntimeZoneChanged { zone } => {
+                let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
+                if !is_current {
+                    self.configuration_refresh_in_flight = false;
+                    return Task::none();
+                }
+                self.start_zone_reconciliation(zone)
+            }
+            ConfigurationEvent::PermanentZoneUpdated { zone } => {
+                let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
+                if !is_current {
+                    self.configuration_refresh_in_flight = false;
+                    return Task::none();
+                }
+                self.start_zone_load(zone)
+            }
+            ConfigurationEvent::PermanentZoneRemoved { .. } => self.start_zones_load(),
+            ConfigurationEvent::PermanentZoneRenamed { old_zone, new_zone } => {
+                self.sidebar.preserve_zone_rename(&old_zone, &new_zone);
+                self.start_zones_load()
+            }
+        }
+    }
+
+    fn finish_configuration_refresh(&mut self) -> Task<cosmic::Action<Message>> {
+        self.configuration_refresh_in_flight = false;
+        if self.configuration_refresh_pending {
+            self.configuration_refresh_pending = false;
+            self.schedule_configuration_refresh(ConfigurationEvent::Reloaded)
+        } else {
+            Task::none()
+        }
     }
 
     fn open_context_page(&mut self, context_page: ContextPage) {
@@ -2401,6 +2500,26 @@ pub enum ContextPage {
     AddRichRule,
     AddIpSet,
     ReviewReconciliation,
+}
+
+fn configuration_event_messages(selected_zone: Option<String>) -> BoxStream<'static, Message> {
+    Box::pin(async_stream::stream! {
+        let broker = match FwdBroker::get().await {
+            Ok(broker) => broker,
+            Err(error) => {
+                yield Message::ConfigurationEvent(Err(error));
+                return;
+            }
+        };
+        let mut events = broker.configuration_events(selected_zone);
+        while let Some(event) = events.next().await {
+            let failed = event.is_err();
+            yield Message::ConfigurationEvent(event);
+            if failed {
+                return;
+            }
+        }
+    })
 }
 
 fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {

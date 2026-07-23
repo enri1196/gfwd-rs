@@ -301,3 +301,5 @@ confirm-save-runtime-title = Persist Global Runtime Configuration?
 confirm-save-runtime-body = This saves the complete global runtime state across every zone and all firewalld objects. The saved state will be restored after future reloads and restarts.
 confirm-save-runtime-action = Save Global Runtime State
 operation-save-runtime = Save runtime configuration permanently
+reconciliation-watch-warning-title = Automatic refresh unavailable
+reconciliation-watch-warning = Firewalld change monitoring failed: { $error }. Use Refresh to compare again manually.

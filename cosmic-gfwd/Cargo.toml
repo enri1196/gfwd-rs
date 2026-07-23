@@ -7,6 +7,7 @@ description = "A libcosmic GUI for Firewalld made in Rust"
 repository = "https://github.com/pop-os/cosmic-app-template"
 
 [dependencies]
+async-stream = "0.3.6"
 futures-util = "0.3.33"
 gfwd-bus = { path = "../gfwd-bus", features = ["config_firewalld1", "config_icmptype", "config_ipset", "config_service", "config_zone", "firewalld1", "network_manager", "systemd", "zone"] }
 i18n-embed = { version = "0.16", features = [

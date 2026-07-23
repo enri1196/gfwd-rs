@@ -70,6 +70,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     state: &'a ZoneViewState,
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
+    watch_warning: Option<&'a str>,
     mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -81,6 +82,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
             details,
             firewalld_status,
             reconciliation,
+            watch_warning,
             mutation_pending,
             map,
         ))
@@ -94,6 +96,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     details: &'a ZoneDetails,
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
+    watch_warning: Option<&'a str>,
     mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -106,7 +109,8 @@ fn zone_details<'a, Message: 'static + Clone>(
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
         .spacing(space_s);
-    let reconciliation_section = reconciliation_banner(reconciliation, mutation_pending, map);
+    let reconciliation_section =
+        reconciliation_banner(reconciliation, watch_warning, mutation_pending, map);
 
     let masquerade = if mutation_pending {
         widget::toggler(details.masquerade)
@@ -346,6 +350,7 @@ fn zone_details<'a, Message: 'static + Clone>(
 
 fn reconciliation_banner<'a, Message: 'static + Clone>(
     state: &'a ZoneReconciliationState,
+    watch_warning: Option<&'a str>,
     mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -384,14 +389,24 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
         )
         .spacing(cosmic::theme::spacing().space_s);
 
-    settings::section()
+    let section = settings::section()
         .title(fl!("reconciliation-section"))
         .add(
             settings::item::builder(status)
                 .description(fl!("reconciliation-banner-description"))
                 .control(actions),
-        )
-        .into()
+        );
+    if let Some(error) = watch_warning {
+        section
+            .add(
+                settings::item::builder(fl!("reconciliation-watch-warning-title")).control(
+                    widget::text::body(fl!("reconciliation-watch-warning", error = error)),
+                ),
+            )
+            .into()
+    } else {
+        section.into()
+    }
 }
 
 fn zone_description<'a, Message: 'static>(
