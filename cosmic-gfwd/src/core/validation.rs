@@ -13,30 +13,64 @@ pub enum ValidationError {
     InvalidProtocol,
     /// A value is not an IPv4 or IPv6 address.
     InvalidIpAddress,
+    /// An interface name is longer than Linux permits.
+    InterfaceNameTooLong,
+    /// An interface name contains unsupported characters.
+    InvalidInterfaceName,
+    /// A source is not an IP address or network.
+    InvalidSource,
+    /// A CIDR prefix is outside the address family's valid range.
+    InvalidCidrPrefix,
 }
 
 /// Validates a Linux network-interface name.
-pub fn validate_interface_name(interface: &str) -> Result<(), String> {
+pub fn validate_interface_name(interface: &str) -> Result<(), ValidationError> {
     let interface = interface.trim();
 
     if interface.is_empty() {
-        return Err("Interface name is required".to_string());
+        return Err(ValidationError::Required);
     }
 
     if interface.len() > 15 {
-        return Err("Interface name must be 15 characters or fewer".to_string());
+        return Err(ValidationError::InterfaceNameTooLong);
     }
 
     if !interface
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
     {
-        return Err(
-            "Interface name may only contain letters, numbers, dashes, underscores, dots, and colons"
-                .to_string(),
-        );
+        return Err(ValidationError::InvalidInterfaceName);
     }
 
+    Ok(())
+}
+
+/// Validates an IPv4/IPv6 source address or CIDR network.
+pub fn validate_source(value: &str) -> Result<(), ValidationError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(ValidationError::Required);
+    }
+
+    let Some((address, prefix)) = value.split_once('/') else {
+        return value
+            .parse::<IpAddr>()
+            .map(|_| ())
+            .map_err(|_| ValidationError::InvalidSource);
+    };
+    if prefix.contains('/') {
+        return Err(ValidationError::InvalidSource);
+    }
+    let address = address
+        .parse::<IpAddr>()
+        .map_err(|_| ValidationError::InvalidSource)?;
+    let prefix = prefix
+        .parse::<u8>()
+        .map_err(|_| ValidationError::InvalidCidrPrefix)?;
+    let maximum = if address.is_ipv4() { 32 } else { 128 };
+    if prefix > maximum {
+        return Err(ValidationError::InvalidCidrPrefix);
+    }
     Ok(())
 }
 
@@ -143,6 +177,45 @@ mod tests {
         assert_eq!(
             validate_forward_address("example.test"),
             Err(ValidationError::InvalidIpAddress)
+        );
+    }
+
+    #[test]
+    fn validates_interface_names() {
+        for value in ["eth0", "wlan0", "enp0s31f6.100"] {
+            assert_eq!(validate_interface_name(value), Ok(()), "{value}");
+        }
+        assert_eq!(validate_interface_name(""), Err(ValidationError::Required));
+        assert_eq!(
+            validate_interface_name("interface-name-too-long"),
+            Err(ValidationError::InterfaceNameTooLong)
+        );
+        assert_eq!(
+            validate_interface_name("eth 0"),
+            Err(ValidationError::InvalidInterfaceName)
+        );
+    }
+
+    #[test]
+    fn accepts_ipv4_ipv6_and_cidr_sources() {
+        for value in ["192.0.2.1", "192.0.2.0/24", "2001:db8::1", "2001:db8::/32"] {
+            assert_eq!(validate_source(value), Ok(()), "{value}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_sources_and_prefixes() {
+        assert_eq!(
+            validate_source("example.test"),
+            Err(ValidationError::InvalidSource)
+        );
+        assert_eq!(
+            validate_source("192.0.2.0/33"),
+            Err(ValidationError::InvalidCidrPrefix)
+        );
+        assert_eq!(
+            validate_source("2001:db8::/129"),
+            Err(ValidationError::InvalidCidrPrefix)
         );
     }
 }

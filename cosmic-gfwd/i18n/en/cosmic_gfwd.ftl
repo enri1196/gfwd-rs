@@ -160,3 +160,7 @@ validation-port-range-order = The range start must not be greater than the range
 validation-protocol = Choose tcp, udp, sctp, or dccp
 validation-ip-address = Enter a valid IPv4 or IPv6 address, or leave this field empty for local forwarding
 validation-fix-fields = Fix the highlighted fields before submitting
+validation-interface-length = Interface names must be 15 characters or fewer
+validation-interface-name = Use only letters, numbers, dashes, underscores, dots, and colons
+validation-source = Enter a valid IPv4 or IPv6 address or network
+validation-cidr-prefix = Enter a CIDR prefix valid for the address family

@@ -3,6 +3,7 @@ use cosmic::widget::{self, button, dropdown, settings};
 
 use crate::core::{
     ValidationError, validate_forward_address, validate_port_protocol, validate_port_spec,
+    validate_source,
 };
 use crate::fl;
 use crate::models::ZoneTarget;
@@ -195,6 +196,15 @@ impl Default for InterfaceFormState {
 #[derive(Debug, Clone, Default)]
 pub struct SourceFormState {
     pub source: String,
+    /// Whether the source field has been edited.
+    pub touched: bool,
+}
+
+impl SourceFormState {
+    /// Returns whether the source is a valid IP address or CIDR network.
+    pub fn is_valid(&self) -> bool {
+        validate_source(&self.source).is_ok()
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -344,11 +354,12 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
         );
     if state.port_touched {
         if let Err(error) = validate_port_spec(&state.port) {
-            port_section = port_section.add(widget::text::caption(validation_message(error)));
+            port_section =
+                port_section.add(widget::text::caption(localized_validation_error(error)));
         }
     }
     if let Err(error) = validate_port_protocol(&state.protocol) {
-        port_section = port_section.add(widget::text::caption(validation_message(error)));
+        port_section = port_section.add(widget::text::caption(localized_validation_error(error)));
     }
     sections.push(port_section.into());
 
@@ -389,14 +400,14 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
             );
         if state.dest_ip_touched {
             if let Err(error) = validate_forward_address(&state.dest_ip) {
-                destination_section =
-                    destination_section.add(widget::text::caption(validation_message(error)));
+                destination_section = destination_section
+                    .add(widget::text::caption(localized_validation_error(error)));
             }
         }
         if state.dest_port_touched {
             if let Err(error) = validate_port_spec(&state.dest_port) {
-                destination_section =
-                    destination_section.add(widget::text::caption(validation_message(error)));
+                destination_section = destination_section
+                    .add(widget::text::caption(localized_validation_error(error)));
             }
         }
         sections.push(destination_section.into());
@@ -407,13 +418,18 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
     content.into()
 }
 
-fn validation_message(error: ValidationError) -> String {
+/// Converts a typed validation failure into localized user-facing text.
+pub fn localized_validation_error(error: ValidationError) -> String {
     match error {
         ValidationError::Required => fl!("validation-required"),
         ValidationError::InvalidPort => fl!("validation-port"),
         ValidationError::ReversedPortRange => fl!("validation-port-range-order"),
         ValidationError::InvalidProtocol => fl!("validation-protocol"),
         ValidationError::InvalidIpAddress => fl!("validation-ip-address"),
+        ValidationError::InterfaceNameTooLong => fl!("validation-interface-length"),
+        ValidationError::InvalidInterfaceName => fl!("validation-interface-name"),
+        ValidationError::InvalidSource => fl!("validation-source"),
+        ValidationError::InvalidCidrPrefix => fl!("validation-cidr-prefix"),
     }
 }
 
@@ -491,18 +507,19 @@ pub fn interface_drawer<'a>(
 }
 
 pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, DialogMessage> {
-    let content = settings::view_column(vec![
-        settings::section()
-            .title(fl!("dialog-source-section"))
-            .add(
-                settings::item::builder(fl!("dialog-source-label")).control(
-                    widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
-                        .on_input(DialogMessage::SourceAddressChanged)
-                        .width(Length::Fill),
-                ),
-            )
-            .into(),
-    ]);
+    let mut section = settings::section().title(fl!("dialog-source-section")).add(
+        settings::item::builder(fl!("dialog-source-label")).control(
+            widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
+                .on_input(DialogMessage::SourceAddressChanged)
+                .width(Length::Fill),
+        ),
+    );
+    if state.touched {
+        if let Err(error) = validate_source(&state.source) {
+            section = section.add(widget::text::caption(localized_validation_error(error)));
+        }
+    }
+    let content = settings::view_column(vec![section.into()]);
 
     content.into()
 }

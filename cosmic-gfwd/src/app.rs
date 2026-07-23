@@ -7,8 +7,9 @@ use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
     ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
-    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
-    service_drawer, source_drawer, target_from_index, view_ipset_content, view_zone_content,
+    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
+    port_drawer, rich_rule_drawer, service_drawer, source_drawer, target_from_index,
+    view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -421,7 +422,7 @@ impl cosmic::Application for AppModel {
             .title("Add Source")
             .footer(drawer_footer_with_submit(
                 DialogKind::Source,
-                can_submit && !self.dialogs.source.source.trim().is_empty(),
+                can_submit && self.dialogs.source.is_valid(),
             ))
             .map(Message::Dialog),
             ContextPage::AddIcmp => context_drawer::context_drawer(
@@ -991,7 +992,7 @@ impl AppModel {
                 true
             }
             Err(message) => {
-                self.dialogs.interface.error = Some(message);
+                self.dialogs.interface.error = Some(localized_validation_error(message));
                 false
             }
         }
@@ -1176,6 +1177,7 @@ impl AppModel {
             }
             DialogMessage::SourceAddressChanged(value) => {
                 self.dialogs.source.source = value;
+                self.dialogs.source.touched = true;
             }
             DialogMessage::IcmpTypeChanged(value) => {
                 self.dialogs.icmp.icmp_type = value;
@@ -1240,11 +1242,12 @@ impl AppModel {
                 return self.start_interface_add(zone_name, interface);
             }
             DialogMessage::Submit(DialogKind::Source) => {
-                let source = self.dialogs.source.source.trim().to_string();
-                if source.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
+                self.dialogs.source.touched = true;
+                if !self.dialogs.source.is_valid() {
+                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
                     return Task::none();
                 }
+                let source = self.dialogs.source.source.trim().to_string();
                 let Some(zone_name) = self.current_zone_name() else {
                     self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
