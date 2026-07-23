@@ -160,6 +160,7 @@ enum Confirmation {
     DeleteZone(String),
     DeleteIpSet(String),
     StopFirewalld,
+    ApplyPermanentConfiguration,
 }
 
 /// Create a COSMIC application from the app model
@@ -395,6 +396,7 @@ impl cosmic::Application for AppModel {
                 reconciliation_drawer(
                     &self.zone_reconciliation,
                     self.mutation_pending(),
+                    self.dialogs.operation_error.as_deref(),
                     Message::ZoneAction,
                 ),
                 Message::ToggleContextPage(ContextPage::ReviewReconciliation),
@@ -524,6 +526,11 @@ impl cosmic::Application for AppModel {
                 fl!("confirm-stop-firewalld-body"),
                 fl!("firewalld-stop"),
             ),
+            Confirmation::ApplyPermanentConfiguration => (
+                fl!("confirm-apply-permanent-title"),
+                fl!("confirm-apply-permanent-body"),
+                fl!("confirm-apply-permanent-action"),
+            ),
         };
 
         Some(
@@ -571,7 +578,6 @@ impl cosmic::Application for AppModel {
                 &self.firewalld_status,
                 &self.zone_reconciliation,
                 self.mutation_pending(),
-                self.runtime_reload_needed,
                 Message::ZoneAction,
             ),
         };
@@ -683,6 +689,7 @@ impl cosmic::Application for AppModel {
                     Confirmation::DeleteZone(zone_name) => self.start_zone_delete(zone_name),
                     Confirmation::DeleteIpSet(ipset_name) => self.start_ipset_delete(ipset_name),
                     Confirmation::StopFirewalld => self.start_firewalld_control(false),
+                    Confirmation::ApplyPermanentConfiguration => self.start_permanent_apply(),
                 };
             }
             Message::FirewalldStatusLoaded(result) => {
@@ -707,10 +714,14 @@ impl cosmic::Application for AppModel {
                 if result.is_ok() && apply_permanent {
                     self.runtime_reload_needed = false;
                 }
-                return Task::batch(vec![
+                let mut tasks = vec![
                     self.finish_mutation(&result),
                     self.start_firewalld_status_load(),
-                ]);
+                ];
+                if result.is_ok() && apply_permanent {
+                    tasks.push(self.start_zones_load());
+                }
+                return Task::batch(tasks);
             }
 
             Message::UpdateConfig(config) => {
@@ -1216,7 +1227,8 @@ impl AppModel {
                 return Task::none();
             }
             ZoneViewAction::ApplyPermanentConfiguration => {
-                return self.start_permanent_apply();
+                self.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
+                return Task::none();
             }
             ZoneViewAction::ReviewReconciliation => {
                 self.open_context_page(ContextPage::ReviewReconciliation);

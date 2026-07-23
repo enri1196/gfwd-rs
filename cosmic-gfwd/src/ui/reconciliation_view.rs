@@ -13,17 +13,33 @@ use super::ZoneViewAction;
 pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     state: &'a ZoneReconciliationState,
     mutation_pending: bool,
+    operation_error: Option<&'a str>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let mut content = widget::column::with_capacity(5)
-        .push(widget::text::body(fl!("reconciliation-review-description")))
+    let has_differences = state
+        .data()
+        .is_some_and(|data| !data.reconciliation.differences.is_empty());
+    let actions = widget::row::with_capacity(2)
         .push(
             button::standard(fl!("reconciliation-refresh")).on_press_maybe(
                 (!mutation_pending).then_some(map(ZoneViewAction::RefreshReconciliation)),
             ),
         )
+        .push(
+            button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
+                (has_differences && !mutation_pending)
+                    .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
+            ),
+        )
+        .spacing(spacing.space_s);
+    let mut content = widget::column::with_capacity(7)
+        .push(widget::text::body(fl!("reconciliation-review-description")))
+        .push(actions)
         .spacing(spacing.space_m);
+    if let Some(error) = operation_error {
+        content = content.push(widget::text::body(error));
+    }
 
     let Some(data) = state.data() else {
         return content

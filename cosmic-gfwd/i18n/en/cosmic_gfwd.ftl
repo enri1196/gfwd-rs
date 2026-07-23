@@ -292,3 +292,7 @@ reconciliation-setting-rich-rules = Rich rules
 reconciliation-setting-forward = Forwarding
 reconciliation-setting-ingress-priority = Ingress priority
 reconciliation-setting-egress-priority = Egress priority
+reconciliation-apply-permanent = Apply Permanent to Runtime
+confirm-apply-permanent-title = Reload Global Firewall Configuration?
+confirm-apply-permanent-body = This reloads firewalld globally, applying all permanent configuration and discarding runtime-only changes in every zone—not only the selected zone.
+confirm-apply-permanent-action = Reload Firewalld

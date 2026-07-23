@@ -69,7 +69,6 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
     mutation_pending: bool,
-    runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     match state {
@@ -81,7 +80,6 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
             firewalld_status,
             reconciliation,
             mutation_pending,
-            runtime_reload_needed,
             map,
         ))
         .width(Length::Fill)
@@ -95,7 +93,6 @@ fn zone_details<'a, Message: 'static + Clone>(
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
     mutation_pending: bool,
-    runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
@@ -107,7 +104,7 @@ fn zone_details<'a, Message: 'static + Clone>(
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
         .spacing(space_s);
-    let reconciliation = reconciliation_banner(reconciliation, mutation_pending, map);
+    let reconciliation_section = reconciliation_banner(reconciliation, mutation_pending, map);
 
     let masquerade = if mutation_pending {
         widget::toggler(details.masquerade)
@@ -153,8 +150,11 @@ fn zone_details<'a, Message: 'static + Clone>(
             fl!("firewalld-status-error", error = error)
         }
     };
+    let has_differences = reconciliation
+        .data()
+        .is_some_and(|data| !data.reconciliation.differences.is_empty());
     let runtime_action = button::standard(fl!("firewalld-apply")).on_press_maybe(
-        (runtime_reload_needed && !mutation_pending)
+        (has_differences && !mutation_pending)
             .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
     );
     let firewalld = settings::section()
@@ -310,7 +310,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let left_column = widget::column::with_capacity(4)
-        .push(reconciliation)
+        .push(reconciliation_section)
         .push(firewalld)
         .push(overview)
         .push(services)
