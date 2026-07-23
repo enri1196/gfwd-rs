@@ -153,6 +153,19 @@ impl FwdBroker {
         Ok(zones)
     }
 
+    /// Lists the permanent firewalld service catalog in name order.
+    pub async fn get_services(&self) -> Result<Vec<String>, BrokerError> {
+        let mut services = self.config().await?.get_service_names().await?;
+        services.sort();
+        Ok(services)
+    }
+
+    /// Permanently enables a configured service in a zone.
+    pub async fn add_service(&self, zone_name: &str, service: &str) -> Result<(), BrokerError> {
+        self.zone(zone_name).await?.add_service(service).await?;
+        Ok(())
+    }
+
     pub async fn get_default_zone(&self) -> Result<String, BrokerError> {
         let cfg = self.config().await?;
         Ok(cfg.default_zone().await?)

@@ -18,6 +18,7 @@ const IPSET_TYPES: [&str; 7] = [
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DialogKind {
     Zone,
+    Service,
     Port,
     Interface,
     Source,
@@ -31,6 +32,8 @@ pub enum DialogMessage {
     ZoneNameChanged(String),
     ZoneDescriptionChanged(String),
     ZoneTargetSelected(usize),
+    ServiceSearchChanged(String),
+    ServiceSelected(String),
     PortNumberChanged(String),
     PortProtocolSelected(usize),
     PortForwardingToggled(bool),
@@ -53,6 +56,7 @@ pub struct DialogState {
     /// Error returned by the current form submission.
     pub operation_error: Option<String>,
     pub zone: ZoneFormState,
+    pub service: ServiceFormState,
     pub port: PortFormState,
     pub interface: InterfaceFormState,
     pub source: SourceFormState,
@@ -66,6 +70,7 @@ impl Default for DialogState {
         Self {
             operation_error: None,
             zone: ZoneFormState::default(),
+            service: ServiceFormState::default(),
             port: PortFormState::default(),
             interface: InterfaceFormState::default(),
             source: SourceFormState::default(),
@@ -81,6 +86,7 @@ impl DialogState {
         self.operation_error = None;
         match kind {
             DialogKind::Zone => self.zone = ZoneFormState::default(),
+            DialogKind::Service => self.service = ServiceFormState::default(),
             DialogKind::Port => self.port = PortFormState::default(),
             DialogKind::Interface => self.interface = InterfaceFormState::default(),
             DialogKind::Source => self.source = SourceFormState::default(),
@@ -89,6 +95,13 @@ impl DialogState {
             DialogKind::IpSet => self.ipset = IpSetFormState::default(),
         }
     }
+}
+
+/// Search state for the configured-service picker.
+#[derive(Debug, Clone, Default)]
+pub struct ServiceFormState {
+    /// Case-insensitive service-name filter.
+    pub search: String,
 }
 
 /// Adds a submission error above a drawer without introducing another scrollable.
@@ -232,6 +245,55 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
     ]);
 
     content.into()
+}
+
+/// Builds the searchable configured-service picker.
+pub fn service_drawer<'a>(
+    state: &'a ServiceFormState,
+    services: &'a [String],
+    enabled: &'a [String],
+    loading: bool,
+    error: Option<&'a str>,
+) -> cosmic::Element<'a, DialogMessage> {
+    let filter = state.search.trim().to_lowercase();
+    let mut section = settings::section()
+        .title(fl!("dialog-service-section"))
+        .add(
+            widget::text_input::text_input(fl!("dialog-service-search-placeholder"), &state.search)
+                .on_input(DialogMessage::ServiceSearchChanged)
+                .width(Length::Fill),
+        );
+
+    if loading {
+        section = section.add(widget::text::caption(fl!("dialog-service-loading")));
+    } else if let Some(error) = error {
+        section = section.add(widget::text::caption(error));
+    } else {
+        let mut visible = 0;
+        for service in services
+            .iter()
+            .filter(|service| filter.is_empty() || service.to_lowercase().contains(&filter))
+        {
+            visible += 1;
+            let is_enabled = enabled.iter().any(|item| item == service);
+            let label = if is_enabled {
+                fl!("dialog-service-enabled", service = service)
+            } else {
+                service.clone()
+            };
+            let message = (!is_enabled).then(|| DialogMessage::ServiceSelected(service.clone()));
+            section = section.add(
+                button::standard(label)
+                    .width(Length::Fill)
+                    .on_press_maybe(message),
+            );
+        }
+        if visible == 0 {
+            section = section.add(widget::text::caption(fl!("dialog-service-empty")));
+        }
+    }
+
+    settings::view_column(vec![section.into()]).into()
 }
 
 pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -495,6 +557,14 @@ pub fn drawer_footer_with_submit(
         .into()
 }
 
+/// Builds a footer for picker drawers whose rows are the primary actions.
+pub fn drawer_cancel_footer(kind: DialogKind) -> cosmic::Element<'static, DialogMessage> {
+    widget::row::with_capacity(2)
+        .push(widget::horizontal_space())
+        .push(button::text(fl!("dialog-cancel")).on_press(DialogMessage::Cancel(kind)))
+        .into()
+}
+
 pub fn target_from_index(index: usize) -> ZoneTarget {
     match index {
         1 => ZoneTarget::Accept,
@@ -539,6 +609,7 @@ pub fn ipset_index(ipset_type: &str) -> Option<usize> {
 fn submit_label(kind: DialogKind) -> String {
     match kind {
         DialogKind::Zone => fl!("dialog-submit-add-zone"),
+        DialogKind::Service => fl!("dialog-submit-add-service"),
         DialogKind::Port => fl!("dialog-submit-add-port"),
         DialogKind::Interface => fl!("dialog-submit-add-interface"),
         DialogKind::Source => fl!("dialog-submit-add-source"),

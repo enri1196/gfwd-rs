@@ -30,6 +30,8 @@ pub enum ZoneViewAction {
     StopFirewalld,
     /// Reloads firewalld to apply permanent configuration to runtime.
     ApplyPermanentConfiguration,
+    /// Opens the configured-service picker for the selected zone.
+    AddService,
     AddInterface,
     AddPort {
         forwarding: bool,
@@ -174,7 +176,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|service| (service.clone(), ZoneViewAction::RemoveService(service)))
             .collect(),
         "No services configured",
-        None,
+        Some((ZoneViewAction::AddService, fl!("action-add-service"))),
         map,
     );
 
@@ -192,7 +194,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No interfaces assigned",
-        Some((ZoneViewAction::AddInterface, "Add interface")),
+        Some((ZoneViewAction::AddInterface, "Add interface".to_string())),
         map,
     );
 
@@ -205,7 +207,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|source| (source.clone(), ZoneViewAction::RemoveSource(source)))
             .collect(),
         "All sources allowed",
-        Some((ZoneViewAction::AddSource, "Add source")),
+        Some((ZoneViewAction::AddSource, "Add source".to_string())),
         map,
     );
 
@@ -223,7 +225,10 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No ports configured",
-        Some((ZoneViewAction::AddPort { forwarding: false }, "Add port")),
+        Some((
+            ZoneViewAction::AddPort { forwarding: false },
+            "Add port".to_string(),
+        )),
         map,
     );
 
@@ -252,7 +257,7 @@ fn zone_details<'a, Message: 'static + Clone>(
         "No forwarded ports configured",
         Some((
             ZoneViewAction::AddPort { forwarding: true },
-            "Add forwarded port",
+            "Add forwarded port".to_string(),
         )),
         map,
     );
@@ -284,7 +289,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|icmp| (icmp.clone(), ZoneViewAction::RemoveIcmpBlock(icmp)))
             .collect(),
         "No ICMP blocks configured",
-        Some((ZoneViewAction::AddIcmpBlock, "Add ICMP block")),
+        Some((ZoneViewAction::AddIcmpBlock, "Add ICMP block".to_string())),
         map,
     );
 
@@ -297,7 +302,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|rule| (rule.clone(), ZoneViewAction::RemoveRichRule(rule)))
             .collect(),
         "No rich rules configured",
-        Some((ZoneViewAction::AddRichRule, "Add rich rule")),
+        Some((ZoneViewAction::AddRichRule, "Add rich rule".to_string())),
         map,
     );
 
@@ -347,7 +352,7 @@ fn list_section<'a, Message: 'static + Clone>(
     title: &'a str,
     mut items: Vec<(String, ZoneViewAction)>,
     empty_label: &'a str,
-    add_action: Option<(ZoneViewAction, &'a str)>,
+    add_action: Option<(ZoneViewAction, String)>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     items.sort_by(|a, b| a.0.cmp(&b.0));
@@ -388,7 +393,7 @@ fn list_section<'a, Message: 'static + Clone>(
 fn section_header<'a, Message: 'static + Clone>(
     title: &'a str,
     action: ZoneViewAction,
-    tooltip: &'a str,
+    tooltip: String,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let add = button::icon(icon::from_name(ADD_ICON))

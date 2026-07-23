@@ -6,9 +6,9 @@ use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState, drawer_footer_with_submit, drawer_with_error, icmp_drawer,
-    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, source_drawer,
-    target_from_index, view_ipset_content, view_zone_content,
+    ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
+    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer,
+    service_drawer, source_drawer, target_from_index, view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -45,6 +45,12 @@ pub struct AppModel {
     interface_loading: bool,
     /// Error message when interface discovery fails.
     interface_error: Option<String>,
+    /// Permanent firewalld service catalog.
+    service_options: Vec<String>,
+    /// Whether the service catalog is being loaded.
+    service_loading: bool,
+    /// Error returned while loading the service catalog.
+    service_error: Option<String>,
     /// User-visible notifications for completed operations.
     toasts: Toasts<Message>,
     /// Name of the mutation currently in flight.
@@ -79,6 +85,7 @@ pub enum Message {
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
     InterfacesLoaded(Result<Vec<String>, BrokerError>),
+    ServicesLoaded(Result<Vec<String>, BrokerError>),
     DefaultZoneSet(Result<(), BrokerError>),
     ZoneCreated {
         zone_name: String,
@@ -179,6 +186,9 @@ impl cosmic::Application for AppModel {
             interface_options: Vec::new(),
             interface_loading: false,
             interface_error: None,
+            service_options: Vec::new(),
+            service_loading: false,
+            service_error: None,
             toasts: Toasts::new(Message::DismissToast),
             pending_operation: None,
             confirmation: None,
@@ -336,6 +346,10 @@ impl cosmic::Application for AppModel {
             && !self.dialogs.interface.interface.trim().is_empty();
         let can_submit = !self.mutation_pending();
         let error = self.dialogs.operation_error.as_deref();
+        let enabled_services = match &self.zone_view {
+            ZoneViewState::Ready(details) => details.services.as_slice(),
+            _ => &[],
+        };
 
         Some(match self.context_page {
             ContextPage::About => context_drawer::about(
@@ -355,6 +369,22 @@ impl cosmic::Application for AppModel {
                 DialogKind::Zone,
                 can_submit && !self.dialogs.zone.name.trim().is_empty(),
             ))
+            .map(Message::Dialog),
+            ContextPage::AddService => context_drawer::context_drawer(
+                drawer_with_error(
+                    service_drawer(
+                        &self.dialogs.service,
+                        &self.service_options,
+                        enabled_services,
+                        self.service_loading,
+                        self.service_error.as_deref(),
+                    ),
+                    error,
+                ),
+                DialogMessage::Cancel(DialogKind::Service),
+            )
+            .title(fl!("dialog-service-title"))
+            .footer(drawer_cancel_footer(DialogKind::Service))
             .map(Message::Dialog),
             ContextPage::AddPort => context_drawer::context_drawer(
                 drawer_with_error(port_drawer(&self.dialogs.port), error),
@@ -535,7 +565,8 @@ impl cosmic::Application for AppModel {
                 let mut tasks = Vec::new();
                 let requires_zone = matches!(
                     context_page,
-                    ContextPage::AddPort
+                    ContextPage::AddService
+                        | ContextPage::AddPort
                         | ContextPage::AddInterface
                         | ContextPage::AddSource
                         | ContextPage::AddIcmp
@@ -556,6 +587,8 @@ impl cosmic::Application for AppModel {
                     }
                     if context_page == ContextPage::AddInterface {
                         tasks.push(self.start_interfaces_load());
+                    } else if context_page == ContextPage::AddService {
+                        tasks.push(self.start_services_load());
                     }
                 }
                 if !tasks.is_empty() {
@@ -703,6 +736,19 @@ impl cosmic::Application for AppModel {
                     Err(error) => {
                         self.interface_options.clear();
                         self.interface_error = Some(error.to_string());
+                    }
+                }
+            }
+            Message::ServicesLoaded(result) => {
+                self.service_loading = false;
+                match result {
+                    Ok(services) => {
+                        self.service_options = services;
+                        self.service_error = None;
+                    }
+                    Err(error) => {
+                        self.service_options.clear();
+                        self.service_error = Some(error.to_string());
                     }
                 }
             }
@@ -1003,6 +1049,10 @@ impl AppModel {
             return Task::none();
         }
         match &action {
+            ZoneViewAction::AddService => {
+                self.open_context_page(ContextPage::AddService);
+                return self.start_services_load();
+            }
             ZoneViewAction::SetMasquerade(enabled) => {
                 let Some(zone_name) = self.current_zone_name() else {
                     return Task::none();
@@ -1078,6 +1128,24 @@ impl AppModel {
             DialogMessage::ZoneTargetSelected(index) => {
                 self.dialogs.zone.target = target_from_index(index);
             }
+            DialogMessage::ServiceSearchChanged(value) => {
+                self.dialogs.service.search = value;
+            }
+            DialogMessage::ServiceSelected(service) => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
+                    return Task::none();
+                };
+                let already_enabled = matches!(
+                    &self.zone_view,
+                    ZoneViewState::Ready(details) if details.services.contains(&service)
+                );
+                if already_enabled {
+                    self.dialogs.operation_error = Some(fl!("error-service-already-enabled"));
+                    return Task::none();
+                }
+                return self.start_service_add(zone_name, service);
+            }
             DialogMessage::PortNumberChanged(value) => {
                 self.dialogs.port.port = value;
             }
@@ -1133,6 +1201,9 @@ impl AppModel {
                     return Task::none();
                 }
                 return self.start_zone_create(name, description, target);
+            }
+            DialogMessage::Submit(DialogKind::Service) => {
+                return Task::none();
             }
             DialogMessage::Submit(DialogKind::Port) => {
                 let port = self.dialogs.port.port.trim().to_string();
@@ -1288,6 +1359,16 @@ impl AppModel {
     async fn load_interfaces() -> Result<Vec<String>, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_interfaces().await
+    }
+
+    async fn load_services() -> Result<Vec<String>, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_services().await
+    }
+
+    async fn add_service(zone_name: String, service: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_service(&zone_name, &service).await
     }
 
     async fn load_firewalld_status() -> Result<FirewalldStatus, BrokerError> {
@@ -1492,6 +1573,31 @@ impl AppModel {
         self.interface_options.clear();
         Task::perform(Self::load_interfaces(), |result| {
             cosmic::Action::from(Message::InterfacesLoaded(result))
+        })
+    }
+
+    fn start_services_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.service_loading = true;
+        self.service_error = None;
+        Task::perform(Self::load_services(), |result| {
+            cosmic::Action::from(Message::ServicesLoaded(result))
+        })
+    }
+
+    fn start_service_add(
+        &mut self,
+        zone_name: String,
+        service: String,
+    ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-service")) {
+            return Task::none();
+        }
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::add_service(zone_name, service), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
         })
     }
 
@@ -1729,7 +1835,8 @@ impl AppModel {
             | ZoneViewAction::StartFirewalld
             | ZoneViewAction::StopFirewalld
             | ZoneViewAction::ApplyPermanentConfiguration => Task::none(),
-            ZoneViewAction::AddInterface
+            ZoneViewAction::AddService
+            | ZoneViewAction::AddInterface
             | ZoneViewAction::AddPort { .. }
             | ZoneViewAction::AddSource
             | ZoneViewAction::AddIcmpBlock
@@ -1929,6 +2036,7 @@ pub enum ContextPage {
     #[default]
     About,
     AddZone,
+    AddService,
     AddPort,
     AddInterface,
     AddSource,
@@ -1940,6 +2048,7 @@ pub enum ContextPage {
 fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
     match page {
         ContextPage::AddZone => Some(DialogKind::Zone),
+        ContextPage::AddService => Some(DialogKind::Service),
         ContextPage::AddPort => Some(DialogKind::Port),
         ContextPage::AddInterface => Some(DialogKind::Interface),
         ContextPage::AddSource => Some(DialogKind::Source),
