@@ -462,7 +462,7 @@ impl cosmic::Application for AppModel {
             .title("Add Rich Rule")
             .footer(drawer_footer_with_submit(
                 DialogKind::RichRule,
-                can_submit && !self.dialogs.rich_rule.rule.trim().is_empty(),
+                can_submit && self.dialogs.rich_rule.generated_rule().is_ok(),
             ))
             .map(Message::Dialog),
             ContextPage::AddIpSet => context_drawer::context_drawer(
@@ -1232,8 +1232,46 @@ impl AppModel {
                 }
                 return self.start_icmp_add(zone_name, icmp_type);
             }
-            DialogMessage::RichRuleChanged(value) => {
-                self.dialogs.rich_rule.rule = value;
+            DialogMessage::RichRuleRawModeToggled(value) => {
+                self.dialogs.rich_rule.raw_mode = value;
+            }
+            DialogMessage::RichRuleRawChanged(value) => {
+                self.dialogs.rich_rule.raw_rule = value;
+            }
+            DialogMessage::RichRuleFamilySelected(value) => {
+                self.dialogs.rich_rule.family = value;
+            }
+            DialogMessage::RichRuleSourceChanged(value) => {
+                self.dialogs.rich_rule.source = value;
+            }
+            DialogMessage::RichRuleSourceInvertToggled(value) => {
+                self.dialogs.rich_rule.source_invert = value;
+            }
+            DialogMessage::RichRuleDestinationChanged(value) => {
+                self.dialogs.rich_rule.destination = value;
+            }
+            DialogMessage::RichRuleDestinationInvertToggled(value) => {
+                self.dialogs.rich_rule.destination_invert = value;
+            }
+            DialogMessage::RichRuleElementSelected(value) => {
+                self.dialogs.rich_rule.element = value;
+                self.dialogs.rich_rule.element_value.clear();
+            }
+            DialogMessage::RichRuleElementValueChanged(value) => {
+                self.dialogs.rich_rule.element_value = value;
+            }
+            DialogMessage::RichRulePortProtocolSelected(value) => {
+                self.dialogs.rich_rule.port_protocol =
+                    crate::ui::dialog_drawers::protocol_from_index(value);
+            }
+            DialogMessage::RichRuleActionSelected(value) => {
+                self.dialogs.rich_rule.action = value;
+            }
+            DialogMessage::RichRuleRejectTypeChanged(value) => {
+                self.dialogs.rich_rule.reject_type = value;
+            }
+            DialogMessage::RichRuleMarkChanged(value) => {
+                self.dialogs.rich_rule.mark = value;
             }
             DialogMessage::IpSetNameChanged(value) => {
                 self.dialogs.ipset.name = value;
@@ -1308,11 +1346,10 @@ impl AppModel {
                 return Task::none();
             }
             DialogMessage::Submit(DialogKind::RichRule) => {
-                let rule = self.dialogs.rich_rule.rule.trim().to_string();
-                if rule.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
+                let Ok(rule) = self.dialogs.rich_rule.generated_rule() else {
+                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
                     return Task::none();
-                }
+                };
                 let Some(zone_name) = self.current_zone_name() else {
                     self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
