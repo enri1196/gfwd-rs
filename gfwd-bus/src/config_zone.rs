@@ -129,6 +129,7 @@ pub trait ConfigZone {
     #[zbus(name = "getSettings")]
     fn get_settings(&self) -> ZResult<ZoneSettings>;
 
+    /// Get all permanent settings of the zone as a keyed settings dictionary.
     #[zbus(name = "getSettings2")]
     fn get_settings2(&self) -> ZResult<HashMap<String, OwnedValue>>;
 

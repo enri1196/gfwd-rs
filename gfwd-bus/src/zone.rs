@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use zbus::Result as ZResult;
 use zbus_macros::proxy;
+use zvariant::OwnedValue;
 
 #[proxy(
     interface = "org.fedoraproject.FirewallD1.zone",
@@ -99,6 +100,10 @@ pub trait Zone {
     /// Get the interfaces bound to a zone.
     #[zbus(name = "getInterfaces")]
     fn get_interfaces(&self, zone: &str) -> ZResult<Vec<String>>;
+
+    /// Get all runtime settings of a zone as a keyed settings dictionary.
+    #[zbus(name = "getZoneSettings2")]
+    fn get_settings2(&self, zone: &str) -> ZResult<HashMap<String, OwnedValue>>;
 
     /// Get the ports for a zone.
     #[zbus(name = "getPorts")]
@@ -354,4 +359,8 @@ pub trait Zone {
     /// Signal: emitted when a source's zone has changed.
     #[zbus(signal, name = "ZoneOfSourceChanged")]
     fn zone_of_source_changed(&self, zone: &str, source: &str) -> ZResult<()>;
+
+    /// Signal: emitted when a zone's runtime settings are updated in bulk.
+    #[zbus(signal, name = "ZoneUpdated2")]
+    fn zone_updated(&self, zone: &str, settings: HashMap<String, OwnedValue>) -> ZResult<()>;
 }
