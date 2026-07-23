@@ -1,6 +1,9 @@
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, dropdown, settings};
 
+use crate::core::{
+    ValidationError, validate_forward_address, validate_port_protocol, validate_port_spec,
+};
 use crate::fl;
 use crate::models::ZoneTarget;
 
@@ -140,6 +143,12 @@ pub struct PortFormState {
     pub forwarding: bool,
     pub dest_ip: String,
     pub dest_port: String,
+    /// Whether the source port field has been edited.
+    pub port_touched: bool,
+    /// Whether the destination address field has been edited.
+    pub dest_ip_touched: bool,
+    /// Whether the destination port field has been edited.
+    pub dest_port_touched: bool,
 }
 
 impl Default for PortFormState {
@@ -150,7 +159,21 @@ impl Default for PortFormState {
             forwarding: false,
             dest_ip: String::new(),
             dest_port: String::new(),
+            port_touched: false,
+            dest_ip_touched: false,
+            dest_port_touched: false,
         }
+    }
+}
+
+impl PortFormState {
+    /// Returns whether all currently visible port fields are valid.
+    pub fn is_valid(&self) -> bool {
+        validate_port_spec(&self.port).is_ok()
+            && validate_port_protocol(&self.protocol).is_ok()
+            && (!self.forwarding
+                || (validate_port_spec(&self.dest_port).is_ok()
+                    && validate_forward_address(&self.dest_ip).is_ok()))
     }
 }
 
@@ -300,28 +323,34 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
     let protocol_selected = protocol_index(&state.protocol);
 
     let mut sections = Vec::new();
-    sections.push(
-        settings::section()
-            .title(fl!("dialog-port-section"))
-            .add(
-                settings::item::builder(fl!("dialog-port-label")).control(
-                    widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)
-                        .on_input(DialogMessage::PortNumberChanged)
-                        .width(Length::Fill),
-                ),
-            )
-            .add(
-                settings::item::builder(fl!("dialog-port-protocol-label")).control(
-                    dropdown(
-                        &PORT_PROTOCOLS,
-                        protocol_selected,
-                        DialogMessage::PortProtocolSelected,
-                    )
+    let mut port_section = settings::section()
+        .title(fl!("dialog-port-section"))
+        .add(
+            settings::item::builder(fl!("dialog-port-label")).control(
+                widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)
+                    .on_input(DialogMessage::PortNumberChanged)
                     .width(Length::Fill),
-                ),
-            )
-            .into(),
-    );
+            ),
+        )
+        .add(
+            settings::item::builder(fl!("dialog-port-protocol-label")).control(
+                dropdown(
+                    &PORT_PROTOCOLS,
+                    protocol_selected,
+                    DialogMessage::PortProtocolSelected,
+                )
+                .width(Length::Fill),
+            ),
+        );
+    if state.port_touched {
+        if let Err(error) = validate_port_spec(&state.port) {
+            port_section = port_section.add(widget::text::caption(validation_message(error)));
+        }
+    }
+    if let Err(error) = validate_port_protocol(&state.protocol) {
+        port_section = port_section.add(widget::text::caption(validation_message(error)));
+    }
+    sections.push(port_section.into());
 
     sections.push(
         settings::section()
@@ -336,36 +365,56 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
     );
 
     if state.forwarding {
-        sections.push(
-            settings::section()
-                .title(fl!("dialog-port-forward-destination-section"))
-                .add(
-                    settings::item::builder(fl!("dialog-port-dest-ip-label")).control(
-                        widget::text_input::text_input(
-                            fl!("dialog-port-dest-ip-placeholder"),
-                            &state.dest_ip,
-                        )
-                        .on_input(DialogMessage::PortForwardDestIpChanged)
-                        .width(Length::Fill),
-                    ),
-                )
-                .add(
-                    settings::item::builder(fl!("dialog-port-dest-port-label")).control(
-                        widget::text_input::text_input(
-                            fl!("dialog-port-dest-port-placeholder"),
-                            &state.dest_port,
-                        )
-                        .on_input(DialogMessage::PortForwardDestPortChanged)
-                        .width(Length::Fill),
-                    ),
-                )
-                .into(),
-        );
+        let mut destination_section = settings::section()
+            .title(fl!("dialog-port-forward-destination-section"))
+            .add(
+                settings::item::builder(fl!("dialog-port-dest-ip-label")).control(
+                    widget::text_input::text_input(
+                        fl!("dialog-port-dest-ip-placeholder"),
+                        &state.dest_ip,
+                    )
+                    .on_input(DialogMessage::PortForwardDestIpChanged)
+                    .width(Length::Fill),
+                ),
+            )
+            .add(
+                settings::item::builder(fl!("dialog-port-dest-port-label")).control(
+                    widget::text_input::text_input(
+                        fl!("dialog-port-dest-port-placeholder"),
+                        &state.dest_port,
+                    )
+                    .on_input(DialogMessage::PortForwardDestPortChanged)
+                    .width(Length::Fill),
+                ),
+            );
+        if state.dest_ip_touched {
+            if let Err(error) = validate_forward_address(&state.dest_ip) {
+                destination_section =
+                    destination_section.add(widget::text::caption(validation_message(error)));
+            }
+        }
+        if state.dest_port_touched {
+            if let Err(error) = validate_port_spec(&state.dest_port) {
+                destination_section =
+                    destination_section.add(widget::text::caption(validation_message(error)));
+            }
+        }
+        sections.push(destination_section.into());
     }
 
     let content = settings::view_column(sections);
 
     content.into()
+}
+
+fn validation_message(error: ValidationError) -> String {
+    match error {
+        ValidationError::Required => fl!("validation-required"),
+        ValidationError::InvalidPort => fl!("validation-port"),
+        ValidationError::ReversedPortRange => fl!("validation-port-range-order"),
+        ValidationError::InvalidProtocol => fl!("validation-protocol"),
+        ValidationError::InvalidIpAddress => fl!("validation-ip-address"),
+    }
 }
 
 pub fn interface_drawer<'a>(

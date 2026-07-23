@@ -393,10 +393,7 @@ impl cosmic::Application for AppModel {
             .title("Add Port")
             .footer(drawer_footer_with_submit(
                 DialogKind::Port,
-                can_submit
-                    && !self.dialogs.port.port.trim().is_empty()
-                    && (!self.dialogs.port.forwarding
-                        || !self.dialogs.port.dest_port.trim().is_empty()),
+                can_submit && self.dialogs.port.is_valid(),
             ))
             .map(Message::Dialog),
             ContextPage::AddInterface => context_drawer::context_drawer(
@@ -1148,6 +1145,7 @@ impl AppModel {
             }
             DialogMessage::PortNumberChanged(value) => {
                 self.dialogs.port.port = value;
+                self.dialogs.port.port_touched = true;
             }
             DialogMessage::PortProtocolSelected(index) => {
                 self.dialogs.port.protocol = crate::ui::dialog_drawers::protocol_from_index(index);
@@ -1157,9 +1155,11 @@ impl AppModel {
             }
             DialogMessage::PortForwardDestIpChanged(value) => {
                 self.dialogs.port.dest_ip = value;
+                self.dialogs.port.dest_ip_touched = true;
             }
             DialogMessage::PortForwardDestPortChanged(value) => {
                 self.dialogs.port.dest_port = value;
+                self.dialogs.port.dest_port_touched = true;
             }
             DialogMessage::InterfaceSelected(index) => {
                 if index == 0 {
@@ -1206,24 +1206,23 @@ impl AppModel {
                 return Task::none();
             }
             DialogMessage::Submit(DialogKind::Port) => {
+                self.dialogs.port.port_touched = true;
+                self.dialogs.port.dest_ip_touched = true;
+                self.dialogs.port.dest_port_touched = true;
+                if !self.dialogs.port.is_valid() {
+                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
+                    return Task::none();
+                }
                 let port = self.dialogs.port.port.trim().to_string();
                 let protocol = self.dialogs.port.protocol.trim().to_string();
                 let forwarding = self.dialogs.port.forwarding;
                 let dest_ip = self.dialogs.port.dest_ip.trim().to_string();
                 let dest_port = self.dialogs.port.dest_port.trim().to_string();
-                if port.is_empty() || protocol.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
-                    return Task::none();
-                }
                 let Some(zone_name) = self.current_zone_name() else {
                     self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 if forwarding {
-                    if dest_port.is_empty() {
-                        self.dialogs.operation_error = Some(fl!("error-required-field"));
-                        return Task::none();
-                    }
                     return self
                         .start_forward_port_add(zone_name, port, protocol, dest_port, dest_ip);
                 }
