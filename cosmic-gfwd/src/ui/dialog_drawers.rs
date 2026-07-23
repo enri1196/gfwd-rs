@@ -60,7 +60,7 @@ pub enum DialogMessage {
     Cancel(DialogKind),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DialogState {
     /// Error returned by the current form submission.
     pub operation_error: Option<String>,
@@ -72,22 +72,6 @@ pub struct DialogState {
     pub icmp: IcmpFormState,
     pub rich_rule: RichRuleFormState,
     pub ipset: IpSetFormState,
-}
-
-impl Default for DialogState {
-    fn default() -> Self {
-        Self {
-            operation_error: None,
-            zone: ZoneFormState::default(),
-            service: ServiceFormState::default(),
-            port: PortFormState::default(),
-            interface: InterfaceFormState::default(),
-            source: SourceFormState::default(),
-            icmp: IcmpFormState::default(),
-            rich_rule: RichRuleFormState::default(),
-            ipset: IpSetFormState::default(),
-        }
-    }
 }
 
 impl DialogState {
@@ -183,19 +167,10 @@ impl PortFormState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InterfaceFormState {
     pub interface: String,
     pub error: Option<String>,
-}
-
-impl Default for InterfaceFormState {
-    fn default() -> Self {
-        Self {
-            interface: String::new(),
-            error: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -467,11 +442,10 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                 .width(Length::Fill),
             ),
         );
-    if state.port_touched {
-        if let Err(error) = validate_port_spec(&state.port) {
-            port_section =
-                port_section.add(widget::text::caption(localized_validation_error(error)));
-        }
+    if state.port_touched
+        && let Err(error) = validate_port_spec(&state.port)
+    {
+        port_section = port_section.add(widget::text::caption(localized_validation_error(error)));
     }
     if let Err(error) = validate_port_protocol(&state.protocol) {
         port_section = port_section.add(widget::text::caption(localized_validation_error(error)));
@@ -513,17 +487,17 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                     .width(Length::Fill),
                 ),
             );
-        if state.dest_ip_touched {
-            if let Err(error) = validate_forward_address(&state.dest_ip) {
-                destination_section = destination_section
-                    .add(widget::text::caption(localized_validation_error(error)));
-            }
+        if state.dest_ip_touched
+            && let Err(error) = validate_forward_address(&state.dest_ip)
+        {
+            destination_section =
+                destination_section.add(widget::text::caption(localized_validation_error(error)));
         }
-        if state.dest_port_touched {
-            if let Err(error) = validate_port_spec(&state.dest_port) {
-                destination_section = destination_section
-                    .add(widget::text::caption(localized_validation_error(error)));
-            }
+        if state.dest_port_touched
+            && let Err(error) = validate_port_spec(&state.dest_port)
+        {
+            destination_section =
+                destination_section.add(widget::text::caption(localized_validation_error(error)));
         }
         sections.push(destination_section.into());
     }
@@ -635,10 +609,10 @@ pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Dial
                 .width(Length::Fill),
         ),
     );
-    if state.touched {
-        if let Err(error) = validate_source(&state.source) {
-            section = section.add(widget::text::caption(localized_validation_error(error)));
-        }
+    if state.touched
+        && let Err(error) = validate_source(&state.source)
+    {
+        section = section.add(widget::text::caption(localized_validation_error(error)));
     }
     let content = settings::view_column(vec![section.into()]);
 
@@ -918,21 +892,20 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
                 .width(Length::Fill),
             ),
         );
-    if state.name_touched {
-        if let Err(error) = validate_ipset_name(&state.name) {
-            section = section.add(widget::text::caption(localized_validation_error(error)));
-        }
+    if state.name_touched
+        && let Err(error) = validate_ipset_name(&state.name)
+    {
+        section = section.add(widget::text::caption(localized_validation_error(error)));
     }
-    if state.entries_touched {
-        if let Some(error) = state
+    if state.entries_touched
+        && let Some(error) = state
             .entries
             .lines()
             .map(str::trim)
             .filter(|entry| !entry.is_empty())
             .find_map(|entry| validate_ipset_entry(entry, &state.ipset_type).err())
-        {
-            section = section.add(widget::text::caption(localized_validation_error(error)));
-        }
+    {
+        section = section.add(widget::text::caption(localized_validation_error(error)));
     }
     let content = settings::view_column(vec![section.into()]);
 

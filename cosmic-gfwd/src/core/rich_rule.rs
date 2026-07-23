@@ -188,10 +188,9 @@ fn valid_mark(value: &str) -> bool {
         return false;
     }
     let mut parts = value.split('/');
-    let valid = parts.next().is_some_and(valid_mark_number)
+    parts.next().is_some_and(valid_mark_number)
         && parts.next().is_none_or(valid_mark_number)
-        && parts.next().is_none();
-    valid
+        && parts.next().is_none()
 }
 
 fn valid_mark_number(value: &str) -> bool {

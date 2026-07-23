@@ -247,13 +247,11 @@ impl FwdBroker {
         };
 
         let mut interfaces = Vec::new();
-        for entry in entries {
-            if let Ok(entry) = entry {
-                if let Some(name) = entry.file_name().to_str() {
-                    if should_include_interface(name) {
-                        interfaces.push(name.to_string());
-                    }
-                }
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str()
+                && should_include_interface(name)
+            {
+                interfaces.push(name.to_string());
             }
         }
 

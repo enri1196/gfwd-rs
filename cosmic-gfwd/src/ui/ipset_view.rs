@@ -9,7 +9,7 @@ const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
 const REMOVE_ICON: &str = "user-trash-symbolic";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct IpSetViewState {
     pub ipsets: Vec<String>,
     pub selected: Option<String>,
@@ -18,20 +18,6 @@ pub struct IpSetViewState {
     pub entry_error: Option<String>,
     pub list_loading: bool,
     pub details_loading: bool,
-}
-
-impl Default for IpSetViewState {
-    fn default() -> Self {
-        Self {
-            ipsets: Vec::new(),
-            selected: None,
-            details: None,
-            entry_input: String::new(),
-            entry_error: None,
-            list_loading: false,
-            details_loading: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

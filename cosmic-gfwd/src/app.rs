@@ -324,22 +324,22 @@ impl cosmic::Application for AppModel {
                         menu::Item::Button(
                             fl!("context-open-zone"),
                             None,
-                            NavMenuAction::OpenZone(context_id),
+                            NavMenuAction::Open(context_id),
                         ),
                         menu::Item::Button(
                             fl!("context-activate-zone"),
                             None,
-                            NavMenuAction::ActivateZone(context_id),
+                            NavMenuAction::Activate(context_id),
                         ),
                         menu::Item::Button(
                             fl!("context-set-default-zone"),
                             None,
-                            NavMenuAction::SetDefaultZone(context_id),
+                            NavMenuAction::SetDefault(context_id),
                         ),
                         menu::Item::Button(
                             fl!("context-delete-zone"),
                             None,
-                            NavMenuAction::DeleteZone(context_id),
+                            NavMenuAction::Delete(context_id),
                         ),
                     ],
                 ))
@@ -733,7 +733,7 @@ impl cosmic::Application for AppModel {
                 }
 
                 self.zone_view = match result {
-                    Ok(details) => ZoneViewState::Ready(details),
+                    Ok(details) => ZoneViewState::Ready(Box::new(details)),
                     Err(error) => ZoneViewState::Error {
                         zone: zone_name,
                         message: error.to_string(),
@@ -851,11 +851,11 @@ impl cosmic::Application for AppModel {
             | Message::ZoneItemRemoved { zone_name, result } => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
-                    if self.core.window.show_context {
-                        if let Some(kind) = dialog_kind_for_page(self.context_page) {
-                            self.dialogs.reset(kind);
-                            self.close_context_drawer();
-                        }
+                    if self.core.window.show_context
+                        && let Some(kind) = dialog_kind_for_page(self.context_page)
+                    {
+                        self.dialogs.reset(kind);
+                        self.close_context_drawer();
                     }
                     let is_active = matches!(
                         self.sidebar.active_item(),
@@ -1086,8 +1086,8 @@ impl AppModel {
 
     fn handle_nav_menu_action(&mut self, action: NavMenuAction) -> Task<cosmic::Action<Message>> {
         match action {
-            NavMenuAction::OpenZone(id) => self.handle_nav_select(id),
-            NavMenuAction::ActivateZone(id) => {
+            NavMenuAction::Open(id) => self.handle_nav_select(id),
+            NavMenuAction::Activate(id) => {
                 if self.sidebar.zone_name_for_id(id).is_none() {
                     return Task::none();
                 }
@@ -1097,13 +1097,13 @@ impl AppModel {
                 self.reset_dialog_for_context(ContextPage::AddInterface);
                 Task::batch(vec![task, self.start_interfaces_load()])
             }
-            NavMenuAction::SetDefaultZone(id) => {
+            NavMenuAction::SetDefault(id) => {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
                     return Task::none();
                 };
                 self.start_default_zone_set(zone_name)
             }
-            NavMenuAction::DeleteZone(id) => {
+            NavMenuAction::Delete(id) => {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
                     return Task::none();
                 };
@@ -2245,10 +2245,10 @@ fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NavMenuAction {
-    OpenZone(nav_bar::Id),
-    ActivateZone(nav_bar::Id),
-    SetDefaultZone(nav_bar::Id),
-    DeleteZone(nav_bar::Id),
+    Open(nav_bar::Id),
+    Activate(nav_bar::Id),
+    SetDefault(nav_bar::Id),
+    Delete(nav_bar::Id),
 }
 
 impl menu::action::MenuAction for NavMenuAction {

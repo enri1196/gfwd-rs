@@ -14,7 +14,7 @@ const REMOVE_ICON: &str = "user-trash-symbolic";
 pub enum ZoneViewState {
     Empty,
     Loading { zone: String },
-    Ready(ZoneDetails),
+    Ready(Box<ZoneDetails>),
     Error { zone: String, message: String },
 }
 
