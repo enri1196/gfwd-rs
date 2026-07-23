@@ -1,7 +1,7 @@
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings};
 
-use crate::core::FirewalldStatus;
+use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
 use crate::models::zone::ZoneDetails;
 
@@ -30,6 +30,10 @@ pub enum ZoneViewAction {
     StopFirewalld,
     /// Reloads firewalld to apply permanent configuration to runtime.
     ApplyPermanentConfiguration,
+    /// Opens the permanent/runtime difference review drawer.
+    ReviewReconciliation,
+    /// Reloads both selected-zone snapshots.
+    RefreshReconciliation,
     /// Opens the configured-service picker for the selected zone.
     AddService,
     AddInterface,
@@ -63,6 +67,7 @@ pub enum ZoneViewAction {
 pub fn view_zone_content<'a, Message: 'static + Clone>(
     state: &'a ZoneViewState,
     firewalld_status: &'a FirewalldStatus,
+    reconciliation: &'a ZoneReconciliationState,
     mutation_pending: bool,
     runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
@@ -74,6 +79,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
         ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(
             details,
             firewalld_status,
+            reconciliation,
             mutation_pending,
             runtime_reload_needed,
             map,
@@ -87,6 +93,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
 fn zone_details<'a, Message: 'static + Clone>(
     details: &'a ZoneDetails,
     firewalld_status: &'a FirewalldStatus,
+    reconciliation: &'a ZoneReconciliationState,
     mutation_pending: bool,
     runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
@@ -96,15 +103,11 @@ fn zone_details<'a, Message: 'static + Clone>(
     let space_m = spacing.space_m;
     let space_l = spacing.space_l;
 
-    let header = widget::column::with_capacity(3)
+    let header = widget::column::with_capacity(2)
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
-        .push(widget::text::caption(if runtime_reload_needed {
-            fl!("zone-permanent-pending")
-        } else {
-            fl!("zone-permanent-notice")
-        }))
         .spacing(space_s);
+    let reconciliation = reconciliation_banner(reconciliation, mutation_pending, map);
 
     let masquerade = if mutation_pending {
         widget::toggler(details.masquerade)
@@ -306,7 +309,8 @@ fn zone_details<'a, Message: 'static + Clone>(
         map,
     );
 
-    let left_column = widget::column::with_capacity(3)
+    let left_column = widget::column::with_capacity(4)
+        .push(reconciliation)
         .push(firewalld)
         .push(overview)
         .push(services)
@@ -335,6 +339,56 @@ fn zone_details<'a, Message: 'static + Clone>(
         .push(columns)
         .spacing(space_l)
         .width(Length::Fill)
+        .into()
+}
+
+fn reconciliation_banner<'a, Message: 'static + Clone>(
+    state: &'a ZoneReconciliationState,
+    mutation_pending: bool,
+    map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
+) -> cosmic::Element<'a, Message> {
+    let status = match state {
+        ZoneReconciliationState::Loading { .. } => fl!("reconciliation-status-loading"),
+        ZoneReconciliationState::InSync { .. } => fl!("reconciliation-status-in-sync"),
+        ZoneReconciliationState::Different { data, .. } => fl!(
+            "reconciliation-status-different",
+            count = data.reconciliation.differences.len()
+        ),
+        ZoneReconciliationState::Incomplete { data, .. } => fl!(
+            "reconciliation-status-incomplete",
+            count = data.reconciliation.differences.len()
+        ),
+        ZoneReconciliationState::Unavailable { .. } => fl!("reconciliation-status-unavailable"),
+        ZoneReconciliationState::Error { message, .. } => {
+            fl!("reconciliation-status-error", error = message)
+        }
+    };
+    let can_review = matches!(
+        state,
+        ZoneReconciliationState::Different { .. } | ZoneReconciliationState::Incomplete { .. }
+    );
+    let can_refresh =
+        !mutation_pending && !matches!(state, ZoneReconciliationState::Loading { .. });
+    let actions = widget::row::with_capacity(2)
+        .push(
+            button::standard(fl!("reconciliation-review")).on_press_maybe(
+                (can_review && !mutation_pending)
+                    .then_some(map(ZoneViewAction::ReviewReconciliation)),
+            ),
+        )
+        .push(
+            button::standard(fl!("reconciliation-refresh"))
+                .on_press_maybe(can_refresh.then_some(map(ZoneViewAction::RefreshReconciliation))),
+        )
+        .spacing(cosmic::theme::spacing().space_s);
+
+    settings::section()
+        .title(fl!("reconciliation-section"))
+        .add(
+            settings::item::builder(status)
+                .description(fl!("reconciliation-banner-description"))
+                .control(actions),
+        )
         .into()
 }
 

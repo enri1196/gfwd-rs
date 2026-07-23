@@ -11,8 +11,8 @@ use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
     ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
     drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
-    port_drawer, rich_rule_drawer, service_drawer, source_drawer, target_from_index,
-    view_ipset_content, view_zone_content,
+    port_drawer, reconciliation_drawer, rich_rule_drawer, service_drawer, source_drawer,
+    target_from_index, view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -391,6 +391,15 @@ impl cosmic::Application for AppModel {
                 |url| Message::LaunchUrl(url.to_string()),
                 Message::ToggleContextPage(ContextPage::About),
             ),
+            ContextPage::ReviewReconciliation => context_drawer::context_drawer(
+                reconciliation_drawer(
+                    &self.zone_reconciliation,
+                    self.mutation_pending(),
+                    Message::ZoneAction,
+                ),
+                Message::ToggleContextPage(ContextPage::ReviewReconciliation),
+            )
+            .title(fl!("reconciliation-review-title")),
             ContextPage::AddZone => context_drawer::context_drawer(
                 drawer_with_error(
                     crate::ui::dialog_drawers::zone_drawer(&self.dialogs.zone),
@@ -560,6 +569,7 @@ impl cosmic::Application for AppModel {
             _ => view_zone_content(
                 &self.zone_view,
                 &self.firewalld_status,
+                &self.zone_reconciliation,
                 self.mutation_pending(),
                 self.runtime_reload_needed,
                 Message::ZoneAction,
@@ -1207,6 +1217,22 @@ impl AppModel {
             }
             ZoneViewAction::ApplyPermanentConfiguration => {
                 return self.start_permanent_apply();
+            }
+            ZoneViewAction::ReviewReconciliation => {
+                self.open_context_page(ContextPage::ReviewReconciliation);
+                return Task::none();
+            }
+            ZoneViewAction::RefreshReconciliation => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                if self.firewalld_status != FirewalldStatus::Active {
+                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+                        zone: Some(zone_name),
+                    };
+                    return Task::none();
+                }
+                return self.start_zone_reconciliation(zone_name);
             }
             ZoneViewAction::AddInterface => {
                 self.open_context_page(ContextPage::AddInterface);
@@ -2063,7 +2089,9 @@ impl AppModel {
             | ZoneViewAction::SetIcmpBlockInversion(_)
             | ZoneViewAction::StartFirewalld
             | ZoneViewAction::StopFirewalld
-            | ZoneViewAction::ApplyPermanentConfiguration => Task::none(),
+            | ZoneViewAction::ApplyPermanentConfiguration
+            | ZoneViewAction::ReviewReconciliation
+            | ZoneViewAction::RefreshReconciliation => Task::none(),
             ZoneViewAction::AddService
             | ZoneViewAction::AddInterface
             | ZoneViewAction::AddPort { .. }
@@ -2317,6 +2345,7 @@ pub enum ContextPage {
     AddIcmp,
     AddRichRule,
     AddIpSet,
+    ReviewReconciliation,
 }
 
 fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
@@ -2329,7 +2358,7 @@ fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
         ContextPage::AddIcmp => Some(DialogKind::Icmp),
         ContextPage::AddRichRule => Some(DialogKind::RichRule),
         ContextPage::AddIpSet => Some(DialogKind::IpSet),
-        ContextPage::About => None,
+        ContextPage::About | ContextPage::ReviewReconciliation => None,
     }
 }
 
