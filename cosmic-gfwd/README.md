@@ -32,11 +32,28 @@ It is recommended to build a source tarball with the vendored dependencies, whic
 
 ## Permanent and runtime configuration
 
-Zone and IP-set edits in Cosmic Gfwd modify firewalld's permanent configuration. They are not
-presented as immediately active. After reviewing changes, use **Apply to Runtime** in the Firewalld
-section to call firewalld's state-preserving reload operation. The application keeps this explicit
-instead of automatically reloading after each edit so several related changes can be applied
-together and users can choose when runtime policy changes.
+Zone and IP-set edits in Cosmic Gfwd modify firewalld's permanent configuration. For the selected
+successfully loaded zone, the application compares every supported permanent setting with the
+current runtime value. The status badge has these meanings:
+
+- **Runtime matches permanent** means every supported value matches and firewalld returned no
+  unknown setting keys.
+- **Known setting differences** means the Review drawer lists exact permanent/runtime scalar
+  values and order-insensitive collection membership.
+- **Comparison incomplete** means known values were compared, but a newer firewalld returned
+  unknown keys. Their names are shown, and synchronization is not claimed.
+- **Runtime unavailable** means firewalld is inactive. Permanent zone details remain usable.
+
+The Review drawer offers two explicit global operations:
+
+- **Apply Permanent to Runtime** performs firewalld's state-preserving global reload. It applies all
+  permanent objects and discards runtime-only changes in every zone, not only the selected zone.
+- **Save Runtime as Permanent** calls `runtimeToPermanent` for the complete global runtime state,
+  across all zones and firewalld objects. The result survives future reloads and restarts.
+
+Both directions require separate destructive confirmations. Neither runs automatically. External
+reloads and zone changes normally refresh the comparison through D-Bus signals; if monitoring
+fails, the warning remains visible and the manual **Refresh** action remains available.
 
 ## Migration scope
 

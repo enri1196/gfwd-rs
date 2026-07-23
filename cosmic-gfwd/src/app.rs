@@ -2,8 +2,9 @@
 
 use crate::config::Config;
 use crate::core::{
-    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, ZoneReconciliationData,
-    ZoneReconciliationState, validate_interface_name, validate_ipset_entry,
+    BrokerError, ConfigurationEvent, ConfigurationRefreshCoordinator, FirewalldStatus, FwdBroker,
+    RefreshRequest, ZoneReconciliationData, ZoneReconciliationState, validate_interface_name,
+    validate_ipset_entry,
 };
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
@@ -42,14 +43,8 @@ pub struct AppModel {
     zone_view: ZoneViewState,
     /// Runtime/permanent comparison loaded independently from permanent details.
     zone_reconciliation: ZoneReconciliationState,
-    /// Monotonic identity used to reject late selected-zone comparison results.
-    zone_generation: u64,
-    /// Whether a signal-triggered refresh is currently loading.
-    configuration_refresh_in_flight: bool,
-    /// Whether one coalesced follow-up refresh is required.
-    configuration_refresh_pending: bool,
-    /// Persistent non-spamming warning when the event watcher fails.
-    configuration_watch_warning: Option<String>,
+    /// Pure selected-zone request, coalescing, and watcher state.
+    configuration_coordinator: ConfigurationRefreshCoordinator,
     /// State for the IP set view.
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
@@ -106,7 +101,7 @@ pub enum Message {
     ZoneReconciliationLoaded {
         zone_name: String,
         generation: u64,
-        result: Result<ZoneReconciliationData, BrokerError>,
+        result: Box<Result<ZoneReconciliationData, BrokerError>>,
     },
     ConfigurationEvent(Result<ConfigurationEvent, BrokerError>),
     DefaultZoneLoaded(Result<String, BrokerError>),
@@ -218,10 +213,7 @@ impl cosmic::Application for AppModel {
             sidebar,
             zone_view: ZoneViewState::Empty,
             zone_reconciliation: ZoneReconciliationState::default(),
-            zone_generation: 0,
-            configuration_refresh_in_flight: false,
-            configuration_refresh_pending: false,
-            configuration_watch_warning: None,
+            configuration_coordinator: ConfigurationRefreshCoordinator::default(),
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             interface_options: Vec::new(),
@@ -410,7 +402,7 @@ impl cosmic::Application for AppModel {
                     &self.zone_reconciliation,
                     self.mutation_pending(),
                     self.dialogs.operation_error.as_deref(),
-                    self.configuration_watch_warning.as_deref(),
+                    self.configuration_coordinator.watch_warning(),
                     Message::ZoneAction,
                 ),
                 Message::ToggleContextPage(ContextPage::ReviewReconciliation),
@@ -596,7 +588,7 @@ impl cosmic::Application for AppModel {
                 &self.zone_view,
                 &self.firewalld_status,
                 &self.zone_reconciliation,
-                self.configuration_watch_warning.as_deref(),
+                self.configuration_coordinator.watch_warning(),
                 self.mutation_pending(),
                 Message::ZoneAction,
             ),
@@ -722,11 +714,12 @@ impl cosmic::Application for AppModel {
             }
             Message::ConfigurationEvent(result) => match result {
                 Ok(event) => {
-                    self.configuration_watch_warning = None;
+                    self.configuration_coordinator.watcher_recovered();
                     return self.schedule_configuration_refresh(event);
                 }
                 Err(error) => {
-                    self.configuration_watch_warning = Some(error.to_string());
+                    self.configuration_coordinator
+                        .watcher_failed(error.to_string());
                 }
             },
             Message::FirewalldStatusLoaded(result) => {
@@ -735,7 +728,7 @@ impl cosmic::Application for AppModel {
                     Err(error) => FirewalldStatus::Error(error.to_string()),
                 };
                 if self.firewalld_status == FirewalldStatus::Active
-                    && !self.configuration_refresh_in_flight
+                    && !self.configuration_coordinator.is_refreshing()
                 {
                     if let ZoneViewState::Ready(details) = &self.zone_view {
                         return self.start_zone_reconciliation(details.name.clone());
@@ -857,7 +850,7 @@ impl cosmic::Application for AppModel {
                 generation,
                 result,
             } => {
-                let is_current = generation == self.zone_generation
+                let is_current = self.configuration_coordinator.accepts(generation)
                     && matches!(
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
@@ -870,7 +863,7 @@ impl cosmic::Application for AppModel {
                     return Task::none();
                 }
 
-                self.zone_reconciliation = match result {
+                self.zone_reconciliation = match *result {
                     Ok(data) => ZoneReconciliationState::from_data(zone_name, data),
                     Err(error) => ZoneReconciliationState::Error {
                         zone: zone_name,
@@ -1171,11 +1164,13 @@ impl AppModel {
             }
         };
         let toast = self.toasts.push(toast).map(cosmic::Action::App);
-        if self.configuration_refresh_pending && !self.configuration_refresh_in_flight {
-            self.configuration_refresh_pending = false;
+        if self.configuration_coordinator.has_pending()
+            && !self.configuration_coordinator.is_refreshing()
+            && self.configuration_coordinator.finish_refresh()
+        {
             return Task::batch(vec![
                 toast,
-                self.schedule_configuration_refresh(ConfigurationEvent::Reloaded),
+                self.start_configuration_refresh(ConfigurationEvent::Reloaded),
             ]);
         }
         toast
@@ -1185,18 +1180,21 @@ impl AppModel {
         &mut self,
         event: ConfigurationEvent,
     ) -> Task<cosmic::Action<Message>> {
-        if self.mutation_pending()
-            || self.configuration_refresh_in_flight
+        let blocked = self.mutation_pending()
             || matches!(
                 self.zone_reconciliation,
                 ZoneReconciliationState::Loading { .. }
-            )
-        {
-            self.configuration_refresh_pending = true;
-            return Task::none();
+            );
+        match self.configuration_coordinator.request_refresh(blocked) {
+            RefreshRequest::Start => self.start_configuration_refresh(event),
+            RefreshRequest::Coalesced => Task::none(),
         }
+    }
 
-        self.configuration_refresh_in_flight = true;
+    fn start_configuration_refresh(
+        &mut self,
+        event: ConfigurationEvent,
+    ) -> Task<cosmic::Action<Message>> {
         match event {
             ConfigurationEvent::Reloaded => Task::batch(vec![
                 self.start_firewalld_status_load(),
@@ -1209,16 +1207,14 @@ impl AppModel {
             ConfigurationEvent::RuntimeZoneChanged { zone } => {
                 let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
                 if !is_current {
-                    self.configuration_refresh_in_flight = false;
-                    return Task::none();
+                    return self.finish_configuration_refresh();
                 }
                 self.start_zone_reconciliation(zone)
             }
             ConfigurationEvent::PermanentZoneUpdated { zone } => {
                 let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
                 if !is_current {
-                    self.configuration_refresh_in_flight = false;
-                    return Task::none();
+                    return self.finish_configuration_refresh();
                 }
                 self.start_zone_load(zone)
             }
@@ -1231,10 +1227,8 @@ impl AppModel {
     }
 
     fn finish_configuration_refresh(&mut self) -> Task<cosmic::Action<Message>> {
-        self.configuration_refresh_in_flight = false;
-        if self.configuration_refresh_pending {
-            self.configuration_refresh_pending = false;
-            self.schedule_configuration_refresh(ConfigurationEvent::Reloaded)
+        if self.configuration_coordinator.finish_refresh() {
+            self.start_configuration_refresh(ConfigurationEvent::Reloaded)
         } else {
             Task::none()
         }
@@ -2329,7 +2323,7 @@ impl AppModel {
     }
 
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
-        self.zone_generation = self.zone_generation.wrapping_add(1);
+        self.configuration_coordinator.selection_changed();
         self.zone_view = ZoneViewState::Loading {
             zone: zone_name.clone(),
         };
@@ -2347,7 +2341,7 @@ impl AppModel {
     }
 
     fn start_zone_reconciliation(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
-        let generation = self.zone_generation;
+        let generation = self.configuration_coordinator.generation();
         self.zone_reconciliation = ZoneReconciliationState::Loading {
             zone: zone_name.clone(),
         };
@@ -2356,7 +2350,7 @@ impl AppModel {
             cosmic::Action::from(Message::ZoneReconciliationLoaded {
                 zone_name: zone_name_for_task.clone(),
                 generation,
-                result,
+                result: Box::new(result),
             })
         })
     }

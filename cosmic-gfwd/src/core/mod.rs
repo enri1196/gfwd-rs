@@ -5,11 +5,10 @@ pub mod rich_rule;
 pub mod validation;
 
 pub use broker::{BrokerError, FirewalldStatus, FwdBroker};
-pub use events::ConfigurationEvent;
+pub use events::{ConfigurationEvent, ConfigurationRefreshCoordinator, RefreshRequest};
 pub use reconciliation::{
-    CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliation,
-    ZoneReconciliationData, ZoneReconciliationState, ZoneSetting, ZoneSettingDifference,
-    ZoneSettingsParseError, ZoneSettingsSnapshot,
+    CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliationData,
+    ZoneReconciliationState, ZoneSetting, ZoneSettingDifference,
 };
 pub use rich_rule::{RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec};
 pub use validation::{

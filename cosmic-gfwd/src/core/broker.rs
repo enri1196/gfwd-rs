@@ -9,7 +9,6 @@ use gfwd_bus::systemd::{ManagerProxy, UnitProxy};
 use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
-use zbus::proxy::ProxyImpl;
 
 use super::ConfigurationEvent;
 use super::reconciliation::{ZoneReconciliationData, ZoneSettingsParseError, ZoneSettingsSnapshot};
@@ -180,9 +179,7 @@ impl FwdBroker {
                         return;
                     }
                 };
-                let proxy = match ConfigZoneProxy::builder(&conn).path(path).and_then(|builder| {
-                    Ok(builder)
-                }) {
+                let proxy = match ConfigZoneProxy::builder(&conn).path(path) {
                     Ok(builder) => match builder.build().await {
                         Ok(proxy) => proxy,
                         Err(error) => {
