@@ -6,16 +6,16 @@ use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState, drawer_footer, drawer_footer_with_submit, icmp_drawer,
-    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, source_drawer, target_from_index,
-    view_ipset_content, view_zone_content,
+    ZoneViewAction, ZoneViewState, drawer_footer_with_submit, drawer_with_error, icmp_drawer,
+    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, source_drawer,
+    target_from_index, view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
-use cosmic::widget::{self, about::About, menu, nav_bar};
+use cosmic::widget::{self, Toast, ToastId, Toasts, about::About, menu, nav_bar};
 use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 
@@ -45,6 +45,12 @@ pub struct AppModel {
     interface_loading: bool,
     /// Error message when interface discovery fails.
     interface_error: Option<String>,
+    /// User-visible notifications for completed operations.
+    toasts: Toasts<Message>,
+    /// Name of the mutation currently in flight.
+    pending_operation: Option<String>,
+    /// Destructive operation awaiting explicit confirmation.
+    confirmation: Option<Confirmation>,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
@@ -103,6 +109,15 @@ pub enum Message {
         ipset_name: String,
         result: Result<(), BrokerError>,
     },
+    DismissToast(ToastId),
+    CancelConfirmation,
+    ConfirmDestructive,
+}
+
+/// Destructive action presented in the application confirmation dialog.
+#[derive(Debug, Clone)]
+enum Confirmation {
+    DeleteZone(String),
 }
 
 /// Create a COSMIC application from the app model
@@ -154,6 +169,9 @@ impl cosmic::Application for AppModel {
             interface_options: Vec::new(),
             interface_loading: false,
             interface_error: None,
+            toasts: Toasts::new(Message::DismissToast),
+            pending_operation: None,
+            confirmation: None,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -300,6 +318,8 @@ impl cosmic::Application for AppModel {
             .or(self.interface_error.as_deref());
         let can_submit_interface = self.dialogs.interface.error.is_none()
             && !self.dialogs.interface.interface.trim().is_empty();
+        let can_submit = !self.mutation_pending();
+        let error = self.dialogs.operation_error.as_deref();
 
         Some(match self.context_page {
             ContextPage::About => context_drawer::about(
@@ -308,62 +328,127 @@ impl cosmic::Application for AppModel {
                 Message::ToggleContextPage(ContextPage::About),
             ),
             ContextPage::AddZone => context_drawer::context_drawer(
-                crate::ui::dialog_drawers::zone_drawer(&self.dialogs.zone),
+                drawer_with_error(
+                    crate::ui::dialog_drawers::zone_drawer(&self.dialogs.zone),
+                    error,
+                ),
                 DialogMessage::Cancel(DialogKind::Zone),
             )
             .title("Add Zone")
-            .footer(drawer_footer(DialogKind::Zone))
+            .footer(drawer_footer_with_submit(
+                DialogKind::Zone,
+                can_submit && !self.dialogs.zone.name.trim().is_empty(),
+            ))
             .map(Message::Dialog),
             ContextPage::AddPort => context_drawer::context_drawer(
-                port_drawer(&self.dialogs.port),
+                drawer_with_error(port_drawer(&self.dialogs.port), error),
                 DialogMessage::Cancel(DialogKind::Port),
             )
             .title("Add Port")
-            .footer(drawer_footer(DialogKind::Port))
+            .footer(drawer_footer_with_submit(
+                DialogKind::Port,
+                can_submit
+                    && !self.dialogs.port.port.trim().is_empty()
+                    && (!self.dialogs.port.forwarding
+                        || !self.dialogs.port.dest_port.trim().is_empty()),
+            ))
             .map(Message::Dialog),
             ContextPage::AddInterface => context_drawer::context_drawer(
-                interface_drawer(
-                    &self.dialogs.interface,
-                    &self.interface_options,
-                    self.interface_loading,
-                    interface_error,
+                drawer_with_error(
+                    interface_drawer(
+                        &self.dialogs.interface,
+                        &self.interface_options,
+                        self.interface_loading,
+                        interface_error,
+                    ),
+                    error,
                 ),
                 DialogMessage::Cancel(DialogKind::Interface),
             )
             .title("Add Interface")
             .footer(drawer_footer_with_submit(
                 DialogKind::Interface,
-                can_submit_interface,
+                can_submit && can_submit_interface,
             ))
             .map(Message::Dialog),
             ContextPage::AddSource => context_drawer::context_drawer(
-                source_drawer(&self.dialogs.source),
+                drawer_with_error(source_drawer(&self.dialogs.source), error),
                 DialogMessage::Cancel(DialogKind::Source),
             )
             .title("Add Source")
-            .footer(drawer_footer(DialogKind::Source))
+            .footer(drawer_footer_with_submit(
+                DialogKind::Source,
+                can_submit && !self.dialogs.source.source.trim().is_empty(),
+            ))
             .map(Message::Dialog),
             ContextPage::AddIcmp => context_drawer::context_drawer(
-                icmp_drawer(&self.dialogs.icmp),
+                drawer_with_error(icmp_drawer(&self.dialogs.icmp), error),
                 DialogMessage::Cancel(DialogKind::Icmp),
             )
             .title("Add ICMP Block")
-            .footer(drawer_footer(DialogKind::Icmp))
+            .footer(drawer_footer_with_submit(
+                DialogKind::Icmp,
+                can_submit && !self.dialogs.icmp.icmp_type.trim().is_empty(),
+            ))
             .map(Message::Dialog),
             ContextPage::AddRichRule => context_drawer::context_drawer(
-                rich_rule_drawer(&self.dialogs.rich_rule),
+                drawer_with_error(rich_rule_drawer(&self.dialogs.rich_rule), error),
                 DialogMessage::Cancel(DialogKind::RichRule),
             )
             .title("Add Rich Rule")
-            .footer(drawer_footer(DialogKind::RichRule))
+            .footer(drawer_footer_with_submit(
+                DialogKind::RichRule,
+                can_submit && !self.dialogs.rich_rule.rule.trim().is_empty(),
+            ))
             .map(Message::Dialog),
             ContextPage::AddIpSet => context_drawer::context_drawer(
-                ipset_drawer(&self.dialogs.ipset),
+                drawer_with_error(ipset_drawer(&self.dialogs.ipset), error),
                 DialogMessage::Cancel(DialogKind::IpSet),
             )
             .title("Create IP Set")
-            .footer(drawer_footer(DialogKind::IpSet))
+            .footer(drawer_footer_with_submit(
+                DialogKind::IpSet,
+                can_submit && !self.dialogs.ipset.name.trim().is_empty(),
+            ))
             .map(Message::Dialog),
+        })
+    }
+
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        let confirmation = self.confirmation.as_ref()?;
+        let (title, body, confirm_label) = match confirmation {
+            Confirmation::DeleteZone(zone) => (
+                fl!("confirm-delete-zone-title"),
+                fl!("confirm-delete-zone-body", zone = zone),
+                fl!("confirm-delete"),
+            ),
+        };
+
+        Some(
+            widget::dialog()
+                .title(title)
+                .body(body)
+                .primary_action(
+                    widget::button::destructive(confirm_label)
+                        .on_press(Message::ConfirmDestructive),
+                )
+                .secondary_action(
+                    widget::button::text(fl!("dialog-cancel"))
+                        .on_press(Message::CancelConfirmation),
+                )
+                .into(),
+        )
+    }
+
+    fn footer(&self) -> Option<Element<'_, Self::Message>> {
+        self.pending_operation.as_ref().map(|operation| {
+            widget::container(widget::text::caption(fl!(
+                "operation-pending",
+                operation = operation
+            )))
+            .padding(cosmic::theme::spacing().space_xs)
+            .width(Length::Fill)
+            .into()
         })
     }
 
@@ -378,13 +463,15 @@ impl cosmic::Application for AppModel {
             _ => view_zone_content(&self.zone_view, Message::ZoneAction),
         };
 
-        widget::container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(space_m)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center)
-            .into()
+        widget::toaster(
+            &self.toasts,
+            widget::container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(space_m)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center),
+        )
     }
 
     /// Register subscriptions for this application.
@@ -419,6 +506,14 @@ impl cosmic::Application for AppModel {
         match message {
             Message::ToggleContextPage(context_page) => {
                 let mut tasks = Vec::new();
+                let requires_zone = matches!(
+                    context_page,
+                    ContextPage::AddPort
+                        | ContextPage::AddInterface
+                        | ContextPage::AddSource
+                        | ContextPage::AddIcmp
+                        | ContextPage::AddRichRule
+                );
                 if self.context_page == context_page {
                     // Close the context drawer if the toggled context page is the same.
                     self.core.window.show_context = !self.core.window.show_context;
@@ -429,6 +524,9 @@ impl cosmic::Application for AppModel {
                 }
                 if self.core.window.show_context {
                     self.reset_dialog_for_context(context_page);
+                    if requires_zone && self.current_zone_name().is_none() {
+                        self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
+                    }
                     if context_page == ContextPage::AddInterface {
                         tasks.push(self.start_interfaces_load());
                     }
@@ -452,6 +550,20 @@ impl cosmic::Application for AppModel {
 
             Message::IpSetAction(action) => {
                 return self.handle_ipset_action(action);
+            }
+            Message::DismissToast(id) => {
+                self.toasts.remove(id);
+            }
+            Message::CancelConfirmation => {
+                self.confirmation = None;
+            }
+            Message::ConfirmDestructive => {
+                let Some(confirmation) = self.confirmation.take() else {
+                    return Task::none();
+                };
+                return match confirmation {
+                    Confirmation::DeleteZone(zone_name) => self.start_zone_delete(zone_name),
+                };
             }
 
             Message::UpdateConfig(config) => {
@@ -550,21 +662,27 @@ impl cosmic::Application for AppModel {
             }
             Message::DefaultZoneSet(result) => match result {
                 Ok(()) => {
-                    return self.start_default_zone_load();
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_default_zone_load(),
+                    ]);
                 }
                 Err(error) => {
-                    eprintln!("failed to set default zone: {error}");
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::ZoneCreated { zone_name, result } => match result {
                 Ok(()) => {
-                    return self.start_zones_load();
+                    self.dialogs.reset(DialogKind::Zone);
+                    self.close_context_drawer();
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_zones_load(),
+                    ]);
                 }
                 Err(error) => {
-                    self.zone_view = ZoneViewState::Error {
-                        zone: zone_name,
-                        message: error.to_string(),
-                    };
+                    let _ = zone_name;
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::ZoneDeleted { zone_name, result } => match result {
@@ -575,43 +693,40 @@ impl cosmic::Application for AppModel {
                     ) {
                         self.zone_view = ZoneViewState::Empty;
                     }
-                    return self.start_zones_load();
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_zones_load(),
+                    ]);
                 }
                 Err(error) => {
-                    if matches!(
-                        self.sidebar.active_item(),
-                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    ) {
-                        self.zone_view = ZoneViewState::Error {
-                            zone: zone_name,
-                            message: error.to_string(),
-                        };
-                    }
+                    let _ = zone_name;
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::ZoneItemAdded { zone_name, result }
             | Message::ZoneItemRemoved { zone_name, result } => match result {
                 Ok(()) => {
+                    if self.core.window.show_context {
+                        if let Some(kind) = dialog_kind_for_page(self.context_page) {
+                            self.dialogs.reset(kind);
+                            self.close_context_drawer();
+                        }
+                    }
                     let is_active = matches!(
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
                     );
-                    let active_task = self.start_active_zones_load();
                     if is_active {
-                        return Task::batch(vec![self.start_zone_load(zone_name), active_task]);
+                        return Task::batch(vec![
+                            self.finish_mutation(&result),
+                            self.start_zone_load(zone_name),
+                        ]);
                     }
-                    return active_task;
+                    return self.finish_mutation(&result);
                 }
                 Err(error) => {
-                    if matches!(
-                        self.sidebar.active_item(),
-                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    ) {
-                        self.zone_view = ZoneViewState::Error {
-                            zone: zone_name,
-                            message: error.to_string(),
-                        };
-                    }
+                    let _ = zone_name;
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::IpSetsLoaded(result) => {
@@ -660,33 +775,45 @@ impl cosmic::Application for AppModel {
                 Ok(()) => {
                     self.ipset_view.entry_input.clear();
                     self.ipset_view.entry_error = None;
-                    return self.start_ipset_details_load(ipset_name);
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_ipset_details_load(ipset_name),
+                    ]);
                 }
                 Err(error) => {
                     self.ipset_view.entry_error = Some(error.to_string());
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::IpSetEntryRemoved { ipset_name, result } => match result {
                 Ok(()) => {
                     self.ipset_view.entry_error = None;
-                    return self.start_ipset_details_load(ipset_name);
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_ipset_details_load(ipset_name),
+                    ]);
                 }
                 Err(error) => {
                     self.ipset_view.entry_error = Some(error.to_string());
+                    return self.finish_mutation(&Err(error));
                 }
             },
             Message::IpSetCreated { ipset_name, result } => match result {
                 Ok(()) => {
+                    self.dialogs.reset(DialogKind::IpSet);
+                    self.close_context_drawer();
                     self.ipset_view.selected = Some(ipset_name.clone());
                     self.ipset_view.entry_input.clear();
                     self.ipset_view.entry_error = None;
                     return Task::batch(vec![
+                        self.finish_mutation(&result),
                         self.start_ipsets_load(),
                         self.start_ipset_details_load(ipset_name),
                     ]);
                 }
                 Err(error) => {
                     self.ipset_view.entry_error = Some(error.to_string());
+                    return self.finish_mutation(&Err(error));
                 }
             },
         }
@@ -700,6 +827,44 @@ impl cosmic::Application for AppModel {
 }
 
 impl AppModel {
+    fn mutation_pending(&self) -> bool {
+        self.pending_operation.is_some()
+    }
+
+    fn begin_mutation(&mut self, operation: String) -> bool {
+        if self.mutation_pending() {
+            return false;
+        }
+        self.dialogs.operation_error = None;
+        self.pending_operation = Some(operation);
+        true
+    }
+
+    fn finish_mutation(
+        &mut self,
+        result: &Result<(), BrokerError>,
+    ) -> Task<cosmic::Action<Message>> {
+        let operation = self
+            .pending_operation
+            .take()
+            .unwrap_or_else(|| fl!("operation-change"));
+        let toast = match result {
+            Ok(()) => Toast::new(fl!("operation-succeeded", operation = operation)),
+            Err(error) => {
+                let message = fl!(
+                    "operation-failed",
+                    operation = operation,
+                    error = error.to_string()
+                );
+                if self.core.window.show_context {
+                    self.dialogs.operation_error = Some(message.clone());
+                }
+                Toast::new(message)
+            }
+        };
+        self.toasts.push(toast).map(cosmic::Action::App)
+    }
+
     fn open_context_page(&mut self, context_page: ContextPage) {
         self.context_page = context_page;
         self.core.window.show_context = true;
@@ -719,7 +884,6 @@ impl AppModel {
     fn current_zone_name(&self) -> Option<String> {
         match &self.zone_view {
             ZoneViewState::Ready(details) => Some(details.name.clone()),
-            ZoneViewState::Loading { zone } => Some(zone.clone()),
             _ => None,
         }
     }
@@ -776,12 +940,16 @@ impl AppModel {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
                     return Task::none();
                 };
-                self.start_zone_delete(zone_name)
+                self.confirmation = Some(Confirmation::DeleteZone(zone_name));
+                Task::none()
             }
         }
     }
 
     fn handle_zone_action(&mut self, action: ZoneViewAction) -> Task<cosmic::Action<Message>> {
+        if self.mutation_pending() {
+            return Task::none();
+        }
         match &action {
             ZoneViewAction::AddInterface => {
                 self.open_context_page(ContextPage::AddInterface);
@@ -823,6 +991,9 @@ impl AppModel {
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
+        if self.mutation_pending() && matches!(message, DialogMessage::Submit(_)) {
+            return Task::none();
+        }
         match message {
             DialogMessage::ZoneNameChanged(value) => {
                 self.dialogs.zone.name = value;
@@ -883,9 +1054,8 @@ impl AppModel {
                 let name = self.dialogs.zone.name.trim().to_string();
                 let description = self.dialogs.zone.description.trim().to_string();
                 let target = self.dialogs.zone.target.clone();
-                self.dialogs.reset(DialogKind::Zone);
-                self.close_context_drawer();
                 if name.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 return self.start_zone_create(name, description, target);
@@ -896,16 +1066,17 @@ impl AppModel {
                 let forwarding = self.dialogs.port.forwarding;
                 let dest_ip = self.dialogs.port.dest_ip.trim().to_string();
                 let dest_port = self.dialogs.port.dest_port.trim().to_string();
-                self.dialogs.reset(DialogKind::Port);
-                self.close_context_drawer();
                 if port.is_empty() || protocol.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 if forwarding {
                     if dest_port.is_empty() {
+                        self.dialogs.operation_error = Some(fl!("error-required-field"));
                         return Task::none();
                     }
                     return self
@@ -918,45 +1089,44 @@ impl AppModel {
                     return Task::none();
                 }
                 let interface = self.dialogs.interface.interface.trim().to_string();
-                self.dialogs.reset(DialogKind::Interface);
-                self.close_context_drawer();
                 let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 return self.start_interface_add(zone_name, interface);
             }
             DialogMessage::Submit(DialogKind::Source) => {
                 let source = self.dialogs.source.source.trim().to_string();
-                self.dialogs.reset(DialogKind::Source);
-                self.close_context_drawer();
                 if source.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 return self.start_source_add(zone_name, source);
             }
             DialogMessage::Submit(DialogKind::Icmp) => {
                 let icmp_type = self.dialogs.icmp.icmp_type.trim().to_string();
-                self.dialogs.reset(DialogKind::Icmp);
-                self.close_context_drawer();
                 if icmp_type.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 return self.start_icmp_add(zone_name, icmp_type);
             }
             DialogMessage::Submit(DialogKind::RichRule) => {
                 let rule = self.dialogs.rich_rule.rule.trim().to_string();
-                self.dialogs.reset(DialogKind::RichRule);
-                self.close_context_drawer();
                 if rule.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
                 return self.start_rich_rule_add(zone_name, rule);
@@ -965,9 +1135,8 @@ impl AppModel {
                 let name = self.dialogs.ipset.name.trim().to_string();
                 let ipset_type = self.dialogs.ipset.ipset_type.trim().to_string();
                 let entries = split_ipset_entries(&self.dialogs.ipset.entries);
-                self.dialogs.reset(DialogKind::IpSet);
-                self.close_context_drawer();
                 if name.is_empty() || ipset_type.is_empty() {
+                    self.dialogs.operation_error = Some(fl!("error-required-field"));
                     return Task::none();
                 }
                 return self.start_ipset_create(name, ipset_type, entries);
@@ -981,6 +1150,14 @@ impl AppModel {
     }
 
     fn handle_ipset_action(&mut self, action: IpSetViewAction) -> Task<cosmic::Action<Message>> {
+        if self.mutation_pending()
+            && matches!(
+                action,
+                IpSetViewAction::AddEntry | IpSetViewAction::RemoveEntry(_)
+            )
+        {
+            return Task::none();
+        }
         match action {
             IpSetViewAction::Select(name) => {
                 self.ipset_view.selected = Some(name.clone());
@@ -1216,6 +1393,9 @@ impl AppModel {
     }
 
     fn start_default_zone_set(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-set-default-zone")) {
+            return Task::none();
+        }
         Task::perform(Self::set_default_zone(zone_name), |result| {
             cosmic::Action::from(Message::DefaultZoneSet(result))
         })
@@ -1227,6 +1407,9 @@ impl AppModel {
         description: String,
         target: ZoneTarget,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-create-zone")) {
+            return Task::none();
+        }
         let zone_name_for_task = name.clone();
         Task::perform(Self::add_zone(name, description, target), move |result| {
             cosmic::Action::from(Message::ZoneCreated {
@@ -1242,6 +1425,9 @@ impl AppModel {
         port: String,
         protocol: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-port")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_port(zone_name, port, protocol), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1259,6 +1445,9 @@ impl AppModel {
         to_port: String,
         to_addr: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-forward-port")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(
             Self::add_forward_port(zone_name, port, protocol, to_port, to_addr),
@@ -1276,6 +1465,9 @@ impl AppModel {
         zone_name: String,
         interface: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-interface")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_interface(zone_name, interface), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1290,6 +1482,9 @@ impl AppModel {
         zone_name: String,
         source: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-source")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_source(zone_name, source), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1300,6 +1495,9 @@ impl AppModel {
     }
 
     fn start_icmp_add(&mut self, zone_name: String, icmp: String) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-icmp")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_icmp_block(zone_name, icmp), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1314,6 +1512,9 @@ impl AppModel {
         zone_name: String,
         rule: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-rich-rule")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_rich_rule(zone_name, rule), move |result| {
             cosmic::Action::from(Message::ZoneItemAdded {
@@ -1324,6 +1525,9 @@ impl AppModel {
     }
 
     fn start_zone_delete(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-delete-zone")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::remove_zone(zone_name), move |result| {
             cosmic::Action::from(Message::ZoneDeleted {
@@ -1338,6 +1542,9 @@ impl AppModel {
         zone_name: String,
         action: ZoneViewAction,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-remove-zone-item")) {
+            return Task::none();
+        }
         let zone_name_for_task = zone_name.clone();
         match action {
             ZoneViewAction::AddInterface
@@ -1458,6 +1665,9 @@ impl AppModel {
         ipset_name: String,
         entry: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-ipset-entry")) {
+            return Task::none();
+        }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::add_ipset_entry(ipset_name, entry), move |result| {
             cosmic::Action::from(Message::IpSetEntryAdded {
@@ -1472,6 +1682,9 @@ impl AppModel {
         ipset_name: String,
         entry: String,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-remove-ipset-entry")) {
+            return Task::none();
+        }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::remove_ipset_entry(ipset_name, entry), move |result| {
             cosmic::Action::from(Message::IpSetEntryRemoved {
@@ -1487,6 +1700,9 @@ impl AppModel {
         ipset_type: String,
         entries: Vec<String>,
     ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-create-ipset")) {
+            return Task::none();
+        }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(
             Self::create_ipset(ipset_name, ipset_type, entries),

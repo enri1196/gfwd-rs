@@ -50,6 +50,8 @@ pub enum DialogMessage {
 
 #[derive(Debug, Clone)]
 pub struct DialogState {
+    /// Error returned by the current form submission.
+    pub operation_error: Option<String>,
     pub zone: ZoneFormState,
     pub port: PortFormState,
     pub interface: InterfaceFormState,
@@ -62,6 +64,7 @@ pub struct DialogState {
 impl Default for DialogState {
     fn default() -> Self {
         Self {
+            operation_error: None,
             zone: ZoneFormState::default(),
             port: PortFormState::default(),
             interface: InterfaceFormState::default(),
@@ -75,6 +78,7 @@ impl Default for DialogState {
 
 impl DialogState {
     pub fn reset(&mut self, kind: DialogKind) {
+        self.operation_error = None;
         match kind {
             DialogKind::Zone => self.zone = ZoneFormState::default(),
             DialogKind::Port => self.port = PortFormState::default(),
@@ -85,6 +89,18 @@ impl DialogState {
             DialogKind::IpSet => self.ipset = IpSetFormState::default(),
         }
     }
+}
+
+/// Adds a submission error above a drawer without introducing another scrollable.
+pub fn drawer_with_error<'a>(
+    content: cosmic::Element<'a, DialogMessage>,
+    error: Option<&'a str>,
+) -> cosmic::Element<'a, DialogMessage> {
+    let mut column = widget::column::with_capacity(2).spacing(cosmic::theme::spacing().space_s);
+    if let Some(error) = error {
+        column = column.push(widget::text::caption(error));
+    }
+    column.push(content).into()
 }
 
 #[derive(Debug, Clone)]
@@ -460,10 +476,6 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
     ]);
 
     content.into()
-}
-
-pub fn drawer_footer(kind: DialogKind) -> cosmic::Element<'static, DialogMessage> {
-    drawer_footer_with_submit(kind, true)
 }
 
 pub fn drawer_footer_with_submit(
