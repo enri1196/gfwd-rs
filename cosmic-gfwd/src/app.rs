@@ -3,7 +3,7 @@
 use crate::config::Config;
 use crate::core::{BrokerError, FirewalldStatus, FwdBroker, validate_interface_name};
 use crate::fl;
-use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
+use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
     ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
@@ -52,6 +52,12 @@ pub struct AppModel {
     service_loading: bool,
     /// Error returned while loading the service catalog.
     service_error: Option<String>,
+    /// Configured ICMP types available to block.
+    icmp_options: Vec<IcmpTypeInfo>,
+    /// Whether the ICMP catalog is being loaded.
+    icmp_loading: bool,
+    /// Error returned while loading the ICMP catalog.
+    icmp_error: Option<String>,
     /// User-visible notifications for completed operations.
     toasts: Toasts<Message>,
     /// Name of the mutation currently in flight.
@@ -87,6 +93,7 @@ pub enum Message {
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
     InterfacesLoaded(Result<Vec<String>, BrokerError>),
     ServicesLoaded(Result<Vec<String>, BrokerError>),
+    IcmpTypesLoaded(Result<Vec<IcmpTypeInfo>, BrokerError>),
     DefaultZoneSet(Result<(), BrokerError>),
     ZoneCreated {
         zone_name: String,
@@ -190,6 +197,9 @@ impl cosmic::Application for AppModel {
             service_options: Vec::new(),
             service_loading: false,
             service_error: None,
+            icmp_options: Vec::new(),
+            icmp_loading: false,
+            icmp_error: None,
             toasts: Toasts::new(Message::DismissToast),
             pending_operation: None,
             confirmation: None,
@@ -351,6 +361,10 @@ impl cosmic::Application for AppModel {
             ZoneViewState::Ready(details) => details.services.as_slice(),
             _ => &[],
         };
+        let blocked_icmp = match &self.zone_view {
+            ZoneViewState::Ready(details) => details.icmp_blocks.as_slice(),
+            _ => &[],
+        };
 
         Some(match self.context_page {
             ContextPage::About => context_drawer::about(
@@ -426,14 +440,20 @@ impl cosmic::Application for AppModel {
             ))
             .map(Message::Dialog),
             ContextPage::AddIcmp => context_drawer::context_drawer(
-                drawer_with_error(icmp_drawer(&self.dialogs.icmp), error),
+                drawer_with_error(
+                    icmp_drawer(
+                        &self.dialogs.icmp,
+                        &self.icmp_options,
+                        blocked_icmp,
+                        self.icmp_loading,
+                        self.icmp_error.as_deref(),
+                    ),
+                    error,
+                ),
                 DialogMessage::Cancel(DialogKind::Icmp),
             )
             .title("Add ICMP Block")
-            .footer(drawer_footer_with_submit(
-                DialogKind::Icmp,
-                can_submit && !self.dialogs.icmp.icmp_type.trim().is_empty(),
-            ))
+            .footer(drawer_cancel_footer(DialogKind::Icmp))
             .map(Message::Dialog),
             ContextPage::AddRichRule => context_drawer::context_drawer(
                 drawer_with_error(rich_rule_drawer(&self.dialogs.rich_rule), error),
@@ -587,6 +607,8 @@ impl cosmic::Application for AppModel {
                         tasks.push(self.start_interfaces_load());
                     } else if context_page == ContextPage::AddService {
                         tasks.push(self.start_services_load());
+                    } else if context_page == ContextPage::AddIcmp {
+                        tasks.push(self.start_icmp_types_load());
                     }
                 }
                 if !tasks.is_empty() {
@@ -747,6 +769,19 @@ impl cosmic::Application for AppModel {
                     Err(error) => {
                         self.service_options.clear();
                         self.service_error = Some(error.to_string());
+                    }
+                }
+            }
+            Message::IcmpTypesLoaded(result) => {
+                self.icmp_loading = false;
+                match result {
+                    Ok(types) => {
+                        self.icmp_options = types;
+                        self.icmp_error = None;
+                    }
+                    Err(error) => {
+                        self.icmp_options.clear();
+                        self.icmp_error = Some(error.to_string());
                     }
                 }
             }
@@ -1088,7 +1123,7 @@ impl AppModel {
             }
             ZoneViewAction::AddIcmpBlock => {
                 self.open_context_page(ContextPage::AddIcmp);
-                return Task::none();
+                return self.start_icmp_types_load();
             }
             ZoneViewAction::AddRichRule => {
                 self.open_context_page(ContextPage::AddRichRule);
@@ -1179,8 +1214,23 @@ impl AppModel {
                 self.dialogs.source.source = value;
                 self.dialogs.source.touched = true;
             }
-            DialogMessage::IcmpTypeChanged(value) => {
-                self.dialogs.icmp.icmp_type = value;
+            DialogMessage::IcmpSearchChanged(value) => {
+                self.dialogs.icmp.search = value;
+            }
+            DialogMessage::IcmpSelected(icmp_type) => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
+                    return Task::none();
+                };
+                let already_blocked = matches!(
+                    &self.zone_view,
+                    ZoneViewState::Ready(details) if details.icmp_blocks.contains(&icmp_type)
+                );
+                if already_blocked {
+                    self.dialogs.operation_error = Some(fl!("error-icmp-already-blocked"));
+                    return Task::none();
+                }
+                return self.start_icmp_add(zone_name, icmp_type);
             }
             DialogMessage::RichRuleChanged(value) => {
                 self.dialogs.rich_rule.rule = value;
@@ -1255,16 +1305,7 @@ impl AppModel {
                 return self.start_source_add(zone_name, source);
             }
             DialogMessage::Submit(DialogKind::Icmp) => {
-                let icmp_type = self.dialogs.icmp.icmp_type.trim().to_string();
-                if icmp_type.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
-                    return Task::none();
-                }
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                return self.start_icmp_add(zone_name, icmp_type);
+                return Task::none();
             }
             DialogMessage::Submit(DialogKind::RichRule) => {
                 let rule = self.dialogs.rich_rule.rule.trim().to_string();
@@ -1366,6 +1407,11 @@ impl AppModel {
     async fn load_services() -> Result<Vec<String>, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_services().await
+    }
+
+    async fn load_icmp_types() -> Result<Vec<IcmpTypeInfo>, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.get_icmp_types().await
     }
 
     async fn add_service(zone_name: String, service: String) -> Result<(), BrokerError> {
@@ -1583,6 +1629,14 @@ impl AppModel {
         self.service_error = None;
         Task::perform(Self::load_services(), |result| {
             cosmic::Action::from(Message::ServicesLoaded(result))
+        })
+    }
+
+    fn start_icmp_types_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.icmp_loading = true;
+        self.icmp_error = None;
+        Task::perform(Self::load_icmp_types(), |result| {
+            cosmic::Action::from(Message::IcmpTypesLoaded(result))
         })
     }
 

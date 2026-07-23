@@ -1,4 +1,5 @@
 use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
+use gfwd_bus::config_icmptype::ConfigIcmpTypeProxy;
 use gfwd_bus::config_ipset::ConfigIPSetProxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
 use gfwd_bus::firewalld1::FirewallD1Proxy;
@@ -10,7 +11,7 @@ use zbus::Connection;
 
 use std::collections::HashSet;
 
-use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
+use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
 
 #[derive(Clone, Debug)]
 pub struct BrokerError {
@@ -158,6 +159,26 @@ impl FwdBroker {
         let mut services = self.config().await?.get_service_names().await?;
         services.sort();
         Ok(services)
+    }
+
+    /// Lists configured ICMP types and descriptions in name order.
+    pub async fn get_icmp_types(&self) -> Result<Vec<IcmpTypeInfo>, BrokerError> {
+        let cfg = self.config().await?;
+        let names = cfg.get_icmp_type_names().await?;
+        let mut types = Vec::with_capacity(names.len());
+        for name in names {
+            let path = cfg.get_icmp_type_by_name(&name).await?;
+            let proxy = ConfigIcmpTypeProxy::builder(&self.conn)
+                .path(path)?
+                .build()
+                .await?;
+            types.push(IcmpTypeInfo {
+                description: proxy.get_description().await?,
+                name,
+            });
+        }
+        types.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(types)
     }
 
     /// Permanently enables a configured service in a zone.
