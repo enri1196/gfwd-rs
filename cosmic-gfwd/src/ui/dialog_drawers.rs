@@ -215,10 +215,7 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
             .into(),
     ]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -290,10 +287,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
 
     let content = settings::view_column(sections);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn interface_drawer<'a>(
@@ -366,10 +360,7 @@ pub fn interface_drawer<'a>(
 
     let content = settings::view_column(vec![section.into()]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -386,10 +377,7 @@ pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Dial
             .into(),
     ]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn icmp_drawer<'a>(state: &'a IcmpFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -409,10 +397,7 @@ pub fn icmp_drawer<'a>(state: &'a IcmpFormState) -> cosmic::Element<'a, DialogMe
             .into(),
     ]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -432,10 +417,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
             .into(),
     ]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, DialogMessage> {
@@ -477,10 +459,7 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
             .into(),
     ]);
 
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+    content.into()
 }
 
 pub fn drawer_footer(kind: DialogKind) -> cosmic::Element<'static, DialogMessage> {

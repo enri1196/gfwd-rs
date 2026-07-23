@@ -6,6 +6,7 @@ use crate::models::zone::ZoneDetails;
 
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
+const ADD_ICON: &str = "list-add-symbolic";
 const REMOVE_ICON: &str = "user-trash-symbolic";
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,11 @@ pub enum ZoneViewState {
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewAction {
+    AddInterface,
+    AddPort { forwarding: bool },
+    AddSource,
+    AddIcmpBlock,
+    AddRichRule,
     RemoveService(String),
     RemoveInterface(String),
     RemoveSource(String),
@@ -43,17 +49,15 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     state: &'a ZoneViewState,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
-    let content = match state {
+    match state {
         ZoneViewState::Empty => centered_message("Select a zone to view details"),
         ZoneViewState::Loading { zone } => centered_message(format!("Loading {zone} settings...")),
         ZoneViewState::Error { zone, message } => error_message(zone, message),
-        ZoneViewState::Ready(details) => zone_details(details, map),
-    };
-
-    widget::scrollable::scrollable(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(details, map))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+    }
 }
 
 fn zone_details<'a, Message: 'static + Clone>(
@@ -97,6 +101,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|service| (service.clone(), ZoneViewAction::RemoveService(service)))
             .collect(),
         "No services configured",
+        None,
         map,
     );
 
@@ -114,6 +119,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No interfaces assigned",
+        Some((ZoneViewAction::AddInterface, "Add interface")),
         map,
     );
 
@@ -126,6 +132,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|source| (source.clone(), ZoneViewAction::RemoveSource(source)))
             .collect(),
         "All sources allowed",
+        Some((ZoneViewAction::AddSource, "Add source")),
         map,
     );
 
@@ -143,6 +150,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No ports configured",
+        Some((ZoneViewAction::AddPort { forwarding: false }, "Add port")),
         map,
     );
 
@@ -169,6 +177,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No forwarded ports configured",
+        Some((ZoneViewAction::AddPort { forwarding: true }, "Add forwarded port")),
         map,
     );
 
@@ -186,6 +195,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No source ports configured",
+        None,
         map,
     );
 
@@ -198,6 +208,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|icmp| (icmp.clone(), ZoneViewAction::RemoveIcmpBlock(icmp)))
             .collect(),
         "No ICMP blocks configured",
+        Some((ZoneViewAction::AddIcmpBlock, "Add ICMP block")),
         map,
     );
 
@@ -210,6 +221,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|rule| (rule.clone(), ZoneViewAction::RemoveRichRule(rule)))
             .collect(),
         "No rich rules configured",
+        Some((ZoneViewAction::AddRichRule, "Add rich rule")),
         map,
     );
 
@@ -258,10 +270,16 @@ fn list_section<'a, Message: 'static + Clone>(
     title: &'a str,
     mut items: Vec<(String, ZoneViewAction)>,
     empty_label: &'a str,
+    add_action: Option<(ZoneViewAction, &'a str)>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     items.sort_by(|a, b| a.0.cmp(&b.0));
-    let section = settings::section().title(title);
+    let section = match add_action {
+        Some((action, tooltip)) => {
+            settings::section().header(section_header(title, action, tooltip, map))
+        }
+        None => settings::section().title(title),
+    };
     if items.is_empty() {
         return section.add(widget::text::caption(empty_label)).into();
     }
@@ -288,6 +306,24 @@ fn list_section<'a, Message: 'static + Clone>(
     };
 
     section.add(list_element).into()
+}
+
+fn section_header<'a, Message: 'static + Clone>(
+    title: &'a str,
+    action: ZoneViewAction,
+    tooltip: &'a str,
+    map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
+) -> cosmic::Element<'a, Message> {
+    let add = button::icon(icon::from_name(ADD_ICON))
+        .tooltip(tooltip)
+        .extra_small()
+        .on_press(map(action));
+
+    widget::row::with_capacity(2)
+        .push(widget::text::heading(title).width(Length::Fill))
+        .push(add)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 fn list_item_row<'a, Message: 'static + Clone>(

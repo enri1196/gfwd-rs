@@ -700,6 +700,12 @@ impl cosmic::Application for AppModel {
 }
 
 impl AppModel {
+    fn open_context_page(&mut self, context_page: ContextPage) {
+        self.context_page = context_page;
+        self.core.window.show_context = true;
+        self.reset_dialog_for_context(context_page);
+    }
+
     fn reset_dialog_for_context(&mut self, context_page: ContextPage) {
         if let Some(kind) = dialog_kind_for_page(context_page) {
             self.dialogs.reset(kind);
@@ -776,6 +782,38 @@ impl AppModel {
     }
 
     fn handle_zone_action(&mut self, action: ZoneViewAction) -> Task<cosmic::Action<Message>> {
+        match &action {
+            ZoneViewAction::AddInterface => {
+                self.open_context_page(ContextPage::AddInterface);
+                return self.start_interfaces_load();
+            }
+            ZoneViewAction::AddPort { forwarding } => {
+                self.open_context_page(ContextPage::AddPort);
+                self.dialogs.port.forwarding = *forwarding;
+                return Task::none();
+            }
+            ZoneViewAction::AddSource => {
+                self.open_context_page(ContextPage::AddSource);
+                return Task::none();
+            }
+            ZoneViewAction::AddIcmpBlock => {
+                self.open_context_page(ContextPage::AddIcmp);
+                return Task::none();
+            }
+            ZoneViewAction::AddRichRule => {
+                self.open_context_page(ContextPage::AddRichRule);
+                return Task::none();
+            }
+            ZoneViewAction::RemoveService(_)
+            | ZoneViewAction::RemoveInterface(_)
+            | ZoneViewAction::RemoveSource(_)
+            | ZoneViewAction::RemovePort { .. }
+            | ZoneViewAction::RemoveForwardPort { .. }
+            | ZoneViewAction::RemoveSourcePort { .. }
+            | ZoneViewAction::RemoveIcmpBlock(_)
+            | ZoneViewAction::RemoveRichRule(_) => {}
+        }
+
         let zone_name = match &self.zone_view {
             ZoneViewState::Ready(details) => details.name.clone(),
             _ => return Task::none(),
@@ -1302,6 +1340,11 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         let zone_name_for_task = zone_name.clone();
         match action {
+            ZoneViewAction::AddInterface
+            | ZoneViewAction::AddPort { .. }
+            | ZoneViewAction::AddSource
+            | ZoneViewAction::AddIcmpBlock
+            | ZoneViewAction::AddRichRule => Task::none(),
             ZoneViewAction::RemoveService(service) => {
                 Task::perform(Self::remove_service(zone_name, service), move |result| {
                     cosmic::Action::from(Message::ZoneItemRemoved {
