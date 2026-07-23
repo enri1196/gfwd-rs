@@ -21,6 +21,140 @@ pub enum ValidationError {
     InvalidSource,
     /// A CIDR prefix is outside the address family's valid range.
     InvalidCidrPrefix,
+    /// An IP-set name is longer than firewalld permits.
+    IpSetNameTooLong,
+    /// An IP-set name contains unsupported characters.
+    InvalidIpSetName,
+    /// An IP-set name starts with a dash.
+    IpSetNameStartsWithDash,
+    /// The requested IP-set type is unsupported.
+    InvalidIpSetType,
+    /// An IP-set entry has the wrong number or kind of components.
+    InvalidIpSetEntry,
+    /// A MAC-address component is invalid.
+    InvalidMacAddress,
+}
+
+/// IP-set types supported by the creation and entry editors.
+pub const IPSET_TYPES: [&str; 13] = [
+    "hash:ip",
+    "hash:net",
+    "hash:ip,port",
+    "hash:net,port",
+    "hash:ip,port,ip",
+    "hash:ip,port,net",
+    "hash:net,port,net",
+    "hash:net,iface",
+    "hash:mac",
+    "bitmap:ip",
+    "bitmap:ip,mac",
+    "bitmap:port",
+    "list:set",
+];
+
+/// Validates a firewalld IP-set name.
+pub fn validate_ipset_name(value: &str) -> Result<(), ValidationError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(ValidationError::Required);
+    }
+    if value.len() > 31 {
+        return Err(ValidationError::IpSetNameTooLong);
+    }
+    if value.starts_with('-') {
+        return Err(ValidationError::IpSetNameStartsWithDash);
+    }
+    if !value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(ValidationError::InvalidIpSetName);
+    }
+    Ok(())
+}
+
+/// Validates that an IP-set type is supported by the COSMIC editor.
+pub fn validate_ipset_type(value: &str) -> Result<(), ValidationError> {
+    if IPSET_TYPES.contains(&value) {
+        Ok(())
+    } else {
+        Err(ValidationError::InvalidIpSetType)
+    }
+}
+
+/// Validates an entry according to its selected IP-set type.
+pub fn validate_ipset_entry(entry: &str, ipset_type: &str) -> Result<(), ValidationError> {
+    validate_ipset_type(ipset_type)?;
+    let entry = entry.trim();
+    if entry.is_empty() {
+        return Err(ValidationError::Required);
+    }
+    let parts = entry.split(',').map(str::trim).collect::<Vec<_>>();
+    let ip = |value: &str| {
+        value
+            .parse::<IpAddr>()
+            .map(|_| ())
+            .map_err(|_| ValidationError::InvalidIpSetEntry)
+    };
+    let net = |value: &str| validate_source(value).map_err(|_| ValidationError::InvalidIpSetEntry);
+    let port =
+        |value: &str| validate_port_spec(value).map_err(|_| ValidationError::InvalidIpSetEntry);
+    let iface = |value: &str| {
+        validate_interface_name(value).map_err(|_| ValidationError::InvalidIpSetEntry)
+    };
+
+    match (ipset_type, parts.as_slice()) {
+        ("hash:ip" | "bitmap:ip", [value]) => ip(value),
+        ("hash:net", [value]) => net(value),
+        ("hash:ip,port", [address, port_value]) => {
+            ip(address)?;
+            port(port_value)
+        }
+        ("hash:net,port", [network, port_value]) => {
+            net(network)?;
+            port(port_value)
+        }
+        ("hash:ip,port,ip", [address, port_value, destination]) => {
+            ip(address)?;
+            port(port_value)?;
+            ip(destination)
+        }
+        ("hash:ip,port,net", [address, port_value, destination]) => {
+            ip(address)?;
+            port(port_value)?;
+            net(destination)
+        }
+        ("hash:net,port,net", [network, port_value, destination]) => {
+            net(network)?;
+            port(port_value)?;
+            net(destination)
+        }
+        ("hash:net,iface", [network, interface]) => {
+            net(network)?;
+            iface(interface)
+        }
+        ("hash:mac", [mac]) => validate_mac(mac),
+        ("bitmap:ip,mac", [address, mac]) => {
+            ip(address)?;
+            validate_mac(mac)
+        }
+        ("bitmap:port", [value]) => port(value),
+        ("list:set", [name]) => validate_ipset_name(name),
+        _ => Err(ValidationError::InvalidIpSetEntry),
+    }
+}
+
+fn validate_mac(value: &str) -> Result<(), ValidationError> {
+    let parts = value.split(':').collect::<Vec<_>>();
+    if parts.len() == 6
+        && parts.iter().all(|part| {
+            part.len() == 2 && part.chars().all(|character| character.is_ascii_hexdigit())
+        })
+    {
+        Ok(())
+    } else {
+        Err(ValidationError::InvalidMacAddress)
+    }
 }
 
 /// Validates a Linux network-interface name.
@@ -216,6 +350,44 @@ mod tests {
         assert_eq!(
             validate_source("2001:db8::/129"),
             Err(ValidationError::InvalidCidrPrefix)
+        );
+    }
+
+    #[test]
+    fn validates_all_supported_ipset_entry_shapes() {
+        let cases = [
+            ("hash:ip", "192.0.2.1"),
+            ("hash:net", "192.0.2.0/24"),
+            ("hash:ip,port", "192.0.2.1,443"),
+            ("hash:net,port", "192.0.2.0/24,443"),
+            ("hash:ip,port,ip", "192.0.2.1,443,198.51.100.2"),
+            ("hash:ip,port,net", "192.0.2.1,443,198.51.100.0/24"),
+            ("hash:net,port,net", "192.0.2.0/24,443,198.51.100.0/24"),
+            ("hash:net,iface", "192.0.2.0/24,eth0"),
+            ("hash:mac", "02:00:5e:10:00:00"),
+            ("bitmap:ip", "192.0.2.1"),
+            ("bitmap:ip,mac", "192.0.2.1,02:00:5e:10:00:00"),
+            ("bitmap:port", "1000-2000"),
+            ("list:set", "trusted_networks"),
+        ];
+        for (kind, entry) in cases {
+            assert_eq!(validate_ipset_entry(entry, kind), Ok(()), "{kind}: {entry}");
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_ipset_entry_shapes() {
+        assert_eq!(
+            validate_ipset_entry("192.0.2.1", "hash:ip,port"),
+            Err(ValidationError::InvalidIpSetEntry)
+        );
+        assert_eq!(
+            validate_ipset_entry("not-a-mac", "hash:mac"),
+            Err(ValidationError::InvalidMacAddress)
+        );
+        assert_eq!(
+            validate_ipset_entry("65536", "bitmap:port"),
+            Err(ValidationError::InvalidIpSetEntry)
         );
     }
 }

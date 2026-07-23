@@ -598,6 +598,19 @@ impl FwdBroker {
         Ok(())
     }
 
+    /// Permanently deletes an IP set.
+    pub async fn remove_ipset(&self, ipset_name: &str) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_ipset_by_name(ipset_name).await?;
+        ConfigIPSetProxy::builder(&self.conn)
+            .path(path)?
+            .build()
+            .await?
+            .remove()
+            .await?;
+        Ok(())
+    }
+
     pub async fn create_ipset(
         &self,
         name: &str,

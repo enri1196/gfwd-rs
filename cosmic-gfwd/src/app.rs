@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 use crate::config::Config;
-use crate::core::{BrokerError, FirewalldStatus, FwdBroker, validate_interface_name};
+use crate::core::{
+    BrokerError, FirewalldStatus, FwdBroker, validate_interface_name, validate_ipset_entry,
+};
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
@@ -128,6 +130,10 @@ pub enum Message {
         ipset_name: String,
         result: Result<(), BrokerError>,
     },
+    IpSetDeleted {
+        ipset_name: String,
+        result: Result<(), BrokerError>,
+    },
     FirewalldStatusLoaded(Result<FirewalldStatus, BrokerError>),
     FirewalldControlFinished {
         apply_permanent: bool,
@@ -142,6 +148,7 @@ pub enum Message {
 #[derive(Debug, Clone)]
 enum Confirmation {
     DeleteZone(String),
+    DeleteIpSet(String),
     StopFirewalld,
 }
 
@@ -472,7 +479,7 @@ impl cosmic::Application for AppModel {
             .title("Create IP Set")
             .footer(drawer_footer_with_submit(
                 DialogKind::IpSet,
-                can_submit && !self.dialogs.ipset.name.trim().is_empty(),
+                can_submit && self.dialogs.ipset.is_valid(),
             ))
             .map(Message::Dialog),
         })
@@ -484,6 +491,11 @@ impl cosmic::Application for AppModel {
             Confirmation::DeleteZone(zone) => (
                 fl!("confirm-delete-zone-title"),
                 fl!("confirm-delete-zone-body", zone = zone),
+                fl!("confirm-delete"),
+            ),
+            Confirmation::DeleteIpSet(ipset) => (
+                fl!("confirm-delete-ipset-title"),
+                fl!("confirm-delete-ipset-body", ipset = ipset),
                 fl!("confirm-delete"),
             ),
             Confirmation::StopFirewalld => (
@@ -528,7 +540,11 @@ impl cosmic::Application for AppModel {
     fn view(&self) -> Element<'_, Self::Message> {
         let space_m = cosmic::theme::spacing().space_m;
         let content: Element<_> = match self.sidebar.active_item() {
-            Some(SidebarItem::IpSets) => view_ipset_content(&self.ipset_view, Message::IpSetAction),
+            Some(SidebarItem::IpSets) => view_ipset_content(
+                &self.ipset_view,
+                self.mutation_pending(),
+                Message::IpSetAction,
+            ),
             _ => view_zone_content(
                 &self.zone_view,
                 &self.firewalld_status,
@@ -643,6 +659,7 @@ impl cosmic::Application for AppModel {
                 };
                 return match confirmation {
                     Confirmation::DeleteZone(zone_name) => self.start_zone_delete(zone_name),
+                    Confirmation::DeleteIpSet(ipset_name) => self.start_ipset_delete(ipset_name),
                     Confirmation::StopFirewalld => self.start_firewalld_control(false),
                 };
             }
@@ -940,6 +957,25 @@ impl cosmic::Application for AppModel {
                         self.finish_mutation(&result),
                         self.start_ipsets_load(),
                         self.start_ipset_details_load(ipset_name),
+                    ]);
+                }
+                Err(error) => {
+                    self.ipset_view.entry_error = Some(error.to_string());
+                    return self.finish_mutation(&Err(error));
+                }
+            },
+            Message::IpSetDeleted { ipset_name, result } => match result {
+                Ok(()) => {
+                    self.runtime_reload_needed = true;
+                    if self.ipset_view.selected.as_deref() == Some(ipset_name.as_str()) {
+                        self.ipset_view.selected = None;
+                        self.ipset_view.details = None;
+                        self.ipset_view.entry_input.clear();
+                        self.ipset_view.entry_error = None;
+                    }
+                    return Task::batch(vec![
+                        self.finish_mutation(&result),
+                        self.start_ipsets_load(),
                     ]);
                 }
                 Err(error) => {
@@ -1275,12 +1311,14 @@ impl AppModel {
             }
             DialogMessage::IpSetNameChanged(value) => {
                 self.dialogs.ipset.name = value;
+                self.dialogs.ipset.name_touched = true;
             }
             DialogMessage::IpSetTypeSelected(index) => {
                 self.dialogs.ipset.ipset_type = crate::ui::dialog_drawers::ipset_from_index(index);
             }
             DialogMessage::IpSetEntriesChanged(value) => {
                 self.dialogs.ipset.entries = value;
+                self.dialogs.ipset.entries_touched = true;
             }
             DialogMessage::Submit(DialogKind::Zone) => {
                 let name = self.dialogs.zone.name.trim().to_string();
@@ -1357,13 +1395,15 @@ impl AppModel {
                 return self.start_rich_rule_add(zone_name, rule);
             }
             DialogMessage::Submit(DialogKind::IpSet) => {
+                self.dialogs.ipset.name_touched = true;
+                self.dialogs.ipset.entries_touched = true;
+                if !self.dialogs.ipset.is_valid() {
+                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
+                    return Task::none();
+                }
                 let name = self.dialogs.ipset.name.trim().to_string();
                 let ipset_type = self.dialogs.ipset.ipset_type.trim().to_string();
                 let entries = split_ipset_entries(&self.dialogs.ipset.entries);
-                if name.is_empty() || ipset_type.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
-                    return Task::none();
-                }
                 return self.start_ipset_create(name, ipset_type, entries);
             }
             DialogMessage::Cancel(kind) => {
@@ -1393,14 +1433,28 @@ impl AppModel {
             }
             IpSetViewAction::EntryInputChanged(value) => {
                 self.ipset_view.entry_input = value;
-                self.ipset_view.entry_error = None;
+                self.ipset_view.entry_error = self
+                    .ipset_view
+                    .details
+                    .as_ref()
+                    .and_then(|details| {
+                        let input = self.ipset_view.entry_input.trim();
+                        (!input.is_empty())
+                            .then(|| validate_ipset_entry(input, &details.ipset_type).err())
+                            .flatten()
+                    })
+                    .map(localized_validation_error);
             }
             IpSetViewAction::AddEntry => {
                 let Some(ipset_name) = self.ipset_view.selected.clone() else {
                     return Task::none();
                 };
                 let entry = self.ipset_view.entry_input.trim();
-                if entry.is_empty() {
+                let Some(details) = &self.ipset_view.details else {
+                    return Task::none();
+                };
+                if let Err(error) = validate_ipset_entry(entry, &details.ipset_type) {
+                    self.ipset_view.entry_error = Some(localized_validation_error(error));
                     return Task::none();
                 }
                 return self.start_ipset_entry_add(ipset_name, entry.to_string());
@@ -1410,6 +1464,12 @@ impl AppModel {
                     return Task::none();
                 };
                 return self.start_ipset_entry_remove(ipset_name, entry);
+            }
+            IpSetViewAction::DeleteSelected => {
+                let Some(ipset_name) = self.ipset_view.selected.clone() else {
+                    return Task::none();
+                };
+                self.confirmation = Some(Confirmation::DeleteIpSet(ipset_name));
             }
         }
 
@@ -1607,6 +1667,11 @@ impl AppModel {
     async fn remove_ipset_entry(ipset_name: String, entry: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.remove_ipset_entry(&ipset_name, &entry).await
+    }
+
+    async fn remove_ipset(ipset_name: String) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.remove_ipset(&ipset_name).await
     }
 
     async fn load_ipsets() -> Result<Vec<String>, BrokerError> {
@@ -2076,6 +2141,19 @@ impl AppModel {
         })
     }
 
+    fn start_ipset_delete(&mut self, ipset_name: String) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-delete-ipset")) {
+            return Task::none();
+        }
+        let ipset_name_for_task = ipset_name.clone();
+        Task::perform(Self::remove_ipset(ipset_name), move |result| {
+            cosmic::Action::from(Message::IpSetDeleted {
+                ipset_name: ipset_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
     fn start_ipset_create(
         &mut self,
         ipset_name: String,
@@ -2116,7 +2194,7 @@ impl AppModel {
 
 fn split_ipset_entries(entries: &str) -> Vec<String> {
     entries
-        .split(|c| c == ',' || c == '\n')
+        .lines()
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .map(|entry| entry.to_string())

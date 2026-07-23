@@ -2,24 +2,15 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, dropdown, settings};
 
 use crate::core::{
-    RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec, ValidationError,
-    validate_forward_address, validate_port_protocol, validate_port_spec, validate_source,
+    IPSET_TYPES, RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec,
+    ValidationError, validate_forward_address, validate_ipset_entry, validate_ipset_name,
+    validate_ipset_type, validate_port_protocol, validate_port_spec, validate_source,
 };
 use crate::fl;
 use crate::models::IcmpTypeInfo;
 use crate::models::ZoneTarget;
 
 const PORT_PROTOCOLS: [&str; 4] = ["tcp", "udp", "sctp", "dccp"];
-const IPSET_TYPES: [&str; 7] = [
-    "hash:ip",
-    "hash:net",
-    "hash:ip,port",
-    "hash:net,port",
-    "hash:mac",
-    "bitmap:ip",
-    "list:set",
-];
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DialogKind {
     Zone,
@@ -326,6 +317,10 @@ pub struct IpSetFormState {
     pub name: String,
     pub ipset_type: String,
     pub entries: String,
+    /// Whether the name field has been edited.
+    pub name_touched: bool,
+    /// Whether the initial-entry field has been edited.
+    pub entries_touched: bool,
 }
 
 impl Default for IpSetFormState {
@@ -334,7 +329,23 @@ impl Default for IpSetFormState {
             name: String::new(),
             ipset_type: IPSET_TYPES[0].to_string(),
             entries: String::new(),
+            name_touched: false,
+            entries_touched: false,
         }
+    }
+}
+
+impl IpSetFormState {
+    /// Returns whether the name, type, and every newline-separated entry are valid.
+    pub fn is_valid(&self) -> bool {
+        validate_ipset_name(&self.name).is_ok()
+            && validate_ipset_type(&self.ipset_type).is_ok()
+            && self
+                .entries
+                .lines()
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .all(|entry| validate_ipset_entry(entry, &self.ipset_type).is_ok())
     }
 }
 
@@ -534,6 +545,12 @@ pub fn localized_validation_error(error: ValidationError) -> String {
         ValidationError::InvalidInterfaceName => fl!("validation-interface-name"),
         ValidationError::InvalidSource => fl!("validation-source"),
         ValidationError::InvalidCidrPrefix => fl!("validation-cidr-prefix"),
+        ValidationError::IpSetNameTooLong => fl!("validation-ipset-name-length"),
+        ValidationError::InvalidIpSetName => fl!("validation-ipset-name"),
+        ValidationError::IpSetNameStartsWithDash => fl!("validation-ipset-name-dash"),
+        ValidationError::InvalidIpSetType => fl!("validation-ipset-type"),
+        ValidationError::InvalidIpSetEntry => fl!("validation-ipset-entry"),
+        ValidationError::InvalidMacAddress => fl!("validation-mac-address"),
     }
 }
 
@@ -872,41 +889,52 @@ fn localized_rich_rule_error(error: RichRuleError) -> String {
 pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, DialogMessage> {
     let type_selected = ipset_index(&state.ipset_type);
 
-    let content = settings::view_column(vec![
-        settings::section()
-            .title(fl!("dialog-ipset-section"))
-            .add(
-                settings::item::builder(fl!("dialog-ipset-name-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-ipset-name-placeholder"),
-                        &state.name,
-                    )
+    let mut section = settings::section()
+        .title(fl!("dialog-ipset-section"))
+        .add(
+            settings::item::builder(fl!("dialog-ipset-name-label")).control(
+                widget::text_input::text_input(fl!("dialog-ipset-name-placeholder"), &state.name)
                     .on_input(DialogMessage::IpSetNameChanged)
                     .width(Length::Fill),
-                ),
-            )
-            .add(
-                settings::item::builder(fl!("dialog-ipset-type-label")).control(
-                    dropdown(
-                        &IPSET_TYPES,
-                        type_selected,
-                        DialogMessage::IpSetTypeSelected,
-                    )
-                    .width(Length::Fill),
-                ),
-            )
-            .add(
-                settings::item::builder(fl!("dialog-ipset-entries-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-ipset-entries-placeholder"),
-                        &state.entries,
-                    )
-                    .on_input(DialogMessage::IpSetEntriesChanged)
-                    .width(Length::Fill),
-                ),
-            )
-            .into(),
-    ]);
+            ),
+        )
+        .add(
+            settings::item::builder(fl!("dialog-ipset-type-label")).control(
+                dropdown(
+                    &IPSET_TYPES,
+                    type_selected,
+                    DialogMessage::IpSetTypeSelected,
+                )
+                .width(Length::Fill),
+            ),
+        )
+        .add(
+            settings::item::builder(fl!("dialog-ipset-entries-label")).control(
+                widget::text_input::text_input(
+                    fl!("dialog-ipset-entries-placeholder"),
+                    &state.entries,
+                )
+                .on_input(DialogMessage::IpSetEntriesChanged)
+                .width(Length::Fill),
+            ),
+        );
+    if state.name_touched {
+        if let Err(error) = validate_ipset_name(&state.name) {
+            section = section.add(widget::text::caption(localized_validation_error(error)));
+        }
+    }
+    if state.entries_touched {
+        if let Some(error) = state
+            .entries
+            .lines()
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .find_map(|entry| validate_ipset_entry(entry, &state.ipset_type).err())
+        {
+            section = section.add(widget::text::caption(localized_validation_error(error)));
+        }
+    }
+    let content = settings::view_column(vec![section.into()]);
 
     content.into()
 }

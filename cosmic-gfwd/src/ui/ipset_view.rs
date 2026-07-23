@@ -1,6 +1,7 @@
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings};
 
+use crate::core::validate_ipset_entry;
 use crate::fl;
 use crate::models::IpSetDetails;
 
@@ -39,10 +40,13 @@ pub enum IpSetViewAction {
     EntryInputChanged(String),
     AddEntry,
     RemoveEntry(String),
+    /// Requests destructive confirmation for the selected IP set.
+    DeleteSelected,
 }
 
 pub fn view_ipset_content<'a, Message: 'static + Clone>(
     state: &'a IpSetViewState,
+    mutation_pending: bool,
     map: impl Fn(IpSetViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let mut sections = Vec::new();
@@ -87,6 +91,12 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
     }
 
     if let Some(details) = &state.details {
+        let mut options = details
+            .options
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>();
+        options.sort();
         sections.push(
             settings::section()
                 .title(fl!("ipset-section-details"))
@@ -103,13 +113,25 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
                         .control(widget::text(details.entries.len().to_string())),
                 )
                 .add(
-                    settings::item::builder(fl!("ipset-detail-options"))
-                        .control(widget::text(details.options.len().to_string())),
+                    settings::item::builder(fl!("ipset-detail-options")).control(widget::text(
+                        if options.is_empty() {
+                            fl!("ipset-options-none")
+                        } else {
+                            options.join(", ")
+                        },
+                    )),
                 )
+                .add(settings::item::builder(fl!("ipset-delete-label")).control(
+                    button::destructive(fl!("ipset-delete")).on_press_maybe(
+                        (!mutation_pending).then_some(map(IpSetViewAction::DeleteSelected)),
+                    ),
+                ))
                 .into(),
         );
 
-        let can_add_entry = !state.entry_input.trim().is_empty() && state.selected.is_some();
+        let can_add_entry = !mutation_pending
+            && validate_ipset_entry(&state.entry_input, &details.ipset_type).is_ok()
+            && state.selected.is_some();
         let add_message = can_add_entry.then_some(map(IpSetViewAction::AddEntry));
         let entry_input_row = widget::row::with_capacity(2)
             .push(
@@ -140,7 +162,7 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
                     details
                         .entries
                         .iter()
-                        .map(|entry| entry_item_row(entry, map)),
+                        .map(|entry| entry_item_row(entry, mutation_pending, map)),
                 );
             let entries_element = list_with_scroll(entries_list, details.entries.len());
             entries_section = entries_section.add(entries_element);
@@ -159,13 +181,16 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
 
 fn entry_item_row<'a, Message: 'static + Clone>(
     entry: &'a str,
+    mutation_pending: bool,
     map: impl Fn(IpSetViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let remove = button::icon(icon::from_name(REMOVE_ICON))
         .tooltip(fl!("action-remove"))
         .extra_small()
-        .on_press(map(IpSetViewAction::RemoveEntry(entry.to_string())));
+        .on_press_maybe(
+            (!mutation_pending).then_some(map(IpSetViewAction::RemoveEntry(entry.to_string()))),
+        );
 
     widget::row::with_capacity(2)
         .push(widget::text::body(entry).width(Length::Fill))
