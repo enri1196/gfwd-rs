@@ -4,7 +4,6 @@ use zbus::Result as ZResult;
 use zbus_macros::proxy;
 use zvariant::OwnedValue;
 
-
 /// Type alias for permanent zone settings.
 /// (version, name, description, UNUSED, target, services, ports, icmp-blocks,
 /// masquerade, forward-ports, interfaces, sources, rich rules, protocols,

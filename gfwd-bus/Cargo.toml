@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-zbus = "5.11"
-zbus_macros = "5.11"
-zvariant = "5.7"
+zbus = "5.18.0"
+zbus_macros = "5.18.0"
+zvariant = "5.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
 
 [features]
 config_direct = []
@@ -24,3 +24,4 @@ ipset = []
 policies = []
 zone = []
 systemd = []
+network_manager = []

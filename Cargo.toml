@@ -4,5 +4,5 @@ resolver = "3"
 
 members = [
     "gfwd-bus",
-    "gfwd"
+    "cosmic-gfwd",
 ]

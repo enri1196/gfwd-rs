@@ -12,51 +12,51 @@ use zvariant::OwnedValue;
 )]
 /// Proxy for the `org.fedoraproject.FirewallD1` interface
 pub trait FirewallD1 {
-    /// Starts the full authorization flow on Firewalld (used by configuration apps).
+    /// Request broad authorization for a firewalld configuration application.
     #[zbus(name = "authorizeAll")]
     fn authorize_all(&self) -> ZResult<()>;
 
-    /// Performs a full firewall reload (drops state and tears down connections).
+    /// Fully reload the firewall, losing state and terminating connections.
     #[zbus(name = "completeReload")]
     fn complete_reload(&self) -> ZResult<()>;
 
-    /// Disables panic mode and returns to the regular policy.
+    /// Disable panic mode.
     #[zbus(name = "disablePanicMode")]
     fn disable_panic_mode(&self) -> ZResult<()>;
 
-    /// Enables panic mode, dropping every packet.
+    /// Enable panic mode, dropping every packet.
     #[zbus(name = "enablePanicMode")]
     fn enable_panic_mode(&self) -> ZResult<()>;
 
-    /// Returns the default zone.
+    /// Return the default zone.
     #[zbus(name = "getDefaultZone")]
     fn get_default_zone(&self) -> ZResult<String>;
 
-    /// Lists all services currently available at runtime.
+    /// List all runtime services.
     #[zbus(name = "listServices")]
     fn list_services(&self) -> ZResult<Vec<String>>;
 
-    /// Returns the key/value settings for a service.
+    /// Return service settings as key/value variants.
     #[zbus(name = "getServiceSettings2")]
     fn get_service_settings2(&self, service: &str) -> ZResult<HashMap<String, OwnedValue>>;
 
-    /// Reloads rules while keeping state.
+    /// Reload rules while preserving state.
     #[zbus(name = "reload")]
     fn reload(&self) -> ZResult<()>;
 
-    /// Converts runtime settings into a permanent configuration.
+    /// Copy runtime configuration to permanent configuration.
     #[zbus(name = "runtimeToPermanent")]
     fn runtime_to_permanent(&self) -> ZResult<()>;
 
-    /// Validates the permanent configuration.
+    /// Validate permanent configuration.
     #[zbus(name = "checkPermanentConfig")]
     fn check_permanent_config(&self) -> ZResult<()>;
 
-    /// Sets the default zone (runtime and permanent).
+    /// Set the default zone in runtime and permanent configuration.
     #[zbus(name = "setDefaultZone")]
     fn set_default_zone(&self, zone: &str) -> ZResult<()>;
 
-    /// Sets the log-denied level (all, unicast, and so on, up to off).
+    /// Set the denied-packet logging level.
     #[zbus(name = "setLogDenied")]
     fn set_log_denied(&self, value: &str) -> ZResult<()>;
 
@@ -64,7 +64,7 @@ pub trait FirewallD1 {
     #[zbus(signal, name = "DefaultZoneChanged")]
     fn default_zone_changed(&self, zone: &str) -> ZResult<()>;
 
-    /// Emitted when the log-denied level changes.
+    /// Emitted when `LogDenied` changes.
     #[zbus(signal, name = "LogDeniedChanged")]
     fn log_denied_changed(&self, value: &str) -> ZResult<()>;
 
@@ -76,7 +76,7 @@ pub trait FirewallD1 {
     #[zbus(signal, name = "PanicModeEnabled")]
     fn panic_mode_enabled(&self) -> ZResult<()>;
 
-    /// Emitted on every reload, including complete reloads.
+    /// Emitted for every reload, including a complete reload.
     #[zbus(signal, name = "Reloaded")]
     fn reloaded(&self) -> ZResult<()>;
 

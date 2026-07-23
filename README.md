@@ -1,72 +1,63 @@
-# GFWD - GTK Firewall GUI
+# GFWD - COSMIC Firewall Configuration
 
-A modern GTK4/Libadwaita GUI application for managing firewalld zones and rules, built with Rust and Relm4.
+A COSMIC-native application for managing firewalld zones and rules, built with Rust and libcosmic.
 
 ## Overview
 
-GFWD provides an intuitive graphical interface for configuring firewalld, the dynamic firewall daemon used in many Linux distributions. The application allows users to manage firewall zones, ports, services, and forwarding rules through a clean, modern interface developed with Libadwaita and Rust.
+GFWD provides a graphical interface for configuring firewalld, the dynamic firewall daemon used by many Linux distributions. The application manages permanent zone configuration and offers an explicit action for applying those changes to firewalld's runtime state.
 
 ## Features
 
 ### Current Functionality
-- **Zone Management**: View, create, and delete firewall zones
+
+- **Zone Management**: View, create, delete, and select the default firewall zone
 - **Port Configuration**: Add/remove ports and port forwarding rules
-- **Service Control**: Start/stop firewalld service
-- **Real-time Updates**: Live synchronization with firewalld state
-- **Modern UI**: Native GTK4/Libadwaita interface with responsive design
+- **Zone Rules**: Manage services, interfaces, sources, ICMP blocks, rich rules, and IP sets
+- **Service Control**: View and start/stop `firewalld.service`
+- **Validation and Feedback**: Validate structured input and report asynchronous operation results
+- **Modern UI**: Native libcosmic interface with context drawers, dialogs, and toasts
 
 ### Supported Operations
+
 - List all firewall zones
-- View zone details (ports, services, rules)
-- Create new zones with custom settings
-- Delete existing zones
-- Add/remove port rules
-- Configure port forwarding
-- Monitor firewalld service status
-- Toggle firewalld service on/off
+- View zone details and active-zone badges
+- Create and delete zones
+- Add and remove ports and forwarding rules
+- Toggle masquerading and ICMP block inversion
+- Manage services, interfaces, sources, and ICMP blocks
+- Build structured rich rules or enter advanced raw rules
+- Create and delete IP sets and manage type-aware entries
+- Monitor and start or stop firewalld
+- Explicitly reload permanent changes into runtime configuration
 
 ## Installation
 
 ### Prerequisites
+
 - Rust toolchain (2024 edition)
-- GTK4 development libraries
-- Libadwaita development libraries
-- firewalld installed and accessible via D-Bus
+- libcosmic build dependencies
+- firewalld installed and accessible through D-Bus
+- systemd for service status and start/stop controls
 
 ### Building from Source
+
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd gfwd
-
-# Build the project
-cargo build --release
-
-# Run the application
-cargo run
+git clone https://github.com/enri1196/gfwd-rs.git
+cd gfwd-rs
+cargo build --release --package cosmic-gfwd
 ```
 
 ## Usage
 
-### Starting the Application
 ```bash
-./target/release/gfwd
+./target/release/cosmic-gfwd
 ```
 
-### Interface Overview
-- **Sidebar**: Lists all available firewall zones with status indicators
-- **Main View**: Displays detailed zone configuration and settings
-- **Header Bar**: Contains service controls and zone management actions
+- **Sidebar**: Lists firewall zones, their active interfaces, sources, and default-zone status
+- **Main View**: Displays the selected zone's permanent configuration
+- **Header Bar**: Contains service controls, runtime apply, and zone management actions
 
-### Managing Zones
-- **Create Zone**: Click the "+" button in the sidebar
-- **Select Zone**: Click on any zone in the sidebar to view its configuration
-- **Delete Zone**: Use the menu button or keyboard shortcut (Ctrl+D)
-
-### Port Management
-- Add ports through the zone detail view
-- Configure port forwarding with destination addresses
-- Remove ports and forwarding rules as needed
+See [cosmic-gfwd/README.md](cosmic-gfwd/README.md) for configuration semantics and migration scope.
 
 ## Support
 
