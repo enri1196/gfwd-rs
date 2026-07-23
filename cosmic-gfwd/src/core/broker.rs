@@ -3,6 +3,7 @@ use gfwd_bus::config_ipset::ConfigIPSetProxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
 use gfwd_bus::firewalld1::FirewallD1Proxy;
 use gfwd_bus::network_manager::{DeviceProxy, NetworkManagerProxy};
+use gfwd_bus::systemd::{ManagerProxy, UnitProxy};
 use gfwd_bus::zone::ZoneProxy;
 use tokio::sync::OnceCell;
 use zbus::Connection;
@@ -14,6 +15,20 @@ use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 #[derive(Clone, Debug)]
 pub struct BrokerError {
     message: String,
+}
+
+/// Current activation state of `firewalld.service`.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum FirewalldStatus {
+    /// The unit state is being queried or is transitioning.
+    #[default]
+    Loading,
+    /// The systemd unit is active.
+    Active,
+    /// The systemd unit is not active.
+    Inactive,
+    /// The unit state could not be queried.
+    Error(String),
 }
 
 impl BrokerError {
@@ -57,6 +72,78 @@ impl FwdBroker {
 
     async fn config(&self) -> Result<ConfigFirewalld1Proxy<'_>, BrokerError> {
         Ok(ConfigFirewalld1Proxy::new(&self.conn).await?)
+    }
+
+    async fn zone(&self, zone_name: &str) -> Result<ConfigZoneProxy<'_>, BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        Ok(ConfigZoneProxy::builder(&self.conn)
+            .path(path)?
+            .build()
+            .await?)
+    }
+
+    /// Permanently enables or disables masquerading for a zone.
+    pub async fn set_masquerade(&self, zone_name: &str, enabled: bool) -> Result<(), BrokerError> {
+        let proxy = self.zone(zone_name).await?;
+        if enabled {
+            proxy.add_masquerade().await?;
+        } else {
+            proxy.remove_masquerade().await?;
+        }
+        Ok(())
+    }
+
+    /// Permanently sets ICMP block inversion for a zone.
+    pub async fn set_icmp_block_inversion(
+        &self,
+        zone_name: &str,
+        enabled: bool,
+    ) -> Result<(), BrokerError> {
+        self.zone(zone_name)
+            .await?
+            .set_icmp_block_inversion(enabled)
+            .await?;
+        Ok(())
+    }
+
+    /// Returns the current systemd activation state of `firewalld.service`.
+    pub async fn firewalld_status(&self) -> Result<FirewalldStatus, BrokerError> {
+        let manager = ManagerProxy::new(&self.conn).await?;
+        let path = manager.get_unit("firewalld.service").await?;
+        let unit = UnitProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        Ok(match unit.active_state().await?.as_str() {
+            "active" => FirewalldStatus::Active,
+            "activating" | "deactivating" | "reloading" => FirewalldStatus::Loading,
+            _ => FirewalldStatus::Inactive,
+        })
+    }
+
+    /// Requests systemd to start `firewalld.service`.
+    pub async fn start_firewalld(&self) -> Result<(), BrokerError> {
+        ManagerProxy::new(&self.conn)
+            .await?
+            .start_unit("firewalld.service", "replace")
+            .await?;
+        Ok(())
+    }
+
+    /// Requests systemd to stop `firewalld.service`.
+    pub async fn stop_firewalld(&self) -> Result<(), BrokerError> {
+        ManagerProxy::new(&self.conn)
+            .await?
+            .stop_unit("firewalld.service", "replace")
+            .await?;
+        Ok(())
+    }
+
+    /// Reloads firewalld so permanent configuration becomes active at runtime.
+    pub async fn apply_permanent_configuration(&self) -> Result<(), BrokerError> {
+        FirewallD1Proxy::new(&self.conn).await?.reload().await?;
+        Ok(())
     }
 
     pub async fn get_zones(&self) -> Result<Vec<String>, BrokerError> {

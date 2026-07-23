@@ -30,6 +30,14 @@ just rootdir=debian/cosmic-gfwd prefix=/usr install
 
 It is recommended to build a source tarball with the vendored dependencies, which can typically be done by running `just vendor` on the host system before it enters the build environment.
 
+## Permanent and runtime configuration
+
+Zone and IP-set edits in Cosmic Gfwd modify firewalld's permanent configuration. They are not
+presented as immediately active. After reviewing changes, use **Apply to Runtime** in the Firewalld
+section to call firewalld's state-preserving reload operation. The application keeps this explicit
+instead of automatically reloading after each edit so several related changes can be applied
+together and users can choose when runtime policy changes.
+
 ## Developers
 
 Developers should install [rustup][rustup] and configure their editor to use [rust-analyzer][rust-analyzer]. To improve compilation times, disable LTO in the release profile, install the [mold][mold] linker, and configure [sccache][sccache] for use with Rust. The [mold][mold] linker will only improve link times if LTO is disabled.

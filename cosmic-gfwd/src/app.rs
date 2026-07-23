@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::config::Config;
-use crate::core::{BrokerError, FwdBroker, validate_interface_name};
+use crate::core::{BrokerError, FirewalldStatus, FwdBroker, validate_interface_name};
 use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
@@ -51,6 +51,10 @@ pub struct AppModel {
     pending_operation: Option<String>,
     /// Destructive operation awaiting explicit confirmation.
     confirmation: Option<Confirmation>,
+    /// Current activation state of the firewalld systemd unit.
+    firewalld_status: FirewalldStatus,
+    /// Permanent configuration has changed since the last explicit runtime reload.
+    runtime_reload_needed: bool,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
@@ -109,6 +113,11 @@ pub enum Message {
         ipset_name: String,
         result: Result<(), BrokerError>,
     },
+    FirewalldStatusLoaded(Result<FirewalldStatus, BrokerError>),
+    FirewalldControlFinished {
+        apply_permanent: bool,
+        result: Result<(), BrokerError>,
+    },
     DismissToast(ToastId),
     CancelConfirmation,
     ConfirmDestructive,
@@ -118,6 +127,7 @@ pub enum Message {
 #[derive(Debug, Clone)]
 enum Confirmation {
     DeleteZone(String),
+    StopFirewalld,
 }
 
 /// Create a COSMIC application from the app model
@@ -172,6 +182,8 @@ impl cosmic::Application for AppModel {
             toasts: Toasts::new(Message::DismissToast),
             pending_operation: None,
             confirmation: None,
+            firewalld_status: FirewalldStatus::Loading,
+            runtime_reload_needed: false,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -188,7 +200,11 @@ impl cosmic::Application for AppModel {
                 .unwrap_or_default(),
         };
 
-        let command = Task::batch(vec![app.update_title(), app.start_zones_load()]);
+        let command = Task::batch(vec![
+            app.update_title(),
+            app.start_zones_load(),
+            app.start_firewalld_status_load(),
+        ]);
 
         (app, command)
     }
@@ -422,6 +438,11 @@ impl cosmic::Application for AppModel {
                 fl!("confirm-delete-zone-body", zone = zone),
                 fl!("confirm-delete"),
             ),
+            Confirmation::StopFirewalld => (
+                fl!("confirm-stop-firewalld-title"),
+                fl!("confirm-stop-firewalld-body"),
+                fl!("firewalld-stop"),
+            ),
         };
 
         Some(
@@ -460,7 +481,13 @@ impl cosmic::Application for AppModel {
         let space_m = cosmic::theme::spacing().space_m;
         let content: Element<_> = match self.sidebar.active_item() {
             Some(SidebarItem::IpSets) => view_ipset_content(&self.ipset_view, Message::IpSetAction),
-            _ => view_zone_content(&self.zone_view, Message::ZoneAction),
+            _ => view_zone_content(
+                &self.zone_view,
+                &self.firewalld_status,
+                self.mutation_pending(),
+                self.runtime_reload_needed,
+                Message::ZoneAction,
+            ),
         };
 
         widget::toaster(
@@ -563,7 +590,26 @@ impl cosmic::Application for AppModel {
                 };
                 return match confirmation {
                     Confirmation::DeleteZone(zone_name) => self.start_zone_delete(zone_name),
+                    Confirmation::StopFirewalld => self.start_firewalld_control(false),
                 };
+            }
+            Message::FirewalldStatusLoaded(result) => {
+                self.firewalld_status = match result {
+                    Ok(status) => status,
+                    Err(error) => FirewalldStatus::Error(error.to_string()),
+                };
+            }
+            Message::FirewalldControlFinished {
+                apply_permanent,
+                result,
+            } => {
+                if result.is_ok() && apply_permanent {
+                    self.runtime_reload_needed = false;
+                }
+                return Task::batch(vec![
+                    self.finish_mutation(&result),
+                    self.start_firewalld_status_load(),
+                ]);
             }
 
             Message::UpdateConfig(config) => {
@@ -673,6 +719,7 @@ impl cosmic::Application for AppModel {
             },
             Message::ZoneCreated { zone_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::Zone);
                     self.close_context_drawer();
                     return Task::batch(vec![
@@ -687,6 +734,7 @@ impl cosmic::Application for AppModel {
             },
             Message::ZoneDeleted { zone_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     if matches!(
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
@@ -706,6 +754,7 @@ impl cosmic::Application for AppModel {
             Message::ZoneItemAdded { zone_name, result }
             | Message::ZoneItemRemoved { zone_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     if self.core.window.show_context {
                         if let Some(kind) = dialog_kind_for_page(self.context_page) {
                             self.dialogs.reset(kind);
@@ -773,6 +822,7 @@ impl cosmic::Application for AppModel {
             }
             Message::IpSetEntryAdded { ipset_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     self.ipset_view.entry_input.clear();
                     self.ipset_view.entry_error = None;
                     return Task::batch(vec![
@@ -787,6 +837,7 @@ impl cosmic::Application for AppModel {
             },
             Message::IpSetEntryRemoved { ipset_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     self.ipset_view.entry_error = None;
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -800,6 +851,7 @@ impl cosmic::Application for AppModel {
             },
             Message::IpSetCreated { ipset_name, result } => match result {
                 Ok(()) => {
+                    self.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::IpSet);
                     self.close_context_drawer();
                     self.ipset_view.selected = Some(ipset_name.clone());
@@ -951,6 +1003,28 @@ impl AppModel {
             return Task::none();
         }
         match &action {
+            ZoneViewAction::SetMasquerade(enabled) => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_masquerade_set(zone_name, *enabled);
+            }
+            ZoneViewAction::SetIcmpBlockInversion(enabled) => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                return self.start_icmp_inversion_set(zone_name, *enabled);
+            }
+            ZoneViewAction::StartFirewalld => {
+                return self.start_firewalld_control(true);
+            }
+            ZoneViewAction::StopFirewalld => {
+                self.confirmation = Some(Confirmation::StopFirewalld);
+                return Task::none();
+            }
+            ZoneViewAction::ApplyPermanentConfiguration => {
+                return self.start_permanent_apply();
+            }
             ZoneViewAction::AddInterface => {
                 self.open_context_page(ContextPage::AddInterface);
                 return self.start_interfaces_load();
@@ -1216,6 +1290,35 @@ impl AppModel {
         broker.get_interfaces().await
     }
 
+    async fn load_firewalld_status() -> Result<FirewalldStatus, BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.firewalld_status().await
+    }
+
+    async fn set_masquerade(zone_name: String, enabled: bool) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.set_masquerade(&zone_name, enabled).await
+    }
+
+    async fn set_icmp_block_inversion(zone_name: String, enabled: bool) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.set_icmp_block_inversion(&zone_name, enabled).await
+    }
+
+    async fn control_firewalld(start: bool) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        if start {
+            broker.start_firewalld().await
+        } else {
+            broker.stop_firewalld().await
+        }
+    }
+
+    async fn apply_permanent_configuration() -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.apply_permanent_configuration().await
+    }
+
     async fn set_default_zone(zone_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.set_default_zone(&zone_name).await
@@ -1392,6 +1495,80 @@ impl AppModel {
         })
     }
 
+    fn start_firewalld_status_load(&mut self) -> Task<cosmic::Action<Message>> {
+        self.firewalld_status = FirewalldStatus::Loading;
+        Task::perform(Self::load_firewalld_status(), |result| {
+            cosmic::Action::from(Message::FirewalldStatusLoaded(result))
+        })
+    }
+
+    fn start_masquerade_set(
+        &mut self,
+        zone_name: String,
+        enabled: bool,
+    ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-set-masquerading")) {
+            return Task::none();
+        }
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(Self::set_masquerade(zone_name, enabled), move |result| {
+            cosmic::Action::from(Message::ZoneItemAdded {
+                zone_name: zone_name_for_task.clone(),
+                result,
+            })
+        })
+    }
+
+    fn start_icmp_inversion_set(
+        &mut self,
+        zone_name: String,
+        enabled: bool,
+    ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-set-icmp-inversion")) {
+            return Task::none();
+        }
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(
+            Self::set_icmp_block_inversion(zone_name, enabled),
+            move |result| {
+                cosmic::Action::from(Message::ZoneItemAdded {
+                    zone_name: zone_name_for_task.clone(),
+                    result,
+                })
+            },
+        )
+    }
+
+    fn start_firewalld_control(&mut self, start: bool) -> Task<cosmic::Action<Message>> {
+        let operation = if start {
+            fl!("operation-start-firewalld")
+        } else {
+            fl!("operation-stop-firewalld")
+        };
+        if !self.begin_mutation(operation) {
+            return Task::none();
+        }
+        self.firewalld_status = FirewalldStatus::Loading;
+        Task::perform(Self::control_firewalld(start), |result| {
+            cosmic::Action::from(Message::FirewalldControlFinished {
+                apply_permanent: false,
+                result,
+            })
+        })
+    }
+
+    fn start_permanent_apply(&mut self) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-apply-permanent")) {
+            return Task::none();
+        }
+        Task::perform(Self::apply_permanent_configuration(), |result| {
+            cosmic::Action::from(Message::FirewalldControlFinished {
+                apply_permanent: true,
+                result,
+            })
+        })
+    }
+
     fn start_default_zone_set(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
         if !self.begin_mutation(fl!("operation-set-default-zone")) {
             return Task::none();
@@ -1547,6 +1724,11 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         match action {
+            ZoneViewAction::SetMasquerade(_)
+            | ZoneViewAction::SetIcmpBlockInversion(_)
+            | ZoneViewAction::StartFirewalld
+            | ZoneViewAction::StopFirewalld
+            | ZoneViewAction::ApplyPermanentConfiguration => Task::none(),
             ZoneViewAction::AddInterface
             | ZoneViewAction::AddPort { .. }
             | ZoneViewAction::AddSource

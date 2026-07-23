@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use zbus::Connection;
 use zbus::Result as ZResult;
 use zbus_macros::proxy;
 use zvariant::OwnedValue;

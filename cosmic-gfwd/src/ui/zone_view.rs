@@ -1,6 +1,7 @@
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings};
 
+use crate::core::FirewalldStatus;
 use crate::fl;
 use crate::models::zone::ZoneDetails;
 
@@ -19,8 +20,20 @@ pub enum ZoneViewState {
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewAction {
+    /// Permanently enables or disables masquerading.
+    SetMasquerade(bool),
+    /// Permanently enables or disables ICMP block inversion.
+    SetIcmpBlockInversion(bool),
+    /// Starts the firewalld systemd unit.
+    StartFirewalld,
+    /// Requests confirmation before stopping the firewalld systemd unit.
+    StopFirewalld,
+    /// Reloads firewalld to apply permanent configuration to runtime.
+    ApplyPermanentConfiguration,
     AddInterface,
-    AddPort { forwarding: bool },
+    AddPort {
+        forwarding: bool,
+    },
     AddSource,
     AddIcmpBlock,
     AddRichRule,
@@ -47,21 +60,33 @@ pub enum ZoneViewAction {
 
 pub fn view_zone_content<'a, Message: 'static + Clone>(
     state: &'a ZoneViewState,
+    firewalld_status: &'a FirewalldStatus,
+    mutation_pending: bool,
+    runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     match state {
         ZoneViewState::Empty => centered_message("Select a zone to view details"),
         ZoneViewState::Loading { zone } => centered_message(format!("Loading {zone} settings...")),
         ZoneViewState::Error { zone, message } => error_message(zone, message),
-        ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(details, map))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
+        ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(
+            details,
+            firewalld_status,
+            mutation_pending,
+            runtime_reload_needed,
+            map,
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
     }
 }
 
 fn zone_details<'a, Message: 'static + Clone>(
     details: &'a ZoneDetails,
+    firewalld_status: &'a FirewalldStatus,
+    mutation_pending: bool,
+    runtime_reload_needed: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
@@ -69,27 +94,75 @@ fn zone_details<'a, Message: 'static + Clone>(
     let space_m = spacing.space_m;
     let space_l = spacing.space_l;
 
-    let header = widget::column::with_capacity(2)
+    let header = widget::column::with_capacity(3)
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
+        .push(widget::text::caption(if runtime_reload_needed {
+            fl!("zone-permanent-pending")
+        } else {
+            fl!("zone-permanent-notice")
+        }))
         .spacing(space_s);
 
+    let masquerade = if mutation_pending {
+        widget::toggler(details.masquerade)
+    } else {
+        widget::toggler(details.masquerade)
+            .on_toggle(move |enabled| map(ZoneViewAction::SetMasquerade(enabled)))
+    };
+    let icmp_inversion = if mutation_pending {
+        widget::toggler(details.icmp_block_inversion)
+    } else {
+        widget::toggler(details.icmp_block_inversion)
+            .on_toggle(move |enabled| map(ZoneViewAction::SetIcmpBlockInversion(enabled)))
+    };
+
     let overview = settings::section()
-        .title("Overview")
-        .add(settings::item::builder("Target").control(widget::text(details.target.to_string())))
+        .title(fl!("zone-section-overview"))
         .add(
-            settings::item::builder("Masquerading")
-                .control(widget::text(bool_label(details.masquerade))),
+            settings::item::builder(fl!("zone-overview-target"))
+                .control(widget::text(details.target.to_string())),
+        )
+        .add(settings::item::builder(fl!("zone-overview-masquerading")).control(masquerade))
+        .add(settings::item::builder(fl!("zone-overview-icmp-inversion")).control(icmp_inversion))
+        .add(
+            settings::item::builder(fl!("zone-overview-protocols")).control(widget::text(
+                list_or_none(&details.protocols, &fl!("zone-no-protocols")),
+            )),
+        );
+
+    let service_action = match firewalld_status {
+        FirewalldStatus::Active => button::destructive(fl!("firewalld-stop"))
+            .on_press_maybe((!mutation_pending).then_some(map(ZoneViewAction::StopFirewalld))),
+        FirewalldStatus::Inactive => button::suggested(fl!("firewalld-start"))
+            .on_press_maybe((!mutation_pending).then_some(map(ZoneViewAction::StartFirewalld))),
+        FirewalldStatus::Loading | FirewalldStatus::Error(_) => {
+            button::standard(fl!("firewalld-unavailable"))
+        }
+    };
+    let status_label = match firewalld_status {
+        FirewalldStatus::Active => fl!("firewalld-status-active"),
+        FirewalldStatus::Inactive => fl!("firewalld-status-inactive"),
+        FirewalldStatus::Loading => fl!("firewalld-status-loading"),
+        FirewalldStatus::Error(error) => {
+            fl!("firewalld-status-error", error = error)
+        }
+    };
+    let runtime_action = button::standard(fl!("firewalld-apply")).on_press_maybe(
+        (runtime_reload_needed && !mutation_pending)
+            .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
+    );
+    let firewalld = settings::section()
+        .title(fl!("firewalld-section"))
+        .add(
+            settings::item::builder(fl!("firewalld-service-status"))
+                .description(status_label)
+                .control(service_action),
         )
         .add(
-            settings::item::builder("ICMP Block Inversion")
-                .control(widget::text(bool_label(details.icmp_block_inversion))),
-        )
-        .add(
-            settings::item::builder("Protocols").control(widget::text(list_or_none(
-                &details.protocols,
-                "No protocols configured",
-            ))),
+            settings::item::builder(fl!("firewalld-runtime-status"))
+                .description(fl!("firewalld-runtime-description"))
+                .control(runtime_action),
         );
 
     let services = list_section(
@@ -177,7 +250,10 @@ fn zone_details<'a, Message: 'static + Clone>(
             })
             .collect(),
         "No forwarded ports configured",
-        Some((ZoneViewAction::AddPort { forwarding: true }, "Add forwarded port")),
+        Some((
+            ZoneViewAction::AddPort { forwarding: true },
+            "Add forwarded port",
+        )),
         map,
     );
 
@@ -226,6 +302,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let left_column = widget::column::with_capacity(3)
+        .push(firewalld)
         .push(overview)
         .push(services)
         .push(interfaces)
@@ -351,10 +428,6 @@ fn list_or_none(items: &[String], empty_label: &str) -> String {
     } else {
         items.join(", ")
     }
-}
-
-fn bool_label(value: bool) -> &'static str {
-    if value { "Enabled" } else { "Disabled" }
 }
 
 fn centered_message<'a, Message: 'static>(
