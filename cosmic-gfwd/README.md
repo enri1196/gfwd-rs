@@ -38,6 +38,14 @@ section to call firewalld's state-preserving reload operation. The application k
 instead of automatically reloading after each edit so several related changes can be applied
 together and users can choose when runtime policy changes.
 
+## Migration scope
+
+Cosmic Gfwd intentionally migrates only workflows that were functional in the GTK application.
+The unused GTK direct-rule and policy model stubs are not target features. Source ports remain
+display/removal-only until a complete creation workflow is designed. COSMIC-native improvements
+remain authoritative: every active zone is badged in the sidebar, the default zone is changed from
+the sidebar context menu, and zone sections use contextual add actions.
+
 ## Developers
 
 Developers should install [rustup][rustup] and configure their editor to use [rust-analyzer][rust-analyzer]. To improve compilation times, disable LTO in the release profile, install the [mold][mold] linker, and configure [sccache][sccache] for use with Rust. The [mold][mold] linker will only improve link times if LTO is disabled.
