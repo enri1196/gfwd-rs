@@ -132,10 +132,3 @@ pub trait Policies {
     #[zbus(signal, name = "LockdownWhitelistUserRemoved")]
     fn lockdown_whitelist_user_removed(&self, user: &str) -> ZResult<()>;
 }
-
-#[deprecated(note = "Create proxies with an external Connection: PoliciesProxy::new(&conn)")]
-pub async fn new_policies_proxy() -> ZResult<PoliciesProxy<'static>> {
-    unreachable!(
-        "Use PoliciesProxy::new(&Connection) instead of opening a new system connection here"
-    )
-}

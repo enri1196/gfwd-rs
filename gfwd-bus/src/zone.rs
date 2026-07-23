@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 #[proxy(
@@ -369,9 +369,4 @@ pub trait Zone {
     /// Signal: emitted when a source's zone has changed.
     #[zbus(signal, name = "ZoneOfSourceChanged")]
     fn zone_of_source_changed(&self, zone: &str, source: &str) -> ZResult<()>;
-}
-
-pub async fn new_zone_proxy() -> ZResult<ZoneProxy<'static>> {
-    let conn = Connection::system().await?;
-    ZoneProxy::<'static>::new(&conn).await
 }

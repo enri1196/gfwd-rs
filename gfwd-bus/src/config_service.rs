@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
-use zvariant::{ObjectPath, OwnedValue};
+use zvariant::OwnedValue;
 
 /// Type alias for deprecated permanent service settings.
 /// (version, name, description, ports, modules, destinations, protocols, source_ports)
@@ -219,20 +219,4 @@ pub trait ConfigService {
     /// Property: The path to the configuration directory.
     #[zbus(property)]
     fn path(&self) -> ZResult<String>;
-}
-
-/// Creates a new proxy for a specific service's permanent configuration.
-///
-/// # Arguments
-///
-/// * `service_name` - The name of the service to configure (e.g., "ssh").
-pub async fn new_config_service_proxy(service_name: &str) -> ZResult<ConfigServiceProxy<'static>> {
-    let conn = Connection::system().await?;
-    let path_str = format!(
-        "/org/fedoraproject/FirewallD1/config/service/{}",
-        service_name
-    );
-    let path = ObjectPath::try_from(path_str)?;
-
-    ConfigServiceProxy::builder(&conn).path(path)?.build().await
 }

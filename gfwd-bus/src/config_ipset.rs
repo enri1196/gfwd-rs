@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use zbus::{Connection, Result as ZResult, zvariant::ObjectPath};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 /// Type alias for permanent IPSet settings.
@@ -145,20 +145,4 @@ pub trait ConfigIPSet {
     /// Property: The path to the configuration directory.
     #[zbus(property)]
     fn path(&self) -> ZResult<String>;
-}
-
-/// Creates a new proxy for a specific ipset's permanent configuration.
-///
-/// # Arguments
-///
-/// * `conn` - An active zbus connection.
-/// * `ipset_name` - The name of the ipset to configure.
-pub async fn new_config_ipset_proxy<'a>(
-    conn: &'a Connection,
-    ipset_name: &str,
-) -> ZResult<ConfigIPSetProxy<'static>> {
-    let path_str = format!("/org/fedoraproject/FirewallD1/config/ipset/{}", ipset_name);
-    let path = ObjectPath::try_from(path_str)?;
-
-    ConfigIPSetProxy::builder(conn).path(path)?.build().await
 }

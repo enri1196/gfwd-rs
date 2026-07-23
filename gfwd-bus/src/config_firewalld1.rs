@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use zbus::{
-    Connection, Result as ZResult,
+    Result as ZResult,
     zvariant::{OwnedObjectPath, OwnedValue},
 };
 use zbus_macros::proxy;
@@ -246,9 +246,4 @@ pub trait ConfigFirewalld1 {
     fn rfc3964_ipv4(&self) -> ZResult<String>;
     #[zbus(property)]
     fn set_rfc3964_ipv4(&self, value: &str) -> ZResult<()>;
-}
-
-pub async fn new_config_firewalld1_proxy() -> ZResult<ConfigFirewalld1Proxy<'static>> {
-    let conn = Connection::system().await?;
-    ConfigFirewalld1Proxy::<'static>::new(&conn).await
 }

@@ -4,8 +4,6 @@ use zbus::Result as ZResult;
 use zbus_macros::proxy;
 use zvariant::OwnedValue;
 
-use crate::config_firewalld1::ConfigFirewalld1Proxy;
-
 /// Type alias for permanent zone settings.
 /// (version, name, description, UNUSED, target, services, ports, icmp-blocks,
 /// masquerade, forward-ports, interfaces, sources, rich rules, protocols,
@@ -361,23 +359,4 @@ pub trait ConfigZone {
     /// Property: The path to the configuration directory.
     #[zbus(property, name = "Path")]
     fn path(&self) -> ZResult<String>;
-}
-
-/// Creates a new proxy for a specific zone's permanent configuration.
-///
-/// # Arguments
-///
-/// * `conn` - An active zbus connection.
-/// * `zone_name` - The name of the zone to configure (e.g., "public").
-#[deprecated(
-    note = "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection"
-)]
-pub async fn new_config_zone_proxy(
-    _config_proxy: &ConfigFirewalld1Proxy<'_>,
-    _zone_name: &str,
-) -> ZResult<ConfigZoneProxy<'static>> {
-    // Deprecated in favor of resolving via get_zone_by_name and building a proxy on a shared connection.
-    unreachable!(
-        "Use ConfigFirewalld1Proxy::get_zone_by_name + ConfigZoneProxy::builder on shared Connection"
-    );
 }

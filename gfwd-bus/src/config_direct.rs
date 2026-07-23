@@ -1,4 +1,4 @@
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 /// Type alias for a direct chain: (ipv, table, chain).
@@ -123,9 +123,4 @@ pub trait ConfigDirect {
     /// Signal: emitted when the configuration has been updated.
     #[zbus(signal, name = "Updated")]
     fn updated(&self) -> ZResult<()>;
-}
-
-pub async fn new_config_direct_proxy() -> ZResult<ConfigDirectProxy<'static>> {
-    let conn = Connection::system().await?;
-    ConfigDirectProxy::<'static>::new(&conn).await
 }

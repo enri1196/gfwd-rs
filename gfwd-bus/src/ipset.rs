@@ -61,8 +61,3 @@ pub trait IPSet {
     #[zbus(signal, name = "EntryRemoved")]
     fn entry_removed(&self, ipset: &str, entry: &str) -> ZResult<()>;
 }
-
-#[deprecated(note = "Create proxies with an external Connection: IPSetProxy::new(&conn)")]
-pub async fn new_ipset_proxy() -> ZResult<IPSetProxy<'static>> {
-    unreachable!("Use IPSetProxy::new(&Connection) instead of opening a new system connection here")
-}

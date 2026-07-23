@@ -1,4 +1,4 @@
-use zbus::{Connection, Result as ZResult};
+use zbus::Result as ZResult;
 use zbus_macros::proxy;
 
 /// Type alias for permanent helper settings.
@@ -141,9 +141,4 @@ pub trait ConfigHelper {
     /// Property: The path to the configuration directory.
     #[zbus(property)]
     fn path(&self) -> ZResult<String>;
-}
-
-pub async fn new_config_helper_proxy() -> ZResult<ConfigHelperProxy<'static>> {
-    let conn = Connection::system().await?;
-    ConfigHelperProxy::<'static>::new(&conn).await
 }
