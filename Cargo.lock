@@ -1067,6 +1067,7 @@ dependencies = [
  "slotmap",
  "tokio",
  "zbus 5.18.0",
+ "zvariant 5.13.1",
 ]
 
 [[package]]
