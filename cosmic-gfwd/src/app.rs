@@ -19,7 +19,7 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
-use cosmic::widget::{self, Toast, ToastId, Toasts, about::About, menu, nav_bar};
+use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use futures_util::{StreamExt, stream::BoxStream};
 use std::collections::{HashMap, HashSet};
 
@@ -29,7 +29,10 @@ const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps
 mod catalogs;
 mod ipsets;
 mod navigation;
+mod operations;
+mod outcome;
 mod reconciliation;
+mod router;
 mod zones;
 
 /// The application model stores app-specific state used to describe its interface and
@@ -63,16 +66,10 @@ pub struct AppModel {
     icmp_types: catalogs::CatalogState<IcmpTypeInfo>,
     /// Whether the ICMP catalog is being loaded.
     /// Error returned while loading the ICMP catalog.
-    /// User-visible notifications for completed operations.
-    toasts: Toasts<Message>,
-    /// Name of the mutation currently in flight.
-    pending_operation: Option<String>,
-    /// Destructive operation awaiting explicit confirmation.
-    confirmation: Option<Confirmation>,
+    /// Globally serialized mutations, confirmations, reload state, and notifications.
+    operations: operations::State<Message, Confirmation>,
     /// Current activation state of the firewalld systemd unit.
     firewalld_status: FirewalldStatus,
-    /// Permanent configuration has changed since the last explicit runtime reload.
-    runtime_reload_needed: bool,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
@@ -102,6 +99,11 @@ enum Confirmation {
     StopFirewalld,
     ApplyPermanentConfiguration,
     SaveRuntimeConfiguration,
+}
+
+/// Work that must be applied by the root before feature effects are scheduled.
+enum RootRequest {
+    DismissToast(ToastId),
 }
 
 /// Create a COSMIC application from the app model
@@ -154,11 +156,8 @@ impl cosmic::Application for AppModel {
             interfaces: catalogs::CatalogState::default(),
             services: catalogs::CatalogState::default(),
             icmp_types: catalogs::CatalogState::default(),
-            toasts: Toasts::new(Message::DismissToast),
-            pending_operation: None,
-            confirmation: None,
+            operations: operations::State::new(Message::DismissToast),
             firewalld_status: FirewalldStatus::Loading,
-            runtime_reload_needed: false,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -175,11 +174,10 @@ impl cosmic::Application for AppModel {
                 .unwrap_or_default(),
         };
 
-        let command = Task::batch(vec![
-            app.update_title(),
-            app.start_zones_load(),
-            app.start_firewalld_status_load(),
-        ]);
+        let mut outcome = outcome::Outcome::effect(app.update_title());
+        outcome.append(outcome::Outcome::effect(app.start_zones_load()));
+        outcome.append(outcome::Outcome::effect(app.start_firewalld_status_load()));
+        let command = app.route(outcome);
 
         (app, command)
     }
@@ -439,7 +437,7 @@ impl cosmic::Application for AppModel {
     }
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
-        let confirmation = self.confirmation.as_ref()?;
+        let confirmation = self.operations.confirmation.as_ref()?;
         let (title, body, confirm_label) = match confirmation {
             Confirmation::DeleteZone(zone) => (
                 fl!("confirm-delete-zone-title"),
@@ -485,7 +483,7 @@ impl cosmic::Application for AppModel {
     }
 
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
-        self.pending_operation.as_ref().map(|operation| {
+        self.operations.pending.as_ref().map(|operation| {
             widget::container(widget::text::caption(fl!(
                 "operation-pending",
                 operation = operation
@@ -519,7 +517,7 @@ impl cosmic::Application for AppModel {
         };
 
         widget::toaster(
-            &self.toasts,
+            &self.operations.toasts,
             widget::container(content)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -617,13 +615,13 @@ impl cosmic::Application for AppModel {
                 return self.handle_ipset_action(action);
             }
             Message::DismissToast(id) => {
-                self.toasts.remove(id);
+                return self.route(outcome::Outcome::request(RootRequest::DismissToast(id)));
             }
             Message::CancelConfirmation => {
-                self.confirmation = None;
+                self.operations.confirmation = None;
             }
             Message::ConfirmDestructive => {
-                let Some(confirmation) = self.confirmation.take() else {
+                let Some(confirmation) = self.operations.confirmation.take() else {
                     return Task::none();
                 };
                 return match confirmation {
@@ -795,7 +793,7 @@ impl cosmic::Application for AppModel {
             },
             Message::Zone(zones::Message::Created { zone_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::Zone);
                     self.close_context_drawer();
                     return Task::batch(vec![
@@ -810,7 +808,7 @@ impl cosmic::Application for AppModel {
             },
             Message::Zone(zones::Message::Deleted { zone_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     if matches!(
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
@@ -831,7 +829,7 @@ impl cosmic::Application for AppModel {
             Message::Zone(zones::Message::ItemAdded { zone_name, result })
             | Message::Zone(zones::Message::ItemRemoved { zone_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     if self.core.window.show_context
                         && let Some(kind) = dialog_kind_for_page(self.context_page)
                     {
@@ -899,7 +897,7 @@ impl cosmic::Application for AppModel {
             }
             Message::IpSet(ipsets::Message::EntryAdded { ipset_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     self.ipset_view.entry_input.clear();
                     self.ipset_view.entry_error = None;
                     return Task::batch(vec![
@@ -914,7 +912,7 @@ impl cosmic::Application for AppModel {
             },
             Message::IpSet(ipsets::Message::EntryRemoved { ipset_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     self.ipset_view.entry_error = None;
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -928,7 +926,7 @@ impl cosmic::Application for AppModel {
             },
             Message::IpSet(ipsets::Message::Created { ipset_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::IpSet);
                     self.close_context_drawer();
                     self.ipset_view.selected = Some(ipset_name.clone());
@@ -947,7 +945,7 @@ impl cosmic::Application for AppModel {
             },
             Message::IpSet(ipsets::Message::Deleted { ipset_name, result }) => match result {
                 Ok(()) => {
-                    self.runtime_reload_needed = true;
+                    self.operations.runtime_reload_needed = true;
                     if self.ipset_view.selected.as_deref() == Some(ipset_name.as_str()) {
                         self.ipset_view.selected = None;
                         self.ipset_view.details = None;
@@ -975,16 +973,31 @@ impl cosmic::Application for AppModel {
 }
 
 impl AppModel {
+    /// Apply root requests in FIFO order before scheduling collected effects.
+    fn route(
+        &mut self,
+        outcome: outcome::Outcome<Task<cosmic::Action<Message>>, RootRequest>,
+    ) -> Task<cosmic::Action<Message>> {
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                RootRequest::DismissToast(id) => {
+                    self.operations.toasts.remove(id);
+                }
+            }
+        }
+        Task::batch(router.into_effects())
+    }
+
     fn mutation_pending(&self) -> bool {
-        self.pending_operation.is_some()
+        self.operations.mutation_pending()
     }
 
     fn begin_mutation(&mut self, operation: String) -> bool {
-        if self.mutation_pending() {
+        if !self.operations.begin(operation) {
             return false;
         }
         self.dialogs.operation_error = None;
-        self.pending_operation = Some(operation);
         true
     }
 
@@ -992,10 +1005,7 @@ impl AppModel {
         &mut self,
         result: &Result<(), BrokerError>,
     ) -> Task<cosmic::Action<Message>> {
-        let operation = self
-            .pending_operation
-            .take()
-            .unwrap_or_else(|| fl!("operation-change"));
+        let operation = self.operations.finish_label(fl!("operation-change"));
         let toast = match result {
             Ok(()) => Toast::new(fl!("operation-succeeded", operation = operation)),
             Err(error) => {
@@ -1010,7 +1020,7 @@ impl AppModel {
                 Toast::new(message)
             }
         };
-        let toast = self.toasts.push(toast).map(cosmic::Action::App);
+        let toast = self.operations.push_toast(toast).map(cosmic::Action::App);
         if self.reconciliation.take_deferred_refresh() {
             return Task::batch(vec![
                 toast,
@@ -1063,7 +1073,7 @@ impl AppModel {
             }
             reconciliation::Message::PermanentApplied(result) => {
                 if result.is_ok() {
-                    self.runtime_reload_needed = false;
+                    self.operations.runtime_reload_needed = false;
                 }
                 let mut tasks = vec![
                     self.finish_mutation(&result),
@@ -1209,7 +1219,7 @@ impl AppModel {
                 let Some(zone_name) = self.sidebar.zone_name_for_id(id) else {
                     return Task::none();
                 };
-                self.confirmation = Some(Confirmation::DeleteZone(zone_name));
+                self.operations.confirmation = Some(Confirmation::DeleteZone(zone_name));
                 Task::none()
             }
         }
@@ -1243,7 +1253,7 @@ impl AppModel {
                 return self.start_firewalld_control(true);
             }
             ZoneViewAction::StopFirewalld => {
-                self.confirmation = Some(Confirmation::StopFirewalld);
+                self.operations.confirmation = Some(Confirmation::StopFirewalld);
                 return Task::none();
             }
             ZoneViewAction::AddInterface => {
@@ -1306,11 +1316,11 @@ impl AppModel {
                 self.start_zone_reconciliation(zone_name)
             }
             crate::ui::ReconciliationAction::ApplyPermanentToRuntime => {
-                self.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
+                self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
                 Task::none()
             }
             crate::ui::ReconciliationAction::SaveRuntimeAsPermanent => {
-                self.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
+                self.operations.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
                 Task::none()
             }
         }
@@ -1606,7 +1616,7 @@ impl AppModel {
                 let Some(ipset_name) = self.ipset_view.selected.clone() else {
                     return Task::none();
                 };
-                self.confirmation = Some(Confirmation::DeleteIpSet(ipset_name));
+                self.operations.confirmation = Some(Confirmation::DeleteIpSet(ipset_name));
             }
         }
 
