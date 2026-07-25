@@ -1,3 +1,5 @@
+//! IP-set list and detail view.
+
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings};
 

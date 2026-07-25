@@ -3,16 +3,16 @@
 use crate::config::Config;
 use crate::core::{
     BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, RefreshRequest,
-    ZoneReconciliationData, validate_interface_name, validate_ipset_entry,
+    ZoneReconciliationData, validate_interface_name,
 };
 use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
-    DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, PortFormState,
-    PortKind, Sidebar, SidebarItem, ZoneViewAction, ZoneViewState, drawer_cancel_footer,
-    drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
-    localized_validation_error, port_drawer, reconciliation_drawer, rich_rule_drawer,
-    service_drawer, source_drawer, target_from_index, view_ipset_content, view_zone_content,
+    DialogKind, DialogMessage, DialogState, PortFormState, PortKind, Sidebar, SidebarItem,
+    ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
+    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
+    port_drawer, reconciliation_drawer, rich_rule_drawer, service_drawer, source_drawer,
+    target_from_index, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -21,6 +21,7 @@ use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use futures_util::{StreamExt, stream::BoxStream};
+use ipsets::{IpSetViewAction, view_ipset_content};
 use std::collections::{HashMap, HashSet};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -51,7 +52,7 @@ pub struct AppModel {
     /// Selected-zone reconciliation lifecycle and refresh coordination.
     reconciliation: reconciliation::State,
     /// State for the IP set view.
-    ipset_view: IpSetViewState,
+    ipsets: ipsets::State,
     /// Stores form state for context drawer dialogs.
     dialogs: DialogState,
     /// Typed option catalogs used by dialog forms.
@@ -141,7 +142,7 @@ impl cosmic::Application for AppModel {
             sidebar,
             zone_view: ZoneViewState::Empty,
             reconciliation: reconciliation::State::default(),
-            ipset_view: IpSetViewState::default(),
+            ipsets: ipsets::State::default(),
             dialogs: DialogState::default(),
             catalogs: catalogs::State::default(),
             operations: operations::State::new(Message::DismissToast),
@@ -490,7 +491,7 @@ impl cosmic::Application for AppModel {
         let space_m = cosmic::theme::spacing().space_m;
         let content: Element<_> = match self.sidebar.active_item() {
             Some(SidebarItem::IpSets) => {
-                view_ipset_content(&self.ipset_view, self.mutation_pending(), |action| {
+                view_ipset_content(&self.ipsets, self.mutation_pending(), |action| {
                     Message::IpSet(ipsets::Message::View(action))
                 })
             }
@@ -811,73 +812,73 @@ impl cosmic::Application for AppModel {
                 }
             },
             Message::IpSet(ipsets::Message::ListLoaded(result)) => {
-                self.ipset_view.list_loading = false;
+                self.ipsets.list_loading = false;
                 match result {
                     Ok(ipsets) => {
-                        self.ipset_view.ipsets = ipsets;
-                        let selected = self.ipset_view.selected.clone();
+                        self.ipsets.ipsets = ipsets;
+                        let selected = self.ipsets.selected.clone();
                         if let Some(name) = selected {
-                            if self.ipset_view.ipsets.iter().any(|item| item == &name) {
-                                if self.ipset_view.details.is_none() {
+                            if self.ipsets.ipsets.iter().any(|item| item == &name) {
+                                if self.ipsets.details.is_none() {
                                     return self.start_ipset_details_load(name);
                                 }
                             } else {
-                                self.ipset_view.selected = None;
-                                self.ipset_view.details = None;
+                                self.ipsets.selected = None;
+                                self.ipsets.details = None;
                             }
                         }
                     }
                     Err(error) => {
-                        self.ipset_view.ipsets.clear();
-                        self.ipset_view.entry_error = Some(error.to_string());
-                        self.ipset_view.details = None;
+                        self.ipsets.ipsets.clear();
+                        self.ipsets.entry_error = Some(error.to_string());
+                        self.ipsets.details = None;
                     }
                 }
             }
             Message::IpSet(ipsets::Message::DetailsLoaded { ipset_name, result }) => {
-                let is_active = self.ipset_view.selected.as_deref() == Some(ipset_name.as_str());
+                let is_active = self.ipsets.selected.as_deref() == Some(ipset_name.as_str());
                 if !is_active {
                     return Task::none();
                 }
 
-                self.ipset_view.details_loading = false;
+                self.ipsets.details_loading = false;
                 match result {
                     Ok(details) => {
-                        self.ipset_view.details = Some(details);
-                        self.ipset_view.entry_error = None;
+                        self.ipsets.details = Some(details);
+                        self.ipsets.entry_error = None;
                     }
                     Err(error) => {
-                        self.ipset_view.details = None;
-                        self.ipset_view.entry_error = Some(error.to_string());
+                        self.ipsets.details = None;
+                        self.ipsets.entry_error = Some(error.to_string());
                     }
                 }
             }
             Message::IpSet(ipsets::Message::EntryAdded { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.operations.runtime_reload_needed = true;
-                    self.ipset_view.entry_input.clear();
-                    self.ipset_view.entry_error = None;
+                    self.ipsets.entry_input.clear();
+                    self.ipsets.entry_error = None;
                     return Task::batch(vec![
                         self.finish_mutation(&result),
                         self.start_ipset_details_load(ipset_name),
                     ]);
                 }
                 Err(error) => {
-                    self.ipset_view.entry_error = Some(error.to_string());
+                    self.ipsets.entry_error = Some(error.to_string());
                     return self.finish_mutation(&Err(error));
                 }
             },
             Message::IpSet(ipsets::Message::EntryRemoved { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.operations.runtime_reload_needed = true;
-                    self.ipset_view.entry_error = None;
+                    self.ipsets.entry_error = None;
                     return Task::batch(vec![
                         self.finish_mutation(&result),
                         self.start_ipset_details_load(ipset_name),
                     ]);
                 }
                 Err(error) => {
-                    self.ipset_view.entry_error = Some(error.to_string());
+                    self.ipsets.entry_error = Some(error.to_string());
                     return self.finish_mutation(&Err(error));
                 }
             },
@@ -886,9 +887,9 @@ impl cosmic::Application for AppModel {
                     self.operations.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::IpSet);
                     self.close_context_drawer();
-                    self.ipset_view.selected = Some(ipset_name.clone());
-                    self.ipset_view.entry_input.clear();
-                    self.ipset_view.entry_error = None;
+                    self.ipsets.selected = Some(ipset_name.clone());
+                    self.ipsets.entry_input.clear();
+                    self.ipsets.entry_error = None;
                     return Task::batch(vec![
                         self.finish_mutation(&result),
                         self.start_ipsets_load(),
@@ -896,18 +897,18 @@ impl cosmic::Application for AppModel {
                     ]);
                 }
                 Err(error) => {
-                    self.ipset_view.entry_error = Some(error.to_string());
+                    self.ipsets.entry_error = Some(error.to_string());
                     return self.finish_mutation(&Err(error));
                 }
             },
             Message::IpSet(ipsets::Message::Deleted { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.operations.runtime_reload_needed = true;
-                    if self.ipset_view.selected.as_deref() == Some(ipset_name.as_str()) {
-                        self.ipset_view.selected = None;
-                        self.ipset_view.details = None;
-                        self.ipset_view.entry_input.clear();
-                        self.ipset_view.entry_error = None;
+                    if self.ipsets.selected.as_deref() == Some(ipset_name.as_str()) {
+                        self.ipsets.selected = None;
+                        self.ipsets.details = None;
+                        self.ipsets.entry_input.clear();
+                        self.ipsets.entry_error = None;
                     }
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -915,7 +916,7 @@ impl cosmic::Application for AppModel {
                     ]);
                 }
                 Err(error) => {
-                    self.ipset_view.entry_error = Some(error.to_string());
+                    self.ipsets.entry_error = Some(error.to_string());
                     return self.finish_mutation(&Err(error));
                 }
             },
@@ -1543,65 +1544,32 @@ impl AppModel {
     }
 
     fn handle_ipset_action(&mut self, action: IpSetViewAction) -> Task<cosmic::Action<Message>> {
-        if self.mutation_pending()
-            && matches!(
-                action,
-                IpSetViewAction::AddEntry | IpSetViewAction::RemoveEntry(_)
-            )
-        {
-            return Task::none();
-        }
-        match action {
-            IpSetViewAction::Select(name) => {
-                self.ipset_view.selected = Some(name.clone());
-                self.ipset_view.details = None;
-                self.ipset_view.entry_error = None;
-                self.ipset_view.entry_input.clear();
-                return self.start_ipset_details_load(name);
-            }
-            IpSetViewAction::EntryInputChanged(value) => {
-                self.ipset_view.entry_input = value;
-                self.ipset_view.entry_error = self
-                    .ipset_view
-                    .details
-                    .as_ref()
-                    .and_then(|details| {
-                        let input = self.ipset_view.entry_input.trim();
-                        (!input.is_empty())
-                            .then(|| validate_ipset_entry(input, &details.ipset_type).err())
-                            .flatten()
-                    })
-                    .map(localized_validation_error);
-            }
-            IpSetViewAction::AddEntry => {
-                let Some(ipset_name) = self.ipset_view.selected.clone() else {
-                    return Task::none();
-                };
-                let entry = self.ipset_view.entry_input.trim();
-                let Some(details) = &self.ipset_view.details else {
-                    return Task::none();
-                };
-                if let Err(error) = validate_ipset_entry(entry, &details.ipset_type) {
-                    self.ipset_view.entry_error = Some(localized_validation_error(error));
-                    return Task::none();
+        let outcome = ipsets::update_view(
+            &mut self.ipsets,
+            action,
+            ipsets::Context {
+                mutation_pending: self.operations.mutation_pending(),
+                localize_validation: localized_validation_error,
+            },
+        );
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                ipsets::Request::BeginMutation(mutation) => {
+                    let operation = match mutation {
+                        ipsets::Mutation::AddEntry => fl!("operation-add-ipset-entry"),
+                        ipsets::Mutation::RemoveEntry => fl!("operation-remove-ipset-entry"),
+                    };
+                    let _ = self.begin_mutation(operation);
                 }
-                return self.start_ipset_entry_add(ipset_name, entry.to_string());
-            }
-            IpSetViewAction::RemoveEntry(entry) => {
-                let Some(ipset_name) = self.ipset_view.selected.clone() else {
-                    return Task::none();
-                };
-                return self.start_ipset_entry_remove(ipset_name, entry);
-            }
-            IpSetViewAction::DeleteSelected => {
-                let Some(ipset_name) = self.ipset_view.selected.clone() else {
-                    return Task::none();
-                };
-                self.operations.confirmation = Some(Confirmation::DeleteIpSet(ipset_name));
+                ipsets::Request::ConfirmDelete(ipset_name) => {
+                    self.operations.confirmation = Some(Confirmation::DeleteIpSet(ipset_name));
+                }
             }
         }
-
-        Task::none()
+        Task::batch(router.into_effects().into_iter().map(|effect| {
+            ipsets::effects(effect).map(|message| cosmic::Action::from(Message::IpSet(message)))
+        }))
     }
 
     async fn load_zones() -> Result<Vec<String>, BrokerError> {
@@ -1799,11 +1767,6 @@ impl AppModel {
         broker.remove_rich_rule(&zone_name, &rule).await
     }
 
-    async fn remove_ipset_entry(ipset_name: String, entry: String) -> Result<(), BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.remove_ipset_entry(&ipset_name, &entry).await
-    }
-
     async fn remove_ipset(ipset_name: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.remove_ipset(&ipset_name).await
@@ -1817,11 +1780,6 @@ impl AppModel {
     async fn load_ipset_details(ipset_name: String) -> Result<IpSetDetails, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_ipset_details(&ipset_name).await
-    }
-
-    async fn add_ipset_entry(ipset_name: String, entry: String) -> Result<(), BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.add_ipset_entry(&ipset_name, &entry).await
     }
 
     async fn create_ipset(
@@ -2257,51 +2215,17 @@ impl AppModel {
     }
 
     fn start_ipsets_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.ipset_view.list_loading = true;
+        self.ipsets.list_loading = true;
         Task::perform(Self::load_ipsets(), |result| {
             cosmic::Action::from(Message::IpSet(ipsets::Message::ListLoaded(result)))
         })
     }
 
     fn start_ipset_details_load(&mut self, ipset_name: String) -> Task<cosmic::Action<Message>> {
-        self.ipset_view.details_loading = true;
+        self.ipsets.details_loading = true;
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::load_ipset_details(ipset_name), move |result| {
             cosmic::Action::from(Message::IpSet(ipsets::Message::DetailsLoaded {
-                ipset_name: ipset_name_for_task.clone(),
-                result,
-            }))
-        })
-    }
-
-    fn start_ipset_entry_add(
-        &mut self,
-        ipset_name: String,
-        entry: String,
-    ) -> Task<cosmic::Action<Message>> {
-        if !self.begin_mutation(fl!("operation-add-ipset-entry")) {
-            return Task::none();
-        }
-        let ipset_name_for_task = ipset_name.clone();
-        Task::perform(Self::add_ipset_entry(ipset_name, entry), move |result| {
-            cosmic::Action::from(Message::IpSet(ipsets::Message::EntryAdded {
-                ipset_name: ipset_name_for_task.clone(),
-                result,
-            }))
-        })
-    }
-
-    fn start_ipset_entry_remove(
-        &mut self,
-        ipset_name: String,
-        entry: String,
-    ) -> Task<cosmic::Action<Message>> {
-        if !self.begin_mutation(fl!("operation-remove-ipset-entry")) {
-            return Task::none();
-        }
-        let ipset_name_for_task = ipset_name.clone();
-        Task::perform(Self::remove_ipset_entry(ipset_name, entry), move |result| {
-            cosmic::Action::from(Message::IpSet(ipsets::Message::EntryRemoved {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
             }))
