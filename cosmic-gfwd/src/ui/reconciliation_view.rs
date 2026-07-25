@@ -1,13 +1,16 @@
-use cosmic::iced::Length;
 use cosmic::widget::{self, button, settings};
 
 use crate::core::{
-    CollectionValue, ComparisonCompleteness, ScalarValue, ZoneReconciliationState, ZoneSetting,
-    ZoneSettingDifference,
+    CollectionValue, ScalarValue, ZoneReconciliationState, ZoneSetting, ZoneSettingDifference,
 };
 use crate::fl;
 
-use super::ZoneViewAction;
+use super::{
+    ZoneViewAction,
+    reconciliation_model::{
+        ReconciliationPresentation, ReconciliationPresentationStatus, UnknownSettingNames,
+    },
+};
 
 /// Build the selected-zone permanent/runtime reconciliation review content.
 pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
@@ -18,164 +21,158 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let has_differences = state
-        .data()
-        .is_some_and(|data| !data.reconciliation.differences.is_empty());
-    let has_runtime_only = state
-        .data()
-        .is_some_and(|data| data.reconciliation.has_runtime_only_differences());
-    let actions = widget::row::with_capacity(3)
-        .push(
-            button::standard(fl!("reconciliation-refresh")).on_press_maybe(
-                (!mutation_pending).then_some(map(ZoneViewAction::RefreshReconciliation)),
-            ),
-        )
-        .push(
-            button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
-                (has_differences && !mutation_pending)
-                    .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
-            ),
-        )
-        .push(
-            button::destructive(fl!("reconciliation-save-runtime")).on_press_maybe(
-                (has_runtime_only && !mutation_pending)
-                    .then_some(map(ZoneViewAction::SaveRuntimeConfiguration)),
-            ),
-        )
-        .spacing(spacing.space_s);
-    let mut content = widget::column::with_capacity(7)
-        .push(widget::text::body(fl!("reconciliation-review-description")))
-        .push(actions)
-        .spacing(spacing.space_m);
+    let presentation = ReconciliationPresentation::from_state(state, mutation_pending);
+    let refresh = button::standard(fl!("reconciliation-refresh")).on_press_maybe(
+        presentation
+            .actions
+            .can_refresh
+            .then_some(map(ZoneViewAction::RefreshReconciliation)),
+    );
+    let mut status = settings::section()
+        .title(fl!("reconciliation-status-heading"))
+        .add(
+            settings::item::builder(reconciliation_status(presentation.status, state))
+                .description(fl!("reconciliation-refresh-description"))
+                .control(refresh),
+        );
     if let Some(error) = operation_error {
-        content = content.push(widget::text::body(error));
+        status = status.add(
+            settings::item::builder(fl!("reconciliation-operation-error-title"))
+                .control(widget::text::body(error)),
+        );
     }
     if let Some(error) = watch_warning {
-        content = content.push(widget::text::body(fl!(
-            "reconciliation-watch-warning",
-            error = error
-        )));
+        status = status.add(
+            settings::item::builder(fl!("reconciliation-watch-warning-title")).control(
+                widget::text::body(fl!("reconciliation-watch-warning", error = error)),
+            ),
+        );
     }
-
-    let Some(data) = state.data() else {
-        return content
-            .push(widget::text::body(reconciliation_status(state)))
-            .into();
-    };
-
-    let scalar_differences: Vec<_> = data
-        .reconciliation
-        .differences
-        .iter()
-        .filter(|difference| matches!(difference, ZoneSettingDifference::Scalar { .. }))
-        .collect();
-    let collection_differences: Vec<_> = data
-        .reconciliation
-        .differences
-        .iter()
-        .filter(|difference| matches!(difference, ZoneSettingDifference::Collection { .. }))
-        .collect();
-
-    if scalar_differences.is_empty() && collection_differences.is_empty() {
-        content = content.push(widget::text::body(fl!("reconciliation-no-differences")));
-    }
-    if !scalar_differences.is_empty() {
-        content = content.push(difference_section(
-            fl!("reconciliation-group-scalars"),
-            &scalar_differences,
-        ));
-    }
-    if !collection_differences.is_empty() {
-        content = content.push(difference_section(
-            fl!("reconciliation-group-collections"),
-            &collection_differences,
-        ));
-    }
-
-    if let ComparisonCompleteness::Incomplete {
-        permanent_unknown,
-        runtime_unknown,
-    } = &data.reconciliation.completeness
-    {
-        let permanent = if permanent_unknown.is_empty() {
-            fl!("reconciliation-none")
-        } else {
-            permanent_unknown
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let runtime = if runtime_unknown.is_empty() {
-            fl!("reconciliation-none")
-        } else {
-            runtime_unknown
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        content = content
-            .push(widget::text::body(fl!(
-                "reconciliation-unknown-explanation"
-            )))
-            .push(
-                settings::section()
-                    .title(fl!("reconciliation-unknown-title"))
-                    .add(column_header())
-                    .add(
-                        settings::item::builder(fl!("reconciliation-unknown-setting"))
-                            .control(comparison_columns(permanent, runtime)),
-                    ),
+    if matches!(
+        presentation.status,
+        ReconciliationPresentationStatus::Incomplete { .. }
+    ) {
+        status = status
+            .add(
+                settings::item::builder(fl!("reconciliation-incomplete-warning-title")).control(
+                    widget::text::body(fl!("reconciliation-unknown-explanation")),
+                ),
+            )
+            .add(
+                settings::item::builder(fl!("reconciliation-unknown-setting"))
+                    .control(unknown_setting_values(&presentation.unknown_settings)),
             );
     }
 
-    content.into()
+    let mut content = widget::column::with_capacity(3)
+        .push(status)
+        .spacing(spacing.space_m);
+
+    let mut differences = settings::section().title(fl!("reconciliation-differences-heading"));
+    if presentation.differences.scalar.is_empty() && presentation.differences.collection.is_empty()
+    {
+        differences = differences.add(widget::text::body(fl!("reconciliation-no-differences")));
+    } else {
+        if !presentation.differences.scalar.is_empty() {
+            differences = differences.add(difference_section(
+                fl!("reconciliation-group-scalars"),
+                &presentation.differences.scalar,
+            ));
+        }
+        if !presentation.differences.collection.is_empty() {
+            differences = differences.add(difference_section(
+                fl!("reconciliation-group-collections"),
+                &presentation.differences.collection,
+            ));
+        }
+    }
+    content = content.push(differences);
+
+    let apply = button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
+        presentation
+            .actions
+            .can_apply_permanent
+            .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
+    );
+    let save = button::destructive(fl!("reconciliation-save-runtime")).on_press_maybe(
+        presentation
+            .actions
+            .can_save_runtime
+            .then_some(map(ZoneViewAction::SaveRuntimeConfiguration)),
+    );
+    let global_actions = settings::section()
+        .title(fl!("reconciliation-global-actions-heading"))
+        .add(
+            settings::item::builder(fl!("reconciliation-apply-permanent"))
+                .description(fl!("reconciliation-apply-permanent-explanation"))
+                .control(apply),
+        )
+        .add(
+            settings::item::builder(fl!("reconciliation-save-runtime"))
+                .description(fl!("reconciliation-save-runtime-explanation"))
+                .control(save),
+        );
+
+    content.push(global_actions).into()
 }
 
 fn difference_section<'a, Message: Clone + 'static>(
     title: String,
     differences: &[&ZoneSettingDifference],
 ) -> cosmic::Element<'a, Message> {
-    let section = differences.iter().fold(
-        settings::section().title(title).add(column_header()),
-        |section, difference| {
+    differences
+        .iter()
+        .fold(settings::section().title(title), |section, difference| {
             let (setting, permanent, runtime) = difference_values(difference);
             section.add(
                 settings::item::builder(setting_label(setting))
-                    .control(comparison_columns(permanent, runtime)),
+                    .control(comparison_values(permanent, runtime)),
             )
-        },
-    );
-    section.into()
-}
-
-fn column_header<'a, Message: Clone + 'static>() -> cosmic::Element<'a, Message> {
-    settings::item::builder(fl!("reconciliation-setting-column"))
-        .control(comparison_columns(
-            fl!("reconciliation-permanent-column"),
-            fl!("reconciliation-runtime-column"),
-        ))
+        })
         .into()
 }
 
-fn comparison_columns<'a, Message: Clone + 'static>(
+fn comparison_values<'a, Message: Clone + 'static>(
     permanent: String,
     runtime: String,
 ) -> cosmic::Element<'a, Message> {
-    let column_width = Length::Fixed(170.0);
-    widget::row::with_capacity(2)
-        .push(
-            widget::container(widget::text::body(permanent))
-                .width(column_width)
-                .padding([0, cosmic::theme::spacing().space_s]),
-        )
-        .push(
-            widget::container(widget::text::body(runtime))
-                .width(column_width)
-                .padding([0, cosmic::theme::spacing().space_s]),
-        )
+    widget::column::with_capacity(2)
+        .push(labeled_value(
+            fl!("reconciliation-permanent-value-label"),
+            permanent,
+        ))
+        .push(labeled_value(
+            fl!("reconciliation-runtime-value-label"),
+            runtime,
+        ))
+        .spacing(cosmic::theme::spacing().space_s)
         .into()
+}
+
+fn labeled_value<'a, Message: Clone + 'static>(
+    label: String,
+    value: String,
+) -> cosmic::Element<'a, Message> {
+    widget::column::with_capacity(2)
+        .push(widget::text::caption(label))
+        .push(widget::text::body(value))
+        .into()
+}
+
+fn unknown_setting_values<'a, Message: Clone + 'static>(
+    unknown: &UnknownSettingNames<'_>,
+) -> cosmic::Element<'a, Message> {
+    let permanent = list_values(&unknown.permanent);
+    let runtime = list_values(&unknown.runtime);
+    comparison_values(permanent, runtime)
+}
+
+fn list_values(values: &[&str]) -> String {
+    if values.is_empty() {
+        fl!("reconciliation-none")
+    } else {
+        values.join("\n")
+    }
 }
 
 fn difference_values(difference: &ZoneSettingDifference) -> (ZoneSetting, String, String) {
@@ -209,7 +206,7 @@ fn scalar_value(value: &ScalarValue) -> String {
 
 fn collection_values(values: &[CollectionValue]) -> String {
     if values.is_empty() {
-        return fl!("reconciliation-none");
+        return fl!("reconciliation-absent-value");
     }
     values
         .iter()
@@ -224,21 +221,31 @@ fn collection_values(values: &[CollectionValue]) -> String {
         .join("\n")
 }
 
-fn reconciliation_status(state: &ZoneReconciliationState) -> String {
-    match state {
-        ZoneReconciliationState::Loading { .. } => fl!("reconciliation-status-loading"),
-        ZoneReconciliationState::Unavailable { .. } => fl!("reconciliation-status-unavailable"),
-        ZoneReconciliationState::Error { message, .. } => {
+fn reconciliation_status(
+    status: ReconciliationPresentationStatus,
+    state: &ZoneReconciliationState,
+) -> String {
+    match status {
+        ReconciliationPresentationStatus::Loading => fl!("reconciliation-status-loading"),
+        ReconciliationPresentationStatus::Unavailable => {
+            fl!("reconciliation-status-unavailable")
+        }
+        ReconciliationPresentationStatus::Error => {
+            let message = match state {
+                ZoneReconciliationState::Error { message, .. } => message.as_str(),
+                _ => "",
+            };
             fl!("reconciliation-status-error", error = message)
         }
-        ZoneReconciliationState::InSync { .. } => fl!("reconciliation-status-in-sync"),
-        ZoneReconciliationState::Different { data, .. } => fl!(
-            "reconciliation-status-different",
-            count = data.reconciliation.differences.len()
-        ),
-        ZoneReconciliationState::Incomplete { data, .. } => fl!(
+        ReconciliationPresentationStatus::InSync => fl!("reconciliation-status-in-sync"),
+        ReconciliationPresentationStatus::Different { count } => {
+            fl!("reconciliation-status-different", count = count)
+        }
+        ReconciliationPresentationStatus::Incomplete {
+            known_difference_count,
+        } => fl!(
             "reconciliation-status-incomplete",
-            count = data.reconciliation.differences.len()
+            count = known_difference_count
         ),
     }
 }

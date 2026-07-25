@@ -5,6 +5,8 @@ use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
 use crate::models::zone::ZoneDetails;
 
+use super::reconciliation_model::{ReconciliationPresentation, ReconciliationPresentationStatus};
+
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
 const ADD_ICON: &str = "list-add-symbolic";
@@ -109,8 +111,10 @@ fn zone_details<'a, Message: 'static + Clone>(
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
         .spacing(space_s);
+    let reconciliation_presentation =
+        ReconciliationPresentation::from_state(reconciliation, mutation_pending);
     let reconciliation_section =
-        reconciliation_banner(reconciliation, watch_warning, mutation_pending, map);
+        reconciliation_banner(&reconciliation_presentation, watch_warning, map);
 
     let masquerade = if mutation_pending {
         widget::toggler(details.masquerade)
@@ -156,11 +160,10 @@ fn zone_details<'a, Message: 'static + Clone>(
             fl!("firewalld-status-error", error = error)
         }
     };
-    let has_differences = reconciliation
-        .data()
-        .is_some_and(|data| !data.reconciliation.differences.is_empty());
     let runtime_action = button::standard(fl!("firewalld-apply")).on_press_maybe(
-        (has_differences && !mutation_pending)
+        reconciliation_presentation
+            .actions
+            .can_apply_permanent
             .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
     );
     let firewalld = settings::section()
@@ -349,43 +352,27 @@ fn zone_details<'a, Message: 'static + Clone>(
 }
 
 fn reconciliation_banner<'a, Message: 'static + Clone>(
-    state: &'a ZoneReconciliationState,
+    presentation: &ReconciliationPresentation<'_>,
     watch_warning: Option<&'a str>,
-    mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
-    let status = match state {
-        ZoneReconciliationState::Loading { .. } => fl!("reconciliation-status-loading"),
-        ZoneReconciliationState::InSync { .. } => fl!("reconciliation-status-in-sync"),
-        ZoneReconciliationState::Different { data, .. } => fl!(
-            "reconciliation-status-different",
-            count = data.reconciliation.differences.len()
-        ),
-        ZoneReconciliationState::Incomplete { data, .. } => fl!(
-            "reconciliation-status-incomplete",
-            count = data.reconciliation.differences.len()
-        ),
-        ZoneReconciliationState::Unavailable { .. } => fl!("reconciliation-status-unavailable"),
-        ZoneReconciliationState::Error { message, .. } => {
-            fl!("reconciliation-status-error", error = message)
-        }
-    };
-    let can_review = matches!(
-        state,
-        ZoneReconciliationState::Different { .. } | ZoneReconciliationState::Incomplete { .. }
-    );
-    let can_refresh =
-        !mutation_pending && !matches!(state, ZoneReconciliationState::Loading { .. });
+    let status = reconciliation_status(presentation.status);
     let actions = widget::row::with_capacity(2)
         .push(
             button::standard(fl!("reconciliation-review")).on_press_maybe(
-                (can_review && !mutation_pending)
+                presentation
+                    .actions
+                    .can_review
                     .then_some(map(ZoneViewAction::ReviewReconciliation)),
             ),
         )
         .push(
-            button::standard(fl!("reconciliation-refresh"))
-                .on_press_maybe(can_refresh.then_some(map(ZoneViewAction::RefreshReconciliation))),
+            button::standard(fl!("reconciliation-refresh")).on_press_maybe(
+                presentation
+                    .actions
+                    .can_refresh
+                    .then_some(map(ZoneViewAction::RefreshReconciliation)),
+            ),
         )
         .spacing(cosmic::theme::spacing().space_s);
 
@@ -406,6 +393,26 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
             .into()
     } else {
         section.into()
+    }
+}
+
+fn reconciliation_status(status: ReconciliationPresentationStatus) -> String {
+    match status {
+        ReconciliationPresentationStatus::Loading => fl!("reconciliation-status-loading"),
+        ReconciliationPresentationStatus::InSync => fl!("reconciliation-status-in-sync"),
+        ReconciliationPresentationStatus::Different { count } => {
+            fl!("reconciliation-status-different", count = count)
+        }
+        ReconciliationPresentationStatus::Incomplete {
+            known_difference_count,
+        } => fl!(
+            "reconciliation-status-incomplete",
+            count = known_difference_count
+        ),
+        ReconciliationPresentationStatus::Unavailable => {
+            fl!("reconciliation-status-unavailable")
+        }
+        ReconciliationPresentationStatus::Error => fl!("reconciliation-status-error-short"),
     }
 }
 
