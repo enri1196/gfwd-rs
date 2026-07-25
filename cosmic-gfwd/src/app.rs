@@ -7,18 +7,18 @@ use crate::core::{
 };
 use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
-use crate::ui::{
-    DialogKind, DialogMessage, DialogState, PortFormState, PortKind, drawer_cancel_footer,
-    drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
-    localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
-    target_from_index,
-};
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
+use dialogs::{
+    DialogKind, DialogMessage, DialogState, PortFormState, PortKind, drawer_cancel_footer,
+    drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
+    localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
+    target_from_index,
+};
 use futures_util::{StreamExt, stream::BoxStream};
 use ipsets::{IpSetViewAction, view_ipset_content};
 use navigation::SidebarItem;

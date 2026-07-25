@@ -64,8 +64,7 @@ Developers should install [rustup][rustup] and configure their editor to use [ru
 Cosmic Gfwd uses a model-view-update (MVU) architecture. The root application is the sole
 `cosmic::Application`: it routes feature messages, owns truly global UI state, and combines tasks
 when an effect result requires work in more than one feature. Feature modules own their slice of
-the model and expose module-scoped `State`, `Message`, `update`, `view`, and `effects` boundaries as
-those boundaries are extracted.
+the model and expose module-scoped `State`, `Message`, `update`, `view`, and `effects` boundaries.
 
 Ownership is divided as follows:
 
@@ -79,19 +78,17 @@ Ownership is divided as follows:
 | Dialogs | Form input, validation, and submission intent | Feature form drawers | Submission is routed to the owning feature slice |
 | Global operations | Toasts and destructive confirmation state | Toast layer and confirmation dialog | Root routing dispatches the confirmed operation to its owning slice |
 
-`Sidebar` is transitional shell storage for zone and IP-set navigation projections. It does not
-make those domains shell-owned; later slice extraction will move the projections behind their
-feature boundaries without changing the visible navigation.
-
 Sibling slices never communicate through broker-owned application state. They communicate through
-root message routing and the results of effects. The broker remains UI-independent: it owns
-firewalld transport and domain operations, but no application model and no libcosmic tasks.
+typed root requests and the results of effects. A reducer first mutates only its own state and
+returns an `Outcome<Effect, Request>`. The root drains requests in FIFO order and only then maps and
+schedules the collected feature effects. This ensures selection, drawer, confirmation, and global
+mutation state is settled before asynchronous broker work begins. The broker remains
+UI-independent: it owns firewalld transport and domain operations, but no application model and no
+libcosmic tasks.
 
 The target root message shape is limited to `Navigation(...)`, `Zone(...)`, `IpSet(...)`,
 `Catalog(...)`, `Reconciliation(...)`, `Dialog(...)`, plus root-owned toast and confirmation
-messages. During incremental migration, an already-nested feature namespace may coexist with
-untouched flat variants, but a migrated slice must route all of its producers, completions, and
-update arms through its namespace.
+messages.
 
 ### Reconciliation architecture
 
@@ -114,10 +111,10 @@ gfwd-bus proxies
 `core/broker/` module tree is the exclusive owner of system-bus connections, proxy
 construction, and signal streams.
 
-`app/reconciliation.rs` is the reconciliation model slice and owns the selected-zone lifecycle,
+`app/reconciliation/` is the reconciliation slice and owns the selected-zone lifecycle,
 including request
 generations, stale-response rejection, watcher health, and follow-up refresh scheduling.
-`ui/reconciliation_model.rs` converts that domain state into localization-independent status,
+`app/reconciliation/model.rs` converts that domain state into localization-independent status,
 difference groups, unknown keys, and action availability. The selected-zone banner and review
 drawer both render this same presentation model.
 

@@ -5,7 +5,6 @@ mod config;
 mod core;
 mod i18n;
 mod models;
-mod ui;
 
 fn main() -> cosmic::iced::Result {
     // Get the system's preferred languages.
