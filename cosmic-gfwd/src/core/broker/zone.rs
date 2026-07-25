@@ -142,6 +142,23 @@ impl FwdBroker {
         Ok(())
     }
 
+    /// Permanently add a source port to a zone.
+    pub async fn add_source_port(
+        &self,
+        zone_name: &str,
+        port: &str,
+        protocol: &str,
+    ) -> Result<(), BrokerError> {
+        let cfg = self.config().await?;
+        let path = cfg.get_zone_by_name(zone_name).await?;
+        let proxy = ConfigZoneProxy::builder(&self.conn)
+            .path(path.as_str())?
+            .build()
+            .await?;
+        proxy.add_source_port(port, protocol).await?;
+        Ok(())
+    }
+
     /// Permanently add a forwarded port to a zone.
     pub async fn add_forward_port(
         &self,

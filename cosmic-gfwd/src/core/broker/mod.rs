@@ -116,6 +116,7 @@ mod tests {
         let _ = broker.get_interfaces().await;
         let _ = broker.add_zone("test", "test zone", target).await;
         let _ = broker.add_port("public", "443", "tcp").await;
+        let _ = broker.add_source_port("public", "443", "tcp").await;
         let _ = broker
             .add_forward_port("public", "443", "tcp", "8443", "")
             .await;
