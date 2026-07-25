@@ -29,6 +29,7 @@ const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
 mod catalogs;
+pub(crate) mod dialogs;
 mod ipsets;
 mod navigation;
 mod operations;
@@ -321,10 +322,7 @@ impl cosmic::Application for AppModel {
             )
             .title(fl!("reconciliation-review-title")),
             ContextPage::AddZone => context_drawer::context_drawer(
-                drawer_with_error(
-                    crate::ui::dialog_drawers::zone_drawer(&self.dialogs.zone),
-                    error,
-                ),
+                drawer_with_error(dialogs::zone_drawer(&self.dialogs.zone), error),
                 DialogMessage::Cancel(DialogKind::Zone),
             )
             .title(fl!("drawer-title-zone"))
@@ -1346,7 +1344,7 @@ impl AppModel {
                 self.dialogs.port.port_touched = true;
             }
             DialogMessage::PortProtocolSelected(index) => {
-                self.dialogs.port.protocol = crate::ui::dialog_drawers::protocol_from_index(index);
+                self.dialogs.port.protocol = dialogs::protocol_from_index(index);
             }
             DialogMessage::PortForwardDestIpChanged(value) => {
                 self.dialogs.port.dest_ip = value;
@@ -1420,8 +1418,7 @@ impl AppModel {
                 self.dialogs.rich_rule.element_value = value;
             }
             DialogMessage::RichRulePortProtocolSelected(value) => {
-                self.dialogs.rich_rule.port_protocol =
-                    crate::ui::dialog_drawers::protocol_from_index(value);
+                self.dialogs.rich_rule.port_protocol = dialogs::protocol_from_index(value);
             }
             DialogMessage::RichRuleActionSelected(value) => {
                 self.dialogs.rich_rule.action = value;
@@ -1437,7 +1434,7 @@ impl AppModel {
                 self.dialogs.ipset.name_touched = true;
             }
             DialogMessage::IpSetTypeSelected(index) => {
-                self.dialogs.ipset.ipset_type = crate::ui::dialog_drawers::ipset_from_index(index);
+                self.dialogs.ipset.ipset_type = dialogs::ipset_from_index(index);
             }
             DialogMessage::IpSetEntriesChanged(value) => {
                 self.dialogs.ipset.entries = value;

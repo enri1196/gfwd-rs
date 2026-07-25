@@ -1,3 +1,5 @@
+//! Dialog state, validation, and context-drawer views.
+
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, dropdown, settings};
 
