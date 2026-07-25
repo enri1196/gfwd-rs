@@ -11,6 +11,19 @@ use crate::models::IcmpTypeInfo;
 use crate::models::ZoneTarget;
 
 const PORT_PROTOCOLS: [&str; 4] = ["tcp", "udp", "sctp", "dccp"];
+
+/// Semantic kind of permanent port rule being created.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum PortKind {
+    /// A destination port accepted by the zone.
+    #[default]
+    Destination,
+    /// A source port accepted by the zone.
+    Source,
+    /// A destination port forwarded to another address or port.
+    Forward,
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DialogKind {
     Zone,
@@ -32,7 +45,6 @@ pub enum DialogMessage {
     ServiceSelected(String),
     PortNumberChanged(String),
     PortProtocolSelected(usize),
-    PortForwardingToggled(bool),
     PortForwardDestIpChanged(String),
     PortForwardDestPortChanged(String),
     InterfaceSelected(usize),
@@ -75,12 +87,19 @@ pub struct DialogState {
 }
 
 impl DialogState {
+    /// Reset one form while retaining the selected port kind for port forms.
     pub fn reset(&mut self, kind: DialogKind) {
         self.operation_error = None;
         match kind {
             DialogKind::Zone => self.zone = ZoneFormState::default(),
             DialogKind::Service => self.service = ServiceFormState::default(),
-            DialogKind::Port => self.port = PortFormState::default(),
+            DialogKind::Port => {
+                let kind = self.port.kind;
+                self.port = PortFormState {
+                    kind,
+                    ..PortFormState::default()
+                };
+            }
             DialogKind::Interface => self.interface = InterfaceFormState::default(),
             DialogKind::Source => self.source = SourceFormState::default(),
             DialogKind::Icmp => self.icmp = IcmpFormState::default(),
@@ -128,10 +147,15 @@ impl Default for ZoneFormState {
 
 #[derive(Debug, Clone)]
 pub struct PortFormState {
+    /// Port number or inclusive port range.
     pub port: String,
+    /// Transport protocol for the port rule.
     pub protocol: String,
-    pub forwarding: bool,
+    /// Semantic kind of port rule being created.
+    pub kind: PortKind,
+    /// Optional forwarding destination address.
     pub dest_ip: String,
+    /// Required forwarding destination port.
     pub dest_port: String,
     /// Whether the source port field has been edited.
     pub port_touched: bool,
@@ -146,7 +170,7 @@ impl Default for PortFormState {
         Self {
             port: String::new(),
             protocol: PORT_PROTOCOLS[0].to_string(),
-            forwarding: false,
+            kind: PortKind::default(),
             dest_ip: String::new(),
             dest_port: String::new(),
             port_touched: false,
@@ -161,7 +185,7 @@ impl PortFormState {
     pub fn is_valid(&self) -> bool {
         validate_port_spec(&self.port).is_ok()
             && validate_port_protocol(&self.protocol).is_ok()
-            && (!self.forwarding
+            && (self.kind != PortKind::Forward
                 || (validate_port_spec(&self.dest_port).is_ok()
                     && validate_forward_address(&self.dest_ip).is_ok()))
     }
@@ -452,19 +476,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
     }
     sections.push(port_section.into());
 
-    sections.push(
-        settings::section()
-            .title(fl!("dialog-port-forwarding-section"))
-            .add(
-                settings::item::builder(fl!("dialog-port-forwarding-toggle")).control(
-                    widget::toggler(state.forwarding)
-                        .on_toggle(DialogMessage::PortForwardingToggled),
-                ),
-            )
-            .into(),
-    );
-
-    if state.forwarding {
+    if state.kind == PortKind::Forward {
         let mut destination_section = settings::section()
             .title(fl!("dialog-port-forward-destination-section"))
             .add(
@@ -1018,6 +1030,94 @@ mod tests {
         assert!(!dialogs.rich_rule.raw_mode);
         assert!(dialogs.rich_rule.raw_rule.is_empty());
         assert!(dialogs.operation_error.is_none());
+    }
+
+    #[test]
+    fn every_port_kind_shares_port_and_protocol_validation() {
+        for kind in [PortKind::Destination, PortKind::Source, PortKind::Forward] {
+            let valid = PortFormState {
+                kind,
+                port: "1000-2000".into(),
+                protocol: "sctp".into(),
+                dest_port: "8443".into(),
+                ..PortFormState::default()
+            };
+            assert!(valid.is_valid(), "{kind:?} should accept shared fields");
+
+            let invalid_port = PortFormState {
+                port: "70000".into(),
+                ..valid.clone()
+            };
+            assert!(
+                !invalid_port.is_valid(),
+                "{kind:?} should reject an invalid port"
+            );
+
+            let invalid_protocol = PortFormState {
+                protocol: "icmp".into(),
+                ..valid
+            };
+            assert!(
+                !invalid_protocol.is_valid(),
+                "{kind:?} should reject an invalid protocol"
+            );
+        }
+    }
+
+    #[test]
+    fn only_forward_ports_validate_destination_fields() {
+        for kind in [PortKind::Destination, PortKind::Source] {
+            let state = PortFormState {
+                kind,
+                port: "443".into(),
+                protocol: "tcp".into(),
+                dest_ip: "not an address".into(),
+                dest_port: "not a port".into(),
+                ..PortFormState::default()
+            };
+            assert!(
+                state.is_valid(),
+                "{kind:?} should ignore forwarding-only fields"
+            );
+        }
+
+        let missing_destination_port = PortFormState {
+            kind: PortKind::Forward,
+            port: "443".into(),
+            protocol: "tcp".into(),
+            ..PortFormState::default()
+        };
+        assert!(!missing_destination_port.is_valid());
+
+        let optional_destination_address = PortFormState {
+            dest_port: "8443".into(),
+            ..missing_destination_port
+        };
+        assert!(optional_destination_address.is_valid());
+    }
+
+    #[test]
+    fn resetting_port_form_preserves_each_selected_kind() {
+        let mut dialogs = DialogState::default();
+        for kind in [PortKind::Destination, PortKind::Source, PortKind::Forward] {
+            dialogs.port.kind = kind;
+            dialogs.port.port = "443".into();
+            dialogs.port.protocol = "udp".into();
+            dialogs.port.dest_ip = "192.0.2.1".into();
+            dialogs.port.dest_port = "8443".into();
+            dialogs.port.port_touched = true;
+            dialogs.operation_error = Some("failure".into());
+
+            dialogs.reset(DialogKind::Port);
+
+            assert_eq!(dialogs.port.kind, kind);
+            assert!(dialogs.port.port.is_empty());
+            assert_eq!(dialogs.port.protocol, "tcp");
+            assert!(dialogs.port.dest_ip.is_empty());
+            assert!(dialogs.port.dest_port.is_empty());
+            assert!(!dialogs.port.port_touched);
+            assert!(dialogs.operation_error.is_none());
+        }
     }
 
     #[test]

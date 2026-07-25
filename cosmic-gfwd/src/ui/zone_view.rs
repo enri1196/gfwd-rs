@@ -35,8 +35,9 @@ pub enum ZoneViewAction {
     /// Opens the configured-service picker for the selected zone.
     AddService,
     AddInterface,
+    /// Opens the shared port form for the selected semantic port kind.
     AddPort {
-        forwarding: bool,
+        kind: super::PortKind,
     },
     AddSource,
     AddIcmpBlock,
@@ -234,7 +235,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .collect(),
         fl!("zone-empty-ports"),
         Some((
-            ZoneViewAction::AddPort { forwarding: false },
+            port_add_action(super::PortKind::Destination),
             fl!("action-add-port"),
         )),
         map,
@@ -264,7 +265,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .collect(),
         fl!("zone-empty-forward-ports"),
         Some((
-            ZoneViewAction::AddPort { forwarding: true },
+            port_add_action(super::PortKind::Forward),
             fl!("action-add-forward-port"),
         )),
         map,
@@ -272,19 +273,12 @@ fn zone_details<'a, Message: 'static + Clone>(
 
     let source_ports = list_section(
         fl!("zone-section-source-ports"),
-        details
-            .source_ports
-            .iter()
-            .cloned()
-            .map(|(port, protocol)| {
-                (
-                    format!("{}/{}", port, protocol),
-                    ZoneViewAction::RemoveSourcePort { port, protocol },
-                )
-            })
-            .collect(),
+        source_port_rows(&details.source_ports),
         fl!("zone-empty-source-ports"),
-        None,
+        Some((
+            port_add_action(super::PortKind::Source),
+            fl!("action-add-source-port"),
+        )),
         map,
     );
 
@@ -511,6 +505,25 @@ fn list_or_none(items: &[String], empty_label: &str) -> String {
     }
 }
 
+/// Build the semantic add action shared by the three port sections.
+fn port_add_action(kind: super::PortKind) -> ZoneViewAction {
+    ZoneViewAction::AddPort { kind }
+}
+
+/// Build source-port rows while retaining the existing removal actions.
+fn source_port_rows(source_ports: &[(String, String)]) -> Vec<(String, ZoneViewAction)> {
+    source_ports
+        .iter()
+        .cloned()
+        .map(|(port, protocol)| {
+            (
+                format!("{port}/{protocol}"),
+                ZoneViewAction::RemoveSourcePort { port, protocol },
+            )
+        })
+        .collect()
+}
+
 fn centered_message<'a, Message: 'static>(
     message: impl Into<String>,
 ) -> cosmic::Element<'a, Message> {
@@ -536,4 +549,42 @@ fn error_message<'a, Message: 'static>(zone: &str, message: &str) -> cosmic::Ele
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn port_section_add_actions_select_the_requested_kind() {
+        for kind in [
+            super::super::PortKind::Destination,
+            super::super::PortKind::Source,
+            super::super::PortKind::Forward,
+        ] {
+            assert!(matches!(
+                port_add_action(kind),
+                ZoneViewAction::AddPort { kind: actual } if actual == kind
+            ));
+        }
+    }
+
+    #[test]
+    fn source_port_section_offers_add_and_existing_remove_actions() {
+        assert!(matches!(
+            port_add_action(super::super::PortKind::Source),
+            ZoneViewAction::AddPort {
+                kind: super::super::PortKind::Source
+            }
+        ));
+
+        let rows = source_port_rows(&[("1024-2048".into(), "udp".into())]);
+        assert!(matches!(
+            rows.as_slice(),
+            [(
+                label,
+                ZoneViewAction::RemoveSourcePort { port, protocol }
+            )] if label == "1024-2048/udp" && port == "1024-2048" && protocol == "udp"
+        ));
+    }
 }

@@ -8,11 +8,11 @@ use crate::core::{
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
-    DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
-    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
-    port_drawer, reconciliation_drawer, rich_rule_drawer, service_drawer, source_drawer,
-    target_from_index, view_ipset_content, view_zone_content,
+    DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, PortFormState,
+    PortKind, Sidebar, SidebarItem, ZoneViewAction, ZoneViewState, drawer_cancel_footer,
+    drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
+    localized_validation_error, port_drawer, reconciliation_drawer, rich_rule_drawer,
+    service_drawer, source_drawer, target_from_index, view_ipset_content, view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -420,7 +420,7 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(port_drawer(&self.dialogs.port), error),
                 DialogMessage::Cancel(DialogKind::Port),
             )
-            .title(fl!("drawer-title-port"))
+            .title(port_drawer_title(self.dialogs.port.kind))
             .footer(drawer_footer_with_submit(
                 DialogKind::Port,
                 can_submit && self.dialogs.port.is_valid(),
@@ -1303,9 +1303,9 @@ impl AppModel {
                 self.open_context_page(ContextPage::AddInterface);
                 return self.start_interfaces_load();
             }
-            ZoneViewAction::AddPort { forwarding } => {
+            ZoneViewAction::AddPort { kind } => {
                 self.open_context_page(ContextPage::AddPort);
-                self.dialogs.port.forwarding = *forwarding;
+                self.dialogs.port.kind = *kind;
                 return Task::none();
             }
             ZoneViewAction::AddSource => {
@@ -1407,9 +1407,6 @@ impl AppModel {
             }
             DialogMessage::PortProtocolSelected(index) => {
                 self.dialogs.port.protocol = crate::ui::dialog_drawers::protocol_from_index(index);
-            }
-            DialogMessage::PortForwardingToggled(value) => {
-                self.dialogs.port.forwarding = value;
             }
             DialogMessage::PortForwardDestIpChanged(value) => {
                 self.dialogs.port.dest_ip = value;
@@ -1521,26 +1518,33 @@ impl AppModel {
             }
             DialogMessage::Submit(DialogKind::Port) => {
                 self.dialogs.port.port_touched = true;
-                self.dialogs.port.dest_ip_touched = true;
-                self.dialogs.port.dest_port_touched = true;
+                if self.dialogs.port.kind == PortKind::Forward {
+                    self.dialogs.port.dest_ip_touched = true;
+                    self.dialogs.port.dest_port_touched = true;
+                }
                 if !self.dialogs.port.is_valid() {
                     self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
                     return Task::none();
                 }
-                let port = self.dialogs.port.port.trim().to_string();
-                let protocol = self.dialogs.port.protocol.trim().to_string();
-                let forwarding = self.dialogs.port.forwarding;
-                let dest_ip = self.dialogs.port.dest_ip.trim().to_string();
-                let dest_port = self.dialogs.port.dest_port.trim().to_string();
+                let submission = normalized_port_submission(&self.dialogs.port);
                 let Some(zone_name) = self.current_zone_name() else {
                     self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                     return Task::none();
                 };
-                if forwarding {
-                    return self
-                        .start_forward_port_add(zone_name, port, protocol, dest_port, dest_ip);
-                }
-                return self.start_port_add(zone_name, port, protocol);
+                return match submission {
+                    PortSubmission::Destination { port, protocol } => {
+                        self.start_port_add(zone_name, port, protocol)
+                    }
+                    PortSubmission::Source { port, protocol } => {
+                        self.start_source_port_add(zone_name, port, protocol)
+                    }
+                    PortSubmission::Forward {
+                        port,
+                        protocol,
+                        to_port,
+                        to_addr,
+                    } => self.start_forward_port_add(zone_name, port, protocol, to_port, to_addr),
+                };
             }
             DialogMessage::Submit(DialogKind::Interface) => {
                 if !self.validate_interface_value() {
@@ -1769,6 +1773,16 @@ impl AppModel {
     ) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.add_port(&zone_name, &port, &protocol).await
+    }
+
+    /// Permanently add a source port to a zone.
+    async fn add_source_port(
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Result<(), BrokerError> {
+        let broker = FwdBroker::get().await?;
+        broker.add_source_port(&zone_name, &port, &protocol).await
     }
 
     async fn add_forward_port(
@@ -2080,6 +2094,28 @@ impl AppModel {
                 result,
             })
         })
+    }
+
+    /// Start a permanent source-port mutation.
+    fn start_source_port_add(
+        &mut self,
+        zone_name: String,
+        port: String,
+        protocol: String,
+    ) -> Task<cosmic::Action<Message>> {
+        if !self.begin_mutation(fl!("operation-add-source-port")) {
+            return Task::none();
+        }
+        let zone_name_for_task = zone_name.clone();
+        Task::perform(
+            Self::add_source_port(zone_name, port, protocol),
+            move |result| {
+                cosmic::Action::from(Message::ZoneItemAdded {
+                    zone_name: zone_name_for_task.clone(),
+                    result,
+                })
+            },
+        )
     }
 
     fn start_forward_port_add(
@@ -2412,6 +2448,61 @@ impl AppModel {
     }
 }
 
+/// Normalized operation produced by the shared permanent port form.
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum PortSubmission {
+    /// Add a destination port.
+    Destination {
+        /// Normalized port or port range.
+        port: String,
+        /// Normalized transport protocol.
+        protocol: String,
+    },
+    /// Add a source port.
+    Source {
+        /// Normalized port or port range.
+        port: String,
+        /// Normalized transport protocol.
+        protocol: String,
+    },
+    /// Add a forwarded port.
+    Forward {
+        /// Normalized source port or port range.
+        port: String,
+        /// Normalized transport protocol.
+        protocol: String,
+        /// Normalized forwarding destination port.
+        to_port: String,
+        /// Normalized optional forwarding destination address.
+        to_addr: String,
+    },
+}
+
+/// Route a validated port form to its normalized permanent mutation.
+fn normalized_port_submission(state: &PortFormState) -> PortSubmission {
+    let port = state.port.trim().to_string();
+    let protocol = state.protocol.trim().to_string();
+    match state.kind {
+        PortKind::Destination => PortSubmission::Destination { port, protocol },
+        PortKind::Source => PortSubmission::Source { port, protocol },
+        PortKind::Forward => PortSubmission::Forward {
+            port,
+            protocol,
+            to_port: state.dest_port.trim().to_string(),
+            to_addr: state.dest_ip.trim().to_string(),
+        },
+    }
+}
+
+/// Return the localized drawer title for the active port operation.
+fn port_drawer_title(kind: PortKind) -> String {
+    match kind {
+        PortKind::Destination => fl!("drawer-title-destination-port"),
+        PortKind::Source => fl!("drawer-title-source-port"),
+        PortKind::Forward => fl!("drawer-title-forward-port"),
+    }
+}
+
 fn split_ipset_entries(entries: &str) -> Vec<String> {
     entries
         .lines()
@@ -2424,6 +2515,58 @@ fn split_ipset_entries(entries: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::split_ipset_entries;
+
+    #[test]
+    fn normalized_port_submission_routes_all_port_kinds() {
+        let cases = [
+            (
+                super::PortKind::Destination,
+                super::PortSubmission::Destination {
+                    port: "443".into(),
+                    protocol: "tcp".into(),
+                },
+            ),
+            (
+                super::PortKind::Source,
+                super::PortSubmission::Source {
+                    port: "1000-2000".into(),
+                    protocol: "udp".into(),
+                },
+            ),
+            (
+                super::PortKind::Forward,
+                super::PortSubmission::Forward {
+                    port: "8443".into(),
+                    protocol: "sctp".into(),
+                    to_port: "9443".into(),
+                    to_addr: "192.0.2.10".into(),
+                },
+            ),
+        ];
+
+        for (kind, expected) in cases {
+            let state = super::PortFormState {
+                kind,
+                port: match kind {
+                    super::PortKind::Destination => " 443 ",
+                    super::PortKind::Source => " 1000-2000 ",
+                    super::PortKind::Forward => " 8443 ",
+                }
+                .into(),
+                protocol: match kind {
+                    super::PortKind::Destination => " tcp ",
+                    super::PortKind::Source => " udp ",
+                    super::PortKind::Forward => " sctp ",
+                }
+                .into(),
+                dest_port: " 9443 ".into(),
+                dest_ip: " 192.0.2.10 ".into(),
+                ..super::PortFormState::default()
+            };
+
+            assert_eq!(super::normalized_port_submission(&state), expected);
+        }
+    }
 
     #[test]
     fn ipset_entry_lines_preserve_composite_tuple_commas() {
