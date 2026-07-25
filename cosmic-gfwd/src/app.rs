@@ -1320,6 +1320,9 @@ impl AppModel {
             return Task::none();
         }
         match &action {
+            ZoneViewAction::Reconciliation(action) => {
+                return self.handle_reconciliation_action(*action);
+            }
             ZoneViewAction::AddService => {
                 self.open_context_page(ContextPage::AddService);
                 return self.start_services_load();
@@ -1342,30 +1345,6 @@ impl AppModel {
             ZoneViewAction::StopFirewalld => {
                 self.confirmation = Some(Confirmation::StopFirewalld);
                 return Task::none();
-            }
-            ZoneViewAction::ApplyPermanentConfiguration => {
-                self.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
-                return Task::none();
-            }
-            ZoneViewAction::SaveRuntimeConfiguration => {
-                self.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
-                return Task::none();
-            }
-            ZoneViewAction::ReviewReconciliation => {
-                self.open_context_page(ContextPage::ReviewReconciliation);
-                return Task::none();
-            }
-            ZoneViewAction::RefreshReconciliation => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    return Task::none();
-                };
-                if self.firewalld_status != FirewalldStatus::Active {
-                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-                        zone: Some(zone_name),
-                    };
-                    return Task::none();
-                }
-                return self.start_zone_reconciliation(zone_name);
             }
             ZoneViewAction::AddInterface => {
                 self.open_context_page(ContextPage::AddInterface);
@@ -1404,6 +1383,39 @@ impl AppModel {
         };
 
         self.start_zone_item_remove(zone_name, action)
+    }
+
+    /// Route actions shared by the reconciliation banner and review drawer.
+    fn handle_reconciliation_action(
+        &mut self,
+        action: crate::ui::ReconciliationAction,
+    ) -> Task<cosmic::Action<Message>> {
+        match action {
+            crate::ui::ReconciliationAction::Review => {
+                self.open_context_page(ContextPage::ReviewReconciliation);
+                Task::none()
+            }
+            crate::ui::ReconciliationAction::Refresh => {
+                let Some(zone_name) = self.current_zone_name() else {
+                    return Task::none();
+                };
+                if self.firewalld_status != FirewalldStatus::Active {
+                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
+                        zone: Some(zone_name),
+                    };
+                    return Task::none();
+                }
+                self.start_zone_reconciliation(zone_name)
+            }
+            crate::ui::ReconciliationAction::ApplyPermanentToRuntime => {
+                self.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
+                Task::none()
+            }
+            crate::ui::ReconciliationAction::SaveRuntimeAsPermanent => {
+                self.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
+                Task::none()
+            }
+        }
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
@@ -2236,10 +2248,7 @@ impl AppModel {
             | ZoneViewAction::SetIcmpBlockInversion(_)
             | ZoneViewAction::StartFirewalld
             | ZoneViewAction::StopFirewalld
-            | ZoneViewAction::ApplyPermanentConfiguration
-            | ZoneViewAction::SaveRuntimeConfiguration
-            | ZoneViewAction::ReviewReconciliation
-            | ZoneViewAction::RefreshReconciliation => Task::none(),
+            | ZoneViewAction::Reconciliation(_) => Task::none(),
             ZoneViewAction::AddService
             | ZoneViewAction::AddInterface
             | ZoneViewAction::AddPort { .. }

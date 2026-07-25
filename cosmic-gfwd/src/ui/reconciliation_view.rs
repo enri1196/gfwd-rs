@@ -12,6 +12,19 @@ use super::{
     },
 };
 
+/// User actions originating from reconciliation views.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ReconciliationAction {
+    /// Open the detailed comparison drawer.
+    Review,
+    /// Reload the selected zone's permanent and runtime snapshots.
+    Refresh,
+    /// Request confirmation for applying permanent state globally.
+    ApplyPermanentToRuntime,
+    /// Request confirmation for saving runtime state globally.
+    SaveRuntimeAsPermanent,
+}
+
 /// Build the selected-zone permanent/runtime reconciliation review content.
 pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     state: &'a ZoneReconciliationState,
@@ -26,7 +39,9 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
         presentation
             .actions
             .can_refresh
-            .then_some(map(ZoneViewAction::RefreshReconciliation)),
+            .then_some(map(ZoneViewAction::Reconciliation(
+                ReconciliationAction::Refresh,
+            ))),
     );
     let mut status = settings::section()
         .title(fl!("reconciliation-status-heading"))
@@ -88,17 +103,19 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     }
     content = content.push(differences);
 
-    let apply = button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
-        presentation
-            .actions
-            .can_apply_permanent
-            .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
-    );
+    let apply =
+        button::destructive(fl!("reconciliation-apply-permanent")).on_press_maybe(
+            presentation.actions.can_apply_permanent.then_some(map(
+                ZoneViewAction::Reconciliation(ReconciliationAction::ApplyPermanentToRuntime),
+            )),
+        );
     let save = button::destructive(fl!("reconciliation-save-runtime")).on_press_maybe(
         presentation
             .actions
             .can_save_runtime
-            .then_some(map(ZoneViewAction::SaveRuntimeConfiguration)),
+            .then_some(map(ZoneViewAction::Reconciliation(
+                ReconciliationAction::SaveRuntimeAsPermanent,
+            ))),
     );
     let global_actions = settings::section()
         .title(fl!("reconciliation-global-actions-heading"))

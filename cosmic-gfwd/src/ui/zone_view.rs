@@ -30,14 +30,8 @@ pub enum ZoneViewAction {
     StartFirewalld,
     /// Requests confirmation before stopping the firewalld systemd unit.
     StopFirewalld,
-    /// Reloads firewalld to apply permanent configuration to runtime.
-    ApplyPermanentConfiguration,
-    /// Persists all runtime firewalld configuration permanently.
-    SaveRuntimeConfiguration,
-    /// Opens the permanent/runtime difference review drawer.
-    ReviewReconciliation,
-    /// Reloads both selected-zone snapshots.
-    RefreshReconciliation,
+    /// Performs an action on permanent/runtime reconciliation.
+    Reconciliation(super::ReconciliationAction),
     /// Opens the configured-service picker for the selected zone.
     AddService,
     AddInterface,
@@ -164,7 +158,9 @@ fn zone_details<'a, Message: 'static + Clone>(
         reconciliation_presentation
             .actions
             .can_apply_permanent
-            .then_some(map(ZoneViewAction::ApplyPermanentConfiguration)),
+            .then_some(map(ZoneViewAction::Reconciliation(
+                super::ReconciliationAction::ApplyPermanentToRuntime,
+            ))),
     );
     let firewalld = settings::section()
         .title(fl!("firewalld-section"))
@@ -357,24 +353,26 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let status = reconciliation_status(presentation.status);
-    let actions = widget::row::with_capacity(2)
-        .push(
-            button::standard(fl!("reconciliation-review")).on_press_maybe(
-                presentation
-                    .actions
-                    .can_review
-                    .then_some(map(ZoneViewAction::ReviewReconciliation)),
-            ),
-        )
-        .push(
-            button::standard(fl!("reconciliation-refresh")).on_press_maybe(
-                presentation
-                    .actions
-                    .can_refresh
-                    .then_some(map(ZoneViewAction::RefreshReconciliation)),
-            ),
-        )
-        .spacing(cosmic::theme::spacing().space_s);
+    let actions =
+        widget::row::with_capacity(2)
+            .push(
+                button::standard(fl!("reconciliation-review")).on_press_maybe(
+                    presentation
+                        .actions
+                        .can_review
+                        .then_some(map(ZoneViewAction::Reconciliation(
+                            super::ReconciliationAction::Review,
+                        ))),
+                ),
+            )
+            .push(
+                button::standard(fl!("reconciliation-refresh")).on_press_maybe(
+                    presentation.actions.can_refresh.then_some(map(
+                        ZoneViewAction::Reconciliation(super::ReconciliationAction::Refresh),
+                    )),
+                ),
+            )
+            .spacing(cosmic::theme::spacing().space_s);
 
     let section = settings::section()
         .title(fl!("reconciliation-section"))

@@ -11,6 +11,7 @@ pub use dialog_drawers::{
     port_drawer, rich_rule_drawer, service_drawer, source_drawer, target_from_index,
 };
 pub use ipset_view::{IpSetViewAction, IpSetViewState, view_ipset_content};
+pub(crate) use reconciliation_view::ReconciliationAction;
 pub use reconciliation_view::reconciliation_drawer;
 pub use sidebar::{Sidebar, SidebarItem};
 pub use zone_view::{ZoneViewAction, ZoneViewState, view_zone_content};
