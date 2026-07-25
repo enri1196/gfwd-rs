@@ -55,17 +55,43 @@ Both directions require separate destructive confirmations. Neither runs automat
 reloads and zone changes normally refresh the comparison through D-Bus signals; if monitoring
 fails, the warning remains visible and the manual **Refresh** action remains available.
 
-## Migration scope
-
-Cosmic Gfwd intentionally migrates only workflows that were functional in the GTK application.
-The unused GTK direct-rule and policy model stubs are not target features. Source ports support
-complete creation, display, and removal workflows. COSMIC-native improvements remain authoritative:
-every active zone is badged in the sidebar, the default zone is changed from the sidebar context
-menu, and zone sections use contextual add actions.
-
 ## Developers
 
 Developers should install [rustup][rustup] and configure their editor to use [rust-analyzer][rust-analyzer]. To improve compilation times, disable LTO in the release profile, install the [mold][mold] linker, and configure [sccache][sccache] for use with Rust. The [mold][mold] linker will only improve link times if LTO is disabled.
+
+### Application MVU architecture
+
+Cosmic Gfwd uses a model-view-update (MVU) architecture. The root application is the sole
+`cosmic::Application`: it routes feature messages, owns truly global UI state, and combines tasks
+when an effect result requires work in more than one feature. Feature modules own their slice of
+the model and expose module-scoped `State`, `Message`, `update`, `view`, and `effects` boundaries as
+those boundaries are extracted.
+
+Ownership is divided as follows:
+
+| Slice | State and messages | Views | Effects |
+| --- | --- | --- | --- |
+| Shell/navigation | Window chrome, navigation selection, context-page visibility, menu actions, configuration, and URL launching | Header, navigation bar, context drawer shell, and application menu | Configuration subscriptions and desktop URL launching |
+| Zones | Zone list/detail projections, default and active zones, firewalld status, and ordinary daemon control | Zone navigation and selected-zone details | Zone queries and mutations, status checks, and daemon start/stop |
+| IP sets | IP-set list/detail projections, editor state, and mutations | IP-set navigation, details, and entry/create drawers | IP-set queries and mutations |
+| Catalogs | Interface, service, and ICMP-type loading state | Catalog-backed fields rendered by dialogs | Catalog discovery and load completion |
+| Reconciliation | Selected-zone permanent/runtime comparison, refresh coordination, and both global synchronization results | Reconciliation banner and review drawer | Snapshot loading, event watching, permanent-to-runtime application, and runtime-to-permanent persistence |
+| Dialogs | Form input, validation, and submission intent | Feature form drawers | Submission is routed to the owning feature slice |
+| Global operations | Toasts and destructive confirmation state | Toast layer and confirmation dialog | Root routing dispatches the confirmed operation to its owning slice |
+
+`Sidebar` is transitional shell storage for zone and IP-set navigation projections. It does not
+make those domains shell-owned; later slice extraction will move the projections behind their
+feature boundaries without changing the visible navigation.
+
+Sibling slices never communicate through broker-owned application state. They communicate through
+root message routing and the results of effects. The broker remains UI-independent: it owns
+firewalld transport and domain operations, but no application model and no libcosmic tasks.
+
+The target root message shape is limited to `Navigation(...)`, `Zone(...)`, `IpSet(...)`,
+`Catalog(...)`, `Reconciliation(...)`, `Dialog(...)`, plus root-owned toast and confirmation
+messages. During incremental migration, an already-nested feature namespace may coexist with
+untouched flat variants, but a migrated slice must route all of its producers, completions, and
+update arms through its namespace.
 
 ### Reconciliation architecture
 
@@ -76,7 +102,7 @@ UI views
     ↓
 presentation model
     ↓
-application controller
+application reconciliation slice
     ↓
 broker
     ↓
@@ -88,7 +114,8 @@ gfwd-bus proxies
 `core/broker/` module tree is the exclusive owner of system-bus connections, proxy
 construction, and signal streams.
 
-`app/reconciliation.rs` owns the selected-zone reconciliation lifecycle, including request
+`app/reconciliation.rs` is the reconciliation model slice and owns the selected-zone lifecycle,
+including request
 generations, stale-response rejection, watcher health, and follow-up refresh scheduling.
 `ui/reconciliation_model.rs` converts that domain state into localization-independent status,
 difference groups, unknown keys, and action availability. The selected-zone banner and review

@@ -598,11 +598,8 @@ impl cosmic::Application for AppModel {
         ];
         let selected_zone = self.current_zone_name();
         subscriptions.push(
-            Subscription::run_with(
-                selected_zone.clone(),
-                configuration_event_subscription,
-            )
-            .map(Message::Reconciliation),
+            Subscription::run_with(selected_zone.clone(), configuration_event_subscription)
+                .map(Message::Reconciliation),
         );
 
         Subscription::batch(subscriptions)
