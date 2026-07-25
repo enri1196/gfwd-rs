@@ -79,35 +79,10 @@ pub enum Message {
     Navigation(navigation::Message),
     Catalog(catalogs::Message),
     IpSet(ipsets::Message),
+    Zone(zones::Message),
     Dialog(DialogMessage),
-    ZoneAction(ZoneViewAction),
-    ZonesLoaded(Result<Vec<String>, BrokerError>),
-    ZoneDetailsLoaded {
-        zone_name: String,
-        result: Result<ZoneDetails, BrokerError>,
-    },
     Reconciliation(reconciliation::Message),
-    DefaultZoneLoaded(Result<String, BrokerError>),
-    ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
 
-    DefaultZoneSet(Result<(), BrokerError>),
-    ZoneCreated {
-        zone_name: String,
-        result: Result<(), BrokerError>,
-    },
-    ZoneDeleted {
-        zone_name: String,
-        result: Result<(), BrokerError>,
-    },
-    ZoneItemAdded {
-        zone_name: String,
-        result: Result<(), BrokerError>,
-    },
-    ZoneItemRemoved {
-        zone_name: String,
-        result: Result<(), BrokerError>,
-    },
-    FirewalldStatusLoaded(Result<FirewalldStatus, BrokerError>),
     FirewalldControlFinished {
         apply_permanent: bool,
         result: Result<(), BrokerError>,
@@ -349,7 +324,7 @@ impl cosmic::Application for AppModel {
                     self.mutation_pending(),
                     self.dialogs.operation_error.as_deref(),
                     self.reconciliation.watch_warning(),
-                    Message::ZoneAction,
+                    |action| Message::Zone(zones::Message::View(action)),
                 ),
                 Message::Navigation(navigation::Message::ToggleContextPage(
                     ContextPage::ReviewReconciliation,
@@ -538,7 +513,7 @@ impl cosmic::Application for AppModel {
                 self.reconciliation.state(),
                 self.reconciliation.watch_warning(),
                 self.mutation_pending(),
-                Message::ZoneAction,
+                |action| Message::Zone(zones::Message::View(action)),
             ),
         };
 
@@ -633,7 +608,7 @@ impl cosmic::Application for AppModel {
                 return self.handle_nav_menu_action(action);
             }
 
-            Message::ZoneAction(action) => {
+            Message::Zone(zones::Message::View(action)) => {
                 return self.handle_zone_action(action);
             }
 
@@ -663,7 +638,7 @@ impl cosmic::Application for AppModel {
             Message::Reconciliation(message) => {
                 return self.handle_reconciliation_message(message);
             }
-            Message::FirewalldStatusLoaded(result) => {
+            Message::Zone(zones::Message::FirewalldStatusLoaded(result)) => {
                 self.firewalld_status = match result {
                     Ok(status) => status,
                     Err(error) => FirewalldStatus::Error(error.to_string()),
@@ -695,6 +670,12 @@ impl cosmic::Application for AppModel {
                 }
                 return Task::batch(tasks);
             }
+            Message::Zone(zones::Message::DaemonControlFinished(result)) => {
+                return Task::batch(vec![
+                    self.finish_mutation(&result),
+                    self.start_firewalld_status_load(),
+                ]);
+            }
             Message::RuntimeConfigurationPersisted(result) => {
                 let mut tasks = vec![self.finish_mutation(&result)];
                 if result.is_ok() {
@@ -722,7 +703,7 @@ impl cosmic::Application for AppModel {
                     }
                 }
             }
-            Message::ZonesLoaded(result) => {
+            Message::Zone(zones::Message::ListLoaded(result)) => {
                 let mut tasks = Vec::new();
                 match result {
                     Ok(zones) => {
@@ -754,7 +735,7 @@ impl cosmic::Application for AppModel {
                 tasks.push(task);
                 return Task::batch(tasks);
             }
-            Message::ZoneDetailsLoaded { zone_name, result } => {
+            Message::Zone(zones::Message::DetailsLoaded { zone_name, result }) => {
                 let is_active = matches!(
                     self.sidebar.active_item(),
                     Some(SidebarItem::Zone { name, .. }) if name == &zone_name
@@ -782,14 +763,14 @@ impl cosmic::Application for AppModel {
                     }
                 }
             }
-            Message::DefaultZoneLoaded(result) => match result {
+            Message::Zone(zones::Message::DefaultLoaded(result)) => match result {
                 Ok(zone) => self.sidebar.set_default_zone(Some(zone)),
                 Err(error) => {
                     eprintln!("failed to load default zone: {error}");
                     self.sidebar.set_default_zone(None);
                 }
             },
-            Message::ActiveZonesLoaded(result) => match result {
+            Message::Zone(zones::Message::ActiveLoaded(result)) => match result {
                 Ok(active_zones) => self.sidebar.set_active_zones(active_zones),
                 Err(error) => {
                     eprintln!("failed to load active zones: {error}");
@@ -830,7 +811,7 @@ impl cosmic::Application for AppModel {
                     self.icmp_types.fail(error.to_string());
                 }
             },
-            Message::DefaultZoneSet(result) => match result {
+            Message::Zone(zones::Message::DefaultSet(result)) => match result {
                 Ok(()) => {
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -841,7 +822,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::ZoneCreated { zone_name, result } => match result {
+            Message::Zone(zones::Message::Created { zone_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::Zone);
@@ -856,7 +837,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::ZoneDeleted { zone_name, result } => match result {
+            Message::Zone(zones::Message::Deleted { zone_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     if matches!(
@@ -876,8 +857,8 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::ZoneItemAdded { zone_name, result }
-            | Message::ZoneItemRemoved { zone_name, result } => match result {
+            Message::Zone(zones::Message::ItemAdded { zone_name, result })
+            | Message::Zone(zones::Message::ItemRemoved { zone_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     if self.core.window.show_context
@@ -1881,19 +1862,19 @@ impl AppModel {
     fn start_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.sidebar.set_loading();
         Task::perform(Self::load_zones(), |result| {
-            cosmic::Action::from(Message::ZonesLoaded(result))
+            cosmic::Action::from(Message::Zone(zones::Message::ListLoaded(result)))
         })
     }
 
     fn start_default_zone_load(&mut self) -> Task<cosmic::Action<Message>> {
         Task::perform(Self::load_default_zone(), |result| {
-            cosmic::Action::from(Message::DefaultZoneLoaded(result))
+            cosmic::Action::from(Message::Zone(zones::Message::DefaultLoaded(result)))
         })
     }
 
     fn start_active_zones_load(&mut self) -> Task<cosmic::Action<Message>> {
         Task::perform(Self::load_active_zones(), |result| {
-            cosmic::Action::from(Message::ActiveZonesLoaded(result))
+            cosmic::Action::from(Message::Zone(zones::Message::ActiveLoaded(result)))
         })
     }
 
@@ -1931,17 +1912,17 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_service(zone_name, service), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
     fn start_firewalld_status_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.firewalld_status = FirewalldStatus::Loading;
         Task::perform(Self::load_firewalld_status(), |result| {
-            cosmic::Action::from(Message::FirewalldStatusLoaded(result))
+            cosmic::Action::from(Message::Zone(zones::Message::FirewalldStatusLoaded(result)))
         })
     }
 
@@ -1955,10 +1936,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::set_masquerade(zone_name, enabled), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -1974,10 +1955,10 @@ impl AppModel {
         Task::perform(
             Self::set_icmp_block_inversion(zone_name, enabled),
             move |result| {
-                cosmic::Action::from(Message::ZoneItemAdded {
+                cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                     zone_name: zone_name_for_task.clone(),
                     result,
-                })
+                }))
             },
         )
     }
@@ -1993,10 +1974,7 @@ impl AppModel {
         }
         self.firewalld_status = FirewalldStatus::Loading;
         Task::perform(Self::control_firewalld(start), |result| {
-            cosmic::Action::from(Message::FirewalldControlFinished {
-                apply_permanent: false,
-                result,
-            })
+            cosmic::Action::from(Message::Zone(zones::Message::DaemonControlFinished(result)))
         })
     }
 
@@ -2026,7 +2004,7 @@ impl AppModel {
             return Task::none();
         }
         Task::perform(Self::set_default_zone(zone_name), |result| {
-            cosmic::Action::from(Message::DefaultZoneSet(result))
+            cosmic::Action::from(Message::Zone(zones::Message::DefaultSet(result)))
         })
     }
 
@@ -2041,10 +2019,10 @@ impl AppModel {
         }
         let zone_name_for_task = name.clone();
         Task::perform(Self::add_zone(name, description, target), move |result| {
-            cosmic::Action::from(Message::ZoneCreated {
+            cosmic::Action::from(Message::Zone(zones::Message::Created {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2059,10 +2037,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_port(zone_name, port, protocol), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2080,10 +2058,10 @@ impl AppModel {
         Task::perform(
             Self::add_source_port(zone_name, port, protocol),
             move |result| {
-                cosmic::Action::from(Message::ZoneItemAdded {
+                cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                     zone_name: zone_name_for_task.clone(),
                     result,
-                })
+                }))
             },
         )
     }
@@ -2103,10 +2081,10 @@ impl AppModel {
         Task::perform(
             Self::add_forward_port(zone_name, port, protocol, to_port, to_addr),
             move |result| {
-                cosmic::Action::from(Message::ZoneItemAdded {
+                cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                     zone_name: zone_name_for_task.clone(),
                     result,
-                })
+                }))
             },
         )
     }
@@ -2121,10 +2099,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_interface(zone_name, interface), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2138,10 +2116,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_source(zone_name, source), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2151,10 +2129,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_icmp_block(zone_name, icmp), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2168,10 +2146,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::add_rich_rule(zone_name, rule), move |result| {
-            cosmic::Action::from(Message::ZoneItemAdded {
+            cosmic::Action::from(Message::Zone(zones::Message::ItemAdded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2181,10 +2159,10 @@ impl AppModel {
         }
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::remove_zone(zone_name), move |result| {
-            cosmic::Action::from(Message::ZoneDeleted {
+            cosmic::Action::from(Message::Zone(zones::Message::Deleted {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2211,36 +2189,36 @@ impl AppModel {
             | ZoneViewAction::AddRichRule => Task::none(),
             ZoneViewAction::RemoveService(service) => {
                 Task::perform(Self::remove_service(zone_name, service), move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 })
             }
             ZoneViewAction::RemoveInterface(interface) => Task::perform(
                 Self::remove_interface(zone_name, interface),
                 move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 },
             ),
             ZoneViewAction::RemoveSource(source) => {
                 Task::perform(Self::remove_source(zone_name, source), move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 })
             }
             ZoneViewAction::RemovePort { port, protocol } => Task::perform(
                 Self::remove_port(zone_name, port, protocol),
                 move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 },
             ),
             ZoneViewAction::RemoveForwardPort {
@@ -2251,35 +2229,35 @@ impl AppModel {
             } => Task::perform(
                 Self::remove_forward_port(zone_name, port, protocol, to_port, to_addr),
                 move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 },
             ),
             ZoneViewAction::RemoveSourcePort { port, protocol } => Task::perform(
                 Self::remove_source_port(zone_name, port, protocol),
                 move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 },
             ),
             ZoneViewAction::RemoveIcmpBlock(icmp) => {
                 Task::perform(Self::remove_icmp_block(zone_name, icmp), move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 })
             }
             ZoneViewAction::RemoveRichRule(rule) => {
                 Task::perform(Self::remove_rich_rule(zone_name, rule), move |result| {
-                    cosmic::Action::from(Message::ZoneItemRemoved {
+                    cosmic::Action::from(Message::Zone(zones::Message::ItemRemoved {
                         zone_name: zone_name_for_task.clone(),
                         result,
-                    })
+                    }))
                 })
             }
         }
@@ -2294,10 +2272,10 @@ impl AppModel {
 
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::load_zone_details(zone_name), move |result| {
-            cosmic::Action::from(Message::ZoneDetailsLoaded {
+            cosmic::Action::from(Message::Zone(zones::Message::DetailsLoaded {
                 zone_name: zone_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2673,3 +2651,4 @@ mod catalogs;
 mod ipsets;
 mod navigation;
 mod reconciliation;
+mod zones;
