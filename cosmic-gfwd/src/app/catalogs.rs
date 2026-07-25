@@ -1,6 +1,19 @@
 //! Loading state shared by the application's typed option catalogs.
 
 /// Items, progress, and failure state for one asynchronously loaded catalog.
+use crate::{core::BrokerError, models::IcmpTypeInfo};
+
+/// Completion messages for asynchronously loaded dialog catalogs.
+#[derive(Clone, Debug)]
+pub(crate) enum Message {
+    /// Network interface discovery completed.
+    InterfacesLoaded(Result<Vec<String>, BrokerError>),
+    /// Permanent service discovery completed.
+    ServicesLoaded(Result<Vec<String>, BrokerError>),
+    /// ICMP-type discovery completed.
+    IcmpTypesLoaded(Result<Vec<IcmpTypeInfo>, BrokerError>),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CatalogState<T> {
     items: Vec<T>,

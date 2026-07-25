@@ -77,6 +77,7 @@ pub struct AppModel {
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigation(navigation::Message),
+    Catalog(catalogs::Message),
     Dialog(DialogMessage),
     ZoneAction(ZoneViewAction),
     IpSetAction(IpSetViewAction),
@@ -88,9 +89,7 @@ pub enum Message {
     Reconciliation(reconciliation::Message),
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
-    InterfacesLoaded(Result<Vec<String>, BrokerError>),
-    ServicesLoaded(Result<Vec<String>, BrokerError>),
-    IcmpTypesLoaded(Result<Vec<IcmpTypeInfo>, BrokerError>),
+
     DefaultZoneSet(Result<(), BrokerError>),
     ZoneCreated {
         zone_name: String,
@@ -818,7 +817,7 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
-            Message::InterfacesLoaded(result) => match result {
+            Message::Catalog(catalogs::Message::InterfacesLoaded(result)) => match result {
                 Ok(interfaces) => {
                     self.interfaces.finish(interfaces);
                     if !self.interfaces.items().is_empty()
@@ -836,7 +835,7 @@ impl cosmic::Application for AppModel {
                     self.interfaces.fail(error.to_string());
                 }
             },
-            Message::ServicesLoaded(result) => match result {
+            Message::Catalog(catalogs::Message::ServicesLoaded(result)) => match result {
                 Ok(services) => {
                     self.services.finish(services);
                 }
@@ -844,7 +843,7 @@ impl cosmic::Application for AppModel {
                     self.services.fail(error.to_string());
                 }
             },
-            Message::IcmpTypesLoaded(result) => match result {
+            Message::Catalog(catalogs::Message::IcmpTypesLoaded(result)) => match result {
                 Ok(types) => {
                     self.icmp_types.finish(types);
                 }
@@ -1923,21 +1922,23 @@ impl AppModel {
         self.interfaces.finish(Vec::new());
         self.interfaces.begin_load();
         Task::perform(Self::load_interfaces(), |result| {
-            cosmic::Action::from(Message::InterfacesLoaded(result))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::InterfacesLoaded(
+                result,
+            )))
         })
     }
 
     fn start_services_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.services.begin_load();
         Task::perform(Self::load_services(), |result| {
-            cosmic::Action::from(Message::ServicesLoaded(result))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::ServicesLoaded(result)))
         })
     }
 
     fn start_icmp_types_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.icmp_types.begin_load();
         Task::perform(Self::load_icmp_types(), |result| {
-            cosmic::Action::from(Message::IcmpTypesLoaded(result))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::IcmpTypesLoaded(result)))
         })
     }
 
