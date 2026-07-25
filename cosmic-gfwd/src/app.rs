@@ -78,9 +78,9 @@ pub struct AppModel {
 pub enum Message {
     Navigation(navigation::Message),
     Catalog(catalogs::Message),
+    IpSet(ipsets::Message),
     Dialog(DialogMessage),
     ZoneAction(ZoneViewAction),
-    IpSetAction(IpSetViewAction),
     ZonesLoaded(Result<Vec<String>, BrokerError>),
     ZoneDetailsLoaded {
         zone_name: String,
@@ -105,27 +105,6 @@ pub enum Message {
     },
     ZoneItemRemoved {
         zone_name: String,
-        result: Result<(), BrokerError>,
-    },
-    IpSetsLoaded(Result<Vec<String>, BrokerError>),
-    IpSetEntryRemoved {
-        ipset_name: String,
-        result: Result<(), BrokerError>,
-    },
-    IpSetDetailsLoaded {
-        ipset_name: String,
-        result: Result<IpSetDetails, BrokerError>,
-    },
-    IpSetEntryAdded {
-        ipset_name: String,
-        result: Result<(), BrokerError>,
-    },
-    IpSetCreated {
-        ipset_name: String,
-        result: Result<(), BrokerError>,
-    },
-    IpSetDeleted {
-        ipset_name: String,
         result: Result<(), BrokerError>,
     },
     FirewalldStatusLoaded(Result<FirewalldStatus, BrokerError>),
@@ -548,11 +527,11 @@ impl cosmic::Application for AppModel {
     fn view(&self) -> Element<'_, Self::Message> {
         let space_m = cosmic::theme::spacing().space_m;
         let content: Element<_> = match self.sidebar.active_item() {
-            Some(SidebarItem::IpSets) => view_ipset_content(
-                &self.ipset_view,
-                self.mutation_pending(),
-                Message::IpSetAction,
-            ),
+            Some(SidebarItem::IpSets) => {
+                view_ipset_content(&self.ipset_view, self.mutation_pending(), |action| {
+                    Message::IpSet(ipsets::Message::View(action))
+                })
+            }
             _ => view_zone_content(
                 &self.zone_view,
                 &self.firewalld_status,
@@ -658,7 +637,7 @@ impl cosmic::Application for AppModel {
                 return self.handle_zone_action(action);
             }
 
-            Message::IpSetAction(action) => {
+            Message::IpSet(ipsets::Message::View(action)) => {
                 return self.handle_ipset_action(action);
             }
             Message::DismissToast(id) => {
@@ -924,7 +903,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::IpSetsLoaded(result) => {
+            Message::IpSet(ipsets::Message::ListLoaded(result)) => {
                 self.ipset_view.list_loading = false;
                 match result {
                     Ok(ipsets) => {
@@ -948,7 +927,7 @@ impl cosmic::Application for AppModel {
                     }
                 }
             }
-            Message::IpSetDetailsLoaded { ipset_name, result } => {
+            Message::IpSet(ipsets::Message::DetailsLoaded { ipset_name, result }) => {
                 let is_active = self.ipset_view.selected.as_deref() == Some(ipset_name.as_str());
                 if !is_active {
                     return Task::none();
@@ -966,7 +945,7 @@ impl cosmic::Application for AppModel {
                     }
                 }
             }
-            Message::IpSetEntryAdded { ipset_name, result } => match result {
+            Message::IpSet(ipsets::Message::EntryAdded { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     self.ipset_view.entry_input.clear();
@@ -981,7 +960,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::IpSetEntryRemoved { ipset_name, result } => match result {
+            Message::IpSet(ipsets::Message::EntryRemoved { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     self.ipset_view.entry_error = None;
@@ -995,7 +974,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::IpSetCreated { ipset_name, result } => match result {
+            Message::IpSet(ipsets::Message::Created { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     self.dialogs.reset(DialogKind::IpSet);
@@ -1014,7 +993,7 @@ impl cosmic::Application for AppModel {
                     return self.finish_mutation(&Err(error));
                 }
             },
-            Message::IpSetDeleted { ipset_name, result } => match result {
+            Message::IpSet(ipsets::Message::Deleted { ipset_name, result }) => match result {
                 Ok(()) => {
                     self.runtime_reload_needed = true;
                     if self.ipset_view.selected.as_deref() == Some(ipset_name.as_str()) {
@@ -2339,7 +2318,7 @@ impl AppModel {
     fn start_ipsets_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.ipset_view.list_loading = true;
         Task::perform(Self::load_ipsets(), |result| {
-            cosmic::Action::from(Message::IpSetsLoaded(result))
+            cosmic::Action::from(Message::IpSet(ipsets::Message::ListLoaded(result)))
         })
     }
 
@@ -2347,10 +2326,10 @@ impl AppModel {
         self.ipset_view.details_loading = true;
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::load_ipset_details(ipset_name), move |result| {
-            cosmic::Action::from(Message::IpSetDetailsLoaded {
+            cosmic::Action::from(Message::IpSet(ipsets::Message::DetailsLoaded {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2364,10 +2343,10 @@ impl AppModel {
         }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::add_ipset_entry(ipset_name, entry), move |result| {
-            cosmic::Action::from(Message::IpSetEntryAdded {
+            cosmic::Action::from(Message::IpSet(ipsets::Message::EntryAdded {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2381,10 +2360,10 @@ impl AppModel {
         }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::remove_ipset_entry(ipset_name, entry), move |result| {
-            cosmic::Action::from(Message::IpSetEntryRemoved {
+            cosmic::Action::from(Message::IpSet(ipsets::Message::EntryRemoved {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2394,10 +2373,10 @@ impl AppModel {
         }
         let ipset_name_for_task = ipset_name.clone();
         Task::perform(Self::remove_ipset(ipset_name), move |result| {
-            cosmic::Action::from(Message::IpSetDeleted {
+            cosmic::Action::from(Message::IpSet(ipsets::Message::Deleted {
                 ipset_name: ipset_name_for_task.clone(),
                 result,
-            })
+            }))
         })
     }
 
@@ -2414,10 +2393,10 @@ impl AppModel {
         Task::perform(
             Self::create_ipset(ipset_name, ipset_type, entries),
             move |result| {
-                cosmic::Action::from(Message::IpSetCreated {
+                cosmic::Action::from(Message::IpSet(ipsets::Message::Created {
                     ipset_name: ipset_name_for_task.clone(),
                     result,
-                })
+                }))
             },
         )
     }
@@ -2691,5 +2670,6 @@ impl menu::action::MenuAction for MenuAction {
     }
 }
 mod catalogs;
+mod ipsets;
 mod navigation;
 mod reconciliation;
