@@ -47,23 +47,17 @@ pub struct AppModel {
     /// Stores form state for context drawer dialogs.
     dialogs: DialogState,
     /// Available network interfaces for the interface dialog.
-    interface_options: Vec<String>,
+    interfaces: catalogs::CatalogState<String>,
     /// Whether interface discovery is in progress.
-    interface_loading: bool,
     /// Error message when interface discovery fails.
-    interface_error: Option<String>,
     /// Permanent firewalld service catalog.
-    service_options: Vec<String>,
+    services: catalogs::CatalogState<String>,
     /// Whether the service catalog is being loaded.
-    service_loading: bool,
     /// Error returned while loading the service catalog.
-    service_error: Option<String>,
     /// Configured ICMP types available to block.
-    icmp_options: Vec<IcmpTypeInfo>,
+    icmp_types: catalogs::CatalogState<IcmpTypeInfo>,
     /// Whether the ICMP catalog is being loaded.
-    icmp_loading: bool,
     /// Error returned while loading the ICMP catalog.
-    icmp_error: Option<String>,
     /// User-visible notifications for completed operations.
     toasts: Toasts<Message>,
     /// Name of the mutation currently in flight.
@@ -207,15 +201,9 @@ impl cosmic::Application for AppModel {
             reconciliation: reconciliation::ReconciliationController::default(),
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
-            interface_options: Vec::new(),
-            interface_loading: false,
-            interface_error: None,
-            service_options: Vec::new(),
-            service_loading: false,
-            service_error: None,
-            icmp_options: Vec::new(),
-            icmp_loading: false,
-            icmp_error: None,
+            interfaces: catalogs::CatalogState::default(),
+            services: catalogs::CatalogState::default(),
+            icmp_types: catalogs::CatalogState::default(),
             toasts: Toasts::new(Message::DismissToast),
             pending_operation: None,
             confirmation: None,
@@ -368,7 +356,7 @@ impl cosmic::Application for AppModel {
             .interface
             .error
             .as_deref()
-            .or(self.interface_error.as_deref());
+            .or(self.interfaces.error());
         let can_submit_interface = self.dialogs.interface.error.is_none()
             && !self.dialogs.interface.interface.trim().is_empty();
         let can_submit = !self.mutation_pending();
@@ -416,10 +404,10 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     service_drawer(
                         &self.dialogs.service,
-                        &self.service_options,
+                        self.services.items(),
                         enabled_services,
-                        self.service_loading,
-                        self.service_error.as_deref(),
+                        self.services.is_loading(),
+                        self.services.error(),
                     ),
                     error,
                 ),
@@ -442,8 +430,8 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     interface_drawer(
                         &self.dialogs.interface,
-                        &self.interface_options,
-                        self.interface_loading,
+                        self.interfaces.items(),
+                        self.interfaces.is_loading(),
                         interface_error,
                     ),
                     error,
@@ -470,10 +458,10 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     icmp_drawer(
                         &self.dialogs.icmp,
-                        &self.icmp_options,
+                        self.icmp_types.items(),
                         blocked_icmp,
-                        self.icmp_loading,
-                        self.icmp_error.as_deref(),
+                        self.icmp_types.is_loading(),
+                        self.icmp_types.error(),
                     ),
                     error,
                 ),
@@ -840,54 +828,40 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
-            Message::InterfacesLoaded(result) => {
-                self.interface_loading = false;
-                match result {
-                    Ok(interfaces) => {
-                        self.interface_options = interfaces;
-                        self.interface_error = None;
-                        if !self.interface_options.is_empty()
-                            && !self
-                                .interface_options
-                                .iter()
-                                .any(|iface| iface == &self.dialogs.interface.interface)
-                        {
-                            self.dialogs.interface.interface.clear();
-                            self.dialogs.interface.error = None;
-                        }
-                    }
-                    Err(error) => {
-                        self.interface_options.clear();
-                        self.interface_error = Some(error.to_string());
+            Message::InterfacesLoaded(result) => match result {
+                Ok(interfaces) => {
+                    self.interfaces.finish(interfaces);
+                    if !self.interfaces.items().is_empty()
+                        && !self
+                            .interfaces
+                            .items()
+                            .iter()
+                            .any(|iface| iface == &self.dialogs.interface.interface)
+                    {
+                        self.dialogs.interface.interface.clear();
+                        self.dialogs.interface.error = None;
                     }
                 }
-            }
-            Message::ServicesLoaded(result) => {
-                self.service_loading = false;
-                match result {
-                    Ok(services) => {
-                        self.service_options = services;
-                        self.service_error = None;
-                    }
-                    Err(error) => {
-                        self.service_options.clear();
-                        self.service_error = Some(error.to_string());
-                    }
+                Err(error) => {
+                    self.interfaces.fail(error.to_string());
                 }
-            }
-            Message::IcmpTypesLoaded(result) => {
-                self.icmp_loading = false;
-                match result {
-                    Ok(types) => {
-                        self.icmp_options = types;
-                        self.icmp_error = None;
-                    }
-                    Err(error) => {
-                        self.icmp_options.clear();
-                        self.icmp_error = Some(error.to_string());
-                    }
+            },
+            Message::ServicesLoaded(result) => match result {
+                Ok(services) => {
+                    self.services.finish(services);
                 }
-            }
+                Err(error) => {
+                    self.services.fail(error.to_string());
+                }
+            },
+            Message::IcmpTypesLoaded(result) => match result {
+                Ok(types) => {
+                    self.icmp_types.finish(types);
+                }
+                Err(error) => {
+                    self.icmp_types.fail(error.to_string());
+                }
+            },
             Message::DefaultZoneSet(result) => match result {
                 Ok(()) => {
                     return Task::batch(vec![
@@ -1449,7 +1423,7 @@ impl AppModel {
                 if index == 0 {
                     self.dialogs.interface.interface.clear();
                     self.dialogs.interface.error = None;
-                } else if let Some(interface) = self.interface_options.get(index - 1) {
+                } else if let Some(interface) = self.interfaces.items().get(index - 1) {
                     self.dialogs.interface.interface = interface.clone();
                     self.validate_interface_value();
                 }
@@ -1942,25 +1916,22 @@ impl AppModel {
     }
 
     fn start_interfaces_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.interface_loading = true;
-        self.interface_error = None;
-        self.interface_options.clear();
+        self.interfaces.finish(Vec::new());
+        self.interfaces.begin_load();
         Task::perform(Self::load_interfaces(), |result| {
             cosmic::Action::from(Message::InterfacesLoaded(result))
         })
     }
 
     fn start_services_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.service_loading = true;
-        self.service_error = None;
+        self.services.begin_load();
         Task::perform(Self::load_services(), |result| {
             cosmic::Action::from(Message::ServicesLoaded(result))
         })
     }
 
     fn start_icmp_types_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.icmp_loading = true;
-        self.icmp_error = None;
+        self.icmp_types.begin_load();
         Task::perform(Self::load_icmp_types(), |result| {
             cosmic::Action::from(Message::IcmpTypesLoaded(result))
         })
@@ -2561,4 +2532,5 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
+mod catalogs;
 mod reconciliation;
