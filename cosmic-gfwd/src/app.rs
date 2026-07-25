@@ -2,9 +2,8 @@
 
 use crate::config::Config;
 use crate::core::{
-    BrokerError, ConfigurationEvent, ConfigurationRefreshCoordinator, FirewalldStatus, FwdBroker,
-    RefreshRequest, ZoneReconciliationData, ZoneReconciliationState, validate_interface_name,
-    validate_ipset_entry,
+    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, RefreshRequest,
+    ZoneReconciliationData, validate_interface_name, validate_ipset_entry,
 };
 use crate::fl;
 use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
@@ -41,10 +40,8 @@ pub struct AppModel {
     sidebar: Sidebar,
     /// State for the current zone detail view.
     zone_view: ZoneViewState,
-    /// Runtime/permanent comparison loaded independently from permanent details.
-    zone_reconciliation: ZoneReconciliationState,
-    /// Pure selected-zone request, coalescing, and watcher state.
-    configuration_coordinator: ConfigurationRefreshCoordinator,
+    /// Selected-zone reconciliation lifecycle and refresh coordination.
+    reconciliation: reconciliation::ReconciliationController,
     /// State for the IP set view.
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
@@ -98,12 +95,7 @@ pub enum Message {
         zone_name: String,
         result: Result<ZoneDetails, BrokerError>,
     },
-    ZoneReconciliationLoaded {
-        zone_name: String,
-        generation: u64,
-        result: Box<Result<ZoneReconciliationData, BrokerError>>,
-    },
-    ConfigurationEvent(Result<ConfigurationEvent, BrokerError>),
+    Reconciliation(reconciliation::Message),
     DefaultZoneLoaded(Result<String, BrokerError>),
     ActiveZonesLoaded(Result<HashSet<String>, BrokerError>),
     InterfacesLoaded(Result<Vec<String>, BrokerError>),
@@ -212,8 +204,7 @@ impl cosmic::Application for AppModel {
             about,
             sidebar,
             zone_view: ZoneViewState::Empty,
-            zone_reconciliation: ZoneReconciliationState::default(),
-            configuration_coordinator: ConfigurationRefreshCoordinator::default(),
+            reconciliation: reconciliation::ReconciliationController::default(),
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             interface_options: Vec::new(),
@@ -399,10 +390,10 @@ impl cosmic::Application for AppModel {
             ),
             ContextPage::ReviewReconciliation => context_drawer::context_drawer(
                 reconciliation_drawer(
-                    &self.zone_reconciliation,
+                    self.reconciliation.state(),
                     self.mutation_pending(),
                     self.dialogs.operation_error.as_deref(),
-                    self.configuration_coordinator.watch_warning(),
+                    self.reconciliation.watch_warning(),
                     Message::ZoneAction,
                 ),
                 Message::ToggleContextPage(ContextPage::ReviewReconciliation),
@@ -587,8 +578,8 @@ impl cosmic::Application for AppModel {
             _ => view_zone_content(
                 &self.zone_view,
                 &self.firewalld_status,
-                &self.zone_reconciliation,
-                self.configuration_coordinator.watch_warning(),
+                self.reconciliation.state(),
+                self.reconciliation.watch_warning(),
                 self.mutation_pending(),
                 Message::ZoneAction,
             ),
@@ -626,10 +617,13 @@ impl cosmic::Application for AppModel {
                 }),
         ];
         let selected_zone = self.current_zone_name();
-        subscriptions.push(Subscription::run_with_id(
-            ("firewalld-configuration-events", selected_zone.clone()),
-            configuration_event_messages(selected_zone),
-        ));
+        subscriptions.push(
+            Subscription::run_with_id(
+                ("firewalld-configuration-events", selected_zone.clone()),
+                configuration_event_messages(selected_zone),
+            )
+            .map(Message::Reconciliation),
+        );
 
         Subscription::batch(subscriptions)
     }
@@ -712,31 +706,23 @@ impl cosmic::Application for AppModel {
                     }
                 };
             }
-            Message::ConfigurationEvent(result) => match result {
-                Ok(event) => {
-                    self.configuration_coordinator.watcher_recovered();
-                    return self.schedule_configuration_refresh(event);
-                }
-                Err(error) => {
-                    self.configuration_coordinator
-                        .watcher_failed(error.to_string());
-                }
-            },
+            Message::Reconciliation(message) => {
+                return self.handle_reconciliation_message(message);
+            }
             Message::FirewalldStatusLoaded(result) => {
                 self.firewalld_status = match result {
                     Ok(status) => status,
                     Err(error) => FirewalldStatus::Error(error.to_string()),
                 };
                 if self.firewalld_status == FirewalldStatus::Active
-                    && !self.configuration_coordinator.is_refreshing()
+                    && !self.reconciliation.is_refreshing()
                 {
                     if let ZoneViewState::Ready(details) = &self.zone_view {
                         return self.start_zone_reconciliation(details.name.clone());
                     }
                 } else {
-                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-                        zone: self.current_zone_name(),
-                    };
+                    self.reconciliation
+                        .set_unavailable(self.current_zone_name());
                 }
             }
             Message::FirewalldControlFinished {
@@ -802,8 +788,7 @@ impl cosmic::Application for AppModel {
                     _ => {
                         if !matches!(self.zone_view, ZoneViewState::Error { .. }) {
                             self.zone_view = ZoneViewState::Empty;
-                            self.zone_reconciliation =
-                                ZoneReconciliationState::Unavailable { zone: None };
+                            self.reconciliation.set_unavailable(None);
                         }
                         self.finish_configuration_refresh()
                     }
@@ -828,9 +813,7 @@ impl cosmic::Application for AppModel {
                         if self.firewalld_status == FirewalldStatus::Active {
                             return self.start_zone_reconciliation(zone_name);
                         }
-                        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-                            zone: Some(zone_name),
-                        };
+                        self.reconciliation.set_unavailable(Some(zone_name));
                         return self.finish_configuration_refresh();
                     }
                     Err(error) => {
@@ -838,39 +821,10 @@ impl cosmic::Application for AppModel {
                             zone: zone_name.clone(),
                             message: error.to_string(),
                         };
-                        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-                            zone: Some(zone_name),
-                        };
+                        self.reconciliation.set_unavailable(Some(zone_name));
                         return self.finish_configuration_refresh();
                     }
                 }
-            }
-            Message::ZoneReconciliationLoaded {
-                zone_name,
-                generation,
-                result,
-            } => {
-                let is_current = self.configuration_coordinator.accepts(generation)
-                    && matches!(
-                        self.sidebar.active_item(),
-                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    )
-                    && matches!(
-                        &self.zone_view,
-                        ZoneViewState::Ready(details) if details.name == zone_name
-                    );
-                if !is_current {
-                    return Task::none();
-                }
-
-                self.zone_reconciliation = match *result {
-                    Ok(data) => ZoneReconciliationState::from_data(zone_name, data),
-                    Err(error) => ZoneReconciliationState::Error {
-                        zone: zone_name,
-                        message: error.to_string(),
-                    },
-                };
-                return self.finish_configuration_refresh();
             }
             Message::DefaultZoneLoaded(result) => match result {
                 Ok(zone) => self.sidebar.set_default_zone(Some(zone)),
@@ -968,8 +922,7 @@ impl cosmic::Application for AppModel {
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
                     ) {
                         self.zone_view = ZoneViewState::Empty;
-                        self.zone_reconciliation =
-                            ZoneReconciliationState::Unavailable { zone: None };
+                        self.reconciliation.set_unavailable(None);
                     }
                     return Task::batch(vec![
                         self.finish_mutation(&result),
@@ -1164,10 +1117,7 @@ impl AppModel {
             }
         };
         let toast = self.toasts.push(toast).map(cosmic::Action::App);
-        if self.configuration_coordinator.has_pending()
-            && !self.configuration_coordinator.is_refreshing()
-            && self.configuration_coordinator.finish_refresh()
-        {
+        if self.reconciliation.take_deferred_refresh() {
             return Task::batch(vec![
                 toast,
                 self.start_configuration_refresh(ConfigurationEvent::Reloaded),
@@ -1180,14 +1130,43 @@ impl AppModel {
         &mut self,
         event: ConfigurationEvent,
     ) -> Task<cosmic::Action<Message>> {
-        let blocked = self.mutation_pending()
-            || matches!(
-                self.zone_reconciliation,
-                ZoneReconciliationState::Loading { .. }
-            );
-        match self.configuration_coordinator.request_refresh(blocked) {
+        let blocked = self.mutation_pending() || self.reconciliation.is_loading();
+        match self.reconciliation.handle_configuration_event(blocked) {
             RefreshRequest::Start => self.start_configuration_refresh(event),
             RefreshRequest::Coalesced => Task::none(),
+        }
+    }
+
+    /// Apply a semantic reconciliation message and execute any root application effect.
+    fn handle_reconciliation_message(
+        &mut self,
+        message: reconciliation::Message,
+    ) -> Task<cosmic::Action<Message>> {
+        match message {
+            reconciliation::Message::ConfigurationEvent(result) => match result {
+                Ok(event) => self.schedule_configuration_refresh(event),
+                Err(error) => {
+                    self.reconciliation.watcher_failed(error);
+                    Task::none()
+                }
+            },
+            reconciliation::Message::LoadCompleted {
+                zone,
+                generation,
+                result,
+            } => {
+                let is_current = matches!(
+                    self.sidebar.active_item(),
+                    Some(SidebarItem::Zone { name, .. }) if name == &zone
+                ) && matches!(
+                    &self.zone_view,
+                    ZoneViewState::Ready(details) if details.name == zone
+                );
+                if !is_current || !self.reconciliation.complete_load(zone, generation, *result) {
+                    return Task::none();
+                }
+                self.finish_configuration_refresh()
+            }
         }
     }
 
@@ -1227,7 +1206,7 @@ impl AppModel {
     }
 
     fn finish_configuration_refresh(&mut self) -> Task<cosmic::Action<Message>> {
-        if self.configuration_coordinator.finish_refresh() {
+        if self.reconciliation.refresh_finished() {
             self.start_configuration_refresh(ConfigurationEvent::Reloaded)
         } else {
             Task::none()
@@ -1400,9 +1379,7 @@ impl AppModel {
                     return Task::none();
                 };
                 if self.firewalld_status != FirewalldStatus::Active {
-                    self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-                        zone: Some(zone_name),
-                    };
+                    self.reconciliation.set_unavailable(Some(zone_name));
                     return Task::none();
                 }
                 self.start_zone_reconciliation(zone_name)
@@ -2332,12 +2309,10 @@ impl AppModel {
     }
 
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
-        self.configuration_coordinator.selection_changed();
+        self.reconciliation
+            .selection_changed(Some(zone_name.clone()));
         self.zone_view = ZoneViewState::Loading {
             zone: zone_name.clone(),
-        };
-        self.zone_reconciliation = ZoneReconciliationState::Unavailable {
-            zone: Some(zone_name.clone()),
         };
 
         let zone_name_for_task = zone_name.clone();
@@ -2350,17 +2325,16 @@ impl AppModel {
     }
 
     fn start_zone_reconciliation(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
-        let generation = self.configuration_coordinator.generation();
-        self.zone_reconciliation = ZoneReconciliationState::Loading {
-            zone: zone_name.clone(),
-        };
+        let generation = self.reconciliation.begin_load(zone_name.clone());
         let zone_name_for_task = zone_name.clone();
         Task::perform(Self::load_zone_reconciliation(zone_name), move |result| {
-            cosmic::Action::from(Message::ZoneReconciliationLoaded {
-                zone_name: zone_name_for_task.clone(),
-                generation,
-                result: Box::new(result),
-            })
+            cosmic::Action::from(Message::Reconciliation(
+                reconciliation::Message::LoadCompleted {
+                    zone: zone_name_for_task.clone(),
+                    generation,
+                    result: Box::new(result.map_err(|error| error.to_string())),
+                },
+            ))
         })
     }
 
@@ -2505,19 +2479,23 @@ pub enum ContextPage {
     ReviewReconciliation,
 }
 
-fn configuration_event_messages(selected_zone: Option<String>) -> BoxStream<'static, Message> {
+fn configuration_event_messages(
+    selected_zone: Option<String>,
+) -> BoxStream<'static, reconciliation::Message> {
     Box::pin(async_stream::stream! {
         let broker = match FwdBroker::get().await {
             Ok(broker) => broker,
             Err(error) => {
-                yield Message::ConfigurationEvent(Err(error));
+                yield reconciliation::Message::ConfigurationEvent(Err(error.to_string()));
                 return;
             }
         };
         let mut events = broker.configuration_events(selected_zone);
         while let Some(event) = events.next().await {
             let failed = event.is_err();
-            yield Message::ConfigurationEvent(event);
+            yield reconciliation::Message::ConfigurationEvent(
+                event.map_err(|error| error.to_string())
+            );
             if failed {
                 return;
             }
@@ -2583,3 +2561,4 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
+mod reconciliation;
