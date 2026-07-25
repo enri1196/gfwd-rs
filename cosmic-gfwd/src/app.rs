@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::config::Config;
-use crate::core::{
-    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, validate_interface_name,
-};
+use crate::core::{BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker};
 use crate::fl;
 use crate::models::{ZoneDetails, ZoneTarget};
 use cosmic::app::context_drawer;
@@ -13,10 +11,9 @@ use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use dialogs::{
-    DialogKind, DialogMessage, DialogState, PortFormState, PortKind, drawer_cancel_footer,
+    DialogKind, DialogMessage, DialogState, PortKind, drawer_cancel_footer,
     drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
     localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
-    target_from_index,
 };
 use ipsets::view_ipset_content;
 use navigation::SidebarItem;
@@ -1053,20 +1050,6 @@ impl AppModel {
         }
     }
 
-    fn validate_interface_value(&mut self) -> bool {
-        let interface = self.dialogs.interface.interface.trim();
-        match validate_interface_name(interface) {
-            Ok(()) => {
-                self.dialogs.interface.error = None;
-                true
-            }
-            Err(message) => {
-                self.dialogs.interface.error = Some(localized_validation_error(message));
-                false
-            }
-        }
-    }
-
     fn handle_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Message>> {
         self.navigation.activate(id);
 
@@ -1190,237 +1173,80 @@ impl AppModel {
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
-        if self.mutation_pending() && matches!(message, DialogMessage::Submit(_)) {
-            return Task::none();
-        }
-        match message {
-            DialogMessage::ZoneNameChanged(value) => {
-                self.dialogs.zone.name = value;
+        let selected_zone = self.current_zone_name();
+        let (enabled_services, blocked_icmp) = match &self.zones {
+            ZoneViewState::Ready(details) => {
+                (details.services.as_slice(), details.icmp_blocks.as_slice())
             }
-            DialogMessage::ZoneDescriptionChanged(value) => {
-                self.dialogs.zone.description = value;
-            }
-            DialogMessage::ZoneTargetSelected(index) => {
-                self.dialogs.zone.target = target_from_index(index);
-            }
-            DialogMessage::ServiceSearchChanged(value) => {
-                self.dialogs.service.search = value;
-            }
-            DialogMessage::ServiceSelected(service) => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                let already_enabled = matches!(
-                    &self.zones,
-                    ZoneViewState::Ready(details) if details.services.contains(&service)
-                );
-                if already_enabled {
-                    self.dialogs.operation_error = Some(fl!("error-service-already-enabled"));
-                    return Task::none();
+            _ => (&[][..], &[][..]),
+        };
+        let outcome = dialogs::update(
+            &mut self.dialogs,
+            message,
+            dialogs::Context {
+                selected_zone: selected_zone.as_deref(),
+                interfaces: self.catalogs.interfaces.items(),
+                enabled_services,
+                blocked_icmp,
+                mutation_pending: self.operations.mutation_pending(),
+            },
+        );
+        let mut tasks = Vec::new();
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                dialogs::Request::Submit(submission) => {
+                    let task = match submission {
+                        dialogs::Submission::Zone {
+                            name,
+                            description,
+                            target,
+                        } => self.start_zone_create(name, description, target),
+                        dialogs::Submission::Service { zone, service } => {
+                            self.start_service_add(zone, service)
+                        }
+                        dialogs::Submission::Port {
+                            zone,
+                            port,
+                            protocol,
+                        } => self.start_port_add(zone, port, protocol),
+                        dialogs::Submission::SourcePort {
+                            zone,
+                            port,
+                            protocol,
+                        } => self.start_source_port_add(zone, port, protocol),
+                        dialogs::Submission::ForwardPort {
+                            zone,
+                            port,
+                            protocol,
+                            to_port,
+                            to_addr,
+                        } => self.start_forward_port_add(zone, port, protocol, to_port, to_addr),
+                        dialogs::Submission::Interface { zone, interface } => {
+                            self.start_interface_add(zone, interface)
+                        }
+                        dialogs::Submission::Source { zone, source } => {
+                            self.start_source_add(zone, source)
+                        }
+                        dialogs::Submission::Icmp { zone, icmp } => self.start_icmp_add(zone, icmp),
+                        dialogs::Submission::RichRule { zone, rule } => {
+                            self.start_rich_rule_add(zone, rule)
+                        }
+                        dialogs::Submission::IpSet {
+                            name,
+                            ipset_type,
+                            entries,
+                        } => self.start_ipset_create(name, ipset_type, entries),
+                    };
+                    tasks.push(task);
                 }
-                return self.start_service_add(zone_name, service);
-            }
-            DialogMessage::PortNumberChanged(value) => {
-                self.dialogs.port.port = value;
-                self.dialogs.port.port_touched = true;
-            }
-            DialogMessage::PortProtocolSelected(index) => {
-                self.dialogs.port.protocol = dialogs::protocol_from_index(index);
-            }
-            DialogMessage::PortForwardDestIpChanged(value) => {
-                self.dialogs.port.dest_ip = value;
-                self.dialogs.port.dest_ip_touched = true;
-            }
-            DialogMessage::PortForwardDestPortChanged(value) => {
-                self.dialogs.port.dest_port = value;
-                self.dialogs.port.dest_port_touched = true;
-            }
-            DialogMessage::InterfaceSelected(index) => {
-                if index == 0 {
-                    self.dialogs.interface.interface.clear();
-                    self.dialogs.interface.error = None;
-                } else if let Some(interface) = self.catalogs.interfaces.items().get(index - 1) {
-                    self.dialogs.interface.interface = interface.clone();
-                    self.validate_interface_value();
-                }
-            }
-            DialogMessage::InterfaceNameChanged(value) => {
-                self.dialogs.interface.interface = value;
-                self.validate_interface_value();
-            }
-            DialogMessage::SourceAddressChanged(value) => {
-                self.dialogs.source.source = value;
-                self.dialogs.source.touched = true;
-            }
-            DialogMessage::IcmpSearchChanged(value) => {
-                self.dialogs.icmp.search = value;
-            }
-            DialogMessage::IcmpSelected(icmp_type) => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                let already_blocked = matches!(
-                    &self.zones,
-                    ZoneViewState::Ready(details) if details.icmp_blocks.contains(&icmp_type)
-                );
-                if already_blocked {
-                    self.dialogs.operation_error = Some(fl!("error-icmp-already-blocked"));
-                    return Task::none();
-                }
-                return self.start_icmp_add(zone_name, icmp_type);
-            }
-            DialogMessage::RichRuleRawModeToggled(value) => {
-                self.dialogs.rich_rule.raw_mode = value;
-            }
-            DialogMessage::RichRuleRawChanged(value) => {
-                self.dialogs.rich_rule.raw_rule = value;
-            }
-            DialogMessage::RichRuleFamilySelected(value) => {
-                self.dialogs.rich_rule.family = value;
-            }
-            DialogMessage::RichRuleSourceChanged(value) => {
-                self.dialogs.rich_rule.source = value;
-            }
-            DialogMessage::RichRuleSourceInvertToggled(value) => {
-                self.dialogs.rich_rule.source_invert = value;
-            }
-            DialogMessage::RichRuleDestinationChanged(value) => {
-                self.dialogs.rich_rule.destination = value;
-            }
-            DialogMessage::RichRuleDestinationInvertToggled(value) => {
-                self.dialogs.rich_rule.destination_invert = value;
-            }
-            DialogMessage::RichRuleElementSelected(value) => {
-                self.dialogs.rich_rule.element = value;
-                self.dialogs.rich_rule.element_value.clear();
-            }
-            DialogMessage::RichRuleElementValueChanged(value) => {
-                self.dialogs.rich_rule.element_value = value;
-            }
-            DialogMessage::RichRulePortProtocolSelected(value) => {
-                self.dialogs.rich_rule.port_protocol = dialogs::protocol_from_index(value);
-            }
-            DialogMessage::RichRuleActionSelected(value) => {
-                self.dialogs.rich_rule.action = value;
-            }
-            DialogMessage::RichRuleRejectTypeChanged(value) => {
-                self.dialogs.rich_rule.reject_type = value;
-            }
-            DialogMessage::RichRuleMarkChanged(value) => {
-                self.dialogs.rich_rule.mark = value;
-            }
-            DialogMessage::IpSetNameChanged(value) => {
-                self.dialogs.ipset.name = value;
-                self.dialogs.ipset.name_touched = true;
-            }
-            DialogMessage::IpSetTypeSelected(index) => {
-                self.dialogs.ipset.ipset_type = dialogs::ipset_from_index(index);
-            }
-            DialogMessage::IpSetEntriesChanged(value) => {
-                self.dialogs.ipset.entries = value;
-                self.dialogs.ipset.entries_touched = true;
-            }
-            DialogMessage::Submit(DialogKind::Zone) => {
-                let name = self.dialogs.zone.name.trim().to_string();
-                let description = self.dialogs.zone.description.trim().to_string();
-                let target = self.dialogs.zone.target.clone();
-                if name.is_empty() {
-                    self.dialogs.operation_error = Some(fl!("error-required-field"));
-                    return Task::none();
-                }
-                return self.start_zone_create(name, description, target);
-            }
-            DialogMessage::Submit(DialogKind::Service) => {
-                return Task::none();
-            }
-            DialogMessage::Submit(DialogKind::Port) => {
-                self.dialogs.port.port_touched = true;
-                if self.dialogs.port.kind == PortKind::Forward {
-                    self.dialogs.port.dest_ip_touched = true;
-                    self.dialogs.port.dest_port_touched = true;
-                }
-                if !self.dialogs.port.is_valid() {
-                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
-                    return Task::none();
-                }
-                let submission = normalized_port_submission(&self.dialogs.port);
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                return match submission {
-                    PortSubmission::Destination { port, protocol } => {
-                        self.start_port_add(zone_name, port, protocol)
-                    }
-                    PortSubmission::Source { port, protocol } => {
-                        self.start_source_port_add(zone_name, port, protocol)
-                    }
-                    PortSubmission::Forward {
-                        port,
-                        protocol,
-                        to_port,
-                        to_addr,
-                    } => self.start_forward_port_add(zone_name, port, protocol, to_port, to_addr),
-                };
-            }
-            DialogMessage::Submit(DialogKind::Interface) => {
-                if !self.validate_interface_value() {
-                    return Task::none();
-                }
-                let interface = self.dialogs.interface.interface.trim().to_string();
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                return self.start_interface_add(zone_name, interface);
-            }
-            DialogMessage::Submit(DialogKind::Source) => {
-                self.dialogs.source.touched = true;
-                if !self.dialogs.source.is_valid() {
-                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
-                    return Task::none();
-                }
-                let source = self.dialogs.source.source.trim().to_string();
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                return self.start_source_add(zone_name, source);
-            }
-            DialogMessage::Submit(DialogKind::Icmp) => {
-                return Task::none();
-            }
-            DialogMessage::Submit(DialogKind::RichRule) => {
-                let Ok(rule) = self.dialogs.rich_rule.generated_rule() else {
-                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
-                    return Task::none();
-                };
-                let Some(zone_name) = self.current_zone_name() else {
-                    self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    return Task::none();
-                };
-                return self.start_rich_rule_add(zone_name, rule);
-            }
-            DialogMessage::Submit(DialogKind::IpSet) => {
-                self.dialogs.ipset.name_touched = true;
-                self.dialogs.ipset.entries_touched = true;
-                if !self.dialogs.ipset.is_valid() {
-                    self.dialogs.operation_error = Some(fl!("validation-fix-fields"));
-                    return Task::none();
-                }
-                let name = self.dialogs.ipset.name.trim().to_string();
-                let ipset_type = self.dialogs.ipset.ipset_type.trim().to_string();
-                let entries = split_ipset_entries(&self.dialogs.ipset.entries);
-                return self.start_ipset_create(name, ipset_type, entries);
-            }
-            DialogMessage::Cancel(kind) => {
-                self.dialogs.reset(kind);
-                self.close_context_drawer();
+                dialogs::Request::CloseDrawer => self.close_context_drawer(),
             }
         }
-        Task::none()
+        tasks.extend(router.into_effects().into_iter().map(|effect| {
+            dialogs::effects(effect).map(|message| cosmic::Action::from(Message::Dialog(message)))
+        }));
+        Task::batch(tasks)
     }
 
     /// Delegate an IP-set message and process root requests before slice effects.
@@ -2084,132 +1910,12 @@ impl AppModel {
     }
 }
 
-/// Normalized operation produced by the shared permanent port form.
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum PortSubmission {
-    /// Add a destination port.
-    Destination {
-        /// Normalized port or port range.
-        port: String,
-        /// Normalized transport protocol.
-        protocol: String,
-    },
-    /// Add a source port.
-    Source {
-        /// Normalized port or port range.
-        port: String,
-        /// Normalized transport protocol.
-        protocol: String,
-    },
-    /// Add a forwarded port.
-    Forward {
-        /// Normalized source port or port range.
-        port: String,
-        /// Normalized transport protocol.
-        protocol: String,
-        /// Normalized forwarding destination port.
-        to_port: String,
-        /// Normalized optional forwarding destination address.
-        to_addr: String,
-    },
-}
-
-/// Route a validated port form to its normalized permanent mutation.
-fn normalized_port_submission(state: &PortFormState) -> PortSubmission {
-    let port = state.port.trim().to_string();
-    let protocol = state.protocol.trim().to_string();
-    match state.kind {
-        PortKind::Destination => PortSubmission::Destination { port, protocol },
-        PortKind::Source => PortSubmission::Source { port, protocol },
-        PortKind::Forward => PortSubmission::Forward {
-            port,
-            protocol,
-            to_port: state.dest_port.trim().to_string(),
-            to_addr: state.dest_ip.trim().to_string(),
-        },
-    }
-}
-
 /// Return the localized drawer title for the active port operation.
 fn port_drawer_title(kind: PortKind) -> String {
     match kind {
         PortKind::Destination => fl!("drawer-title-destination-port"),
         PortKind::Source => fl!("drawer-title-source-port"),
         PortKind::Forward => fl!("drawer-title-forward-port"),
-    }
-}
-
-fn split_ipset_entries(entries: &str) -> Vec<String> {
-    entries
-        .lines()
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(|entry| entry.to_string())
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_ipset_entries;
-
-    #[test]
-    fn normalized_port_submission_routes_all_port_kinds() {
-        let cases = [
-            (
-                super::PortKind::Destination,
-                super::PortSubmission::Destination {
-                    port: "443".into(),
-                    protocol: "tcp".into(),
-                },
-            ),
-            (
-                super::PortKind::Source,
-                super::PortSubmission::Source {
-                    port: "1000-2000".into(),
-                    protocol: "udp".into(),
-                },
-            ),
-            (
-                super::PortKind::Forward,
-                super::PortSubmission::Forward {
-                    port: "8443".into(),
-                    protocol: "sctp".into(),
-                    to_port: "9443".into(),
-                    to_addr: "192.0.2.10".into(),
-                },
-            ),
-        ];
-
-        for (kind, expected) in cases {
-            let state = super::PortFormState {
-                kind,
-                port: match kind {
-                    super::PortKind::Destination => " 443 ",
-                    super::PortKind::Source => " 1000-2000 ",
-                    super::PortKind::Forward => " 8443 ",
-                }
-                .into(),
-                protocol: match kind {
-                    super::PortKind::Destination => " tcp ",
-                    super::PortKind::Source => " udp ",
-                    super::PortKind::Forward => " sctp ",
-                }
-                .into(),
-                dest_port: " 9443 ".into(),
-                dest_ip: " 192.0.2.10 ".into(),
-                ..super::PortFormState::default()
-            };
-
-            assert_eq!(super::normalized_port_submission(&state), expected);
-        }
-    }
-
-    #[test]
-    fn ipset_entry_lines_preserve_composite_tuple_commas() {
-        assert_eq!(
-            split_ipset_entries("192.0.2.1,443,198.51.100.2\n\n  2001:db8::1,53  \n"),
-            vec!["192.0.2.1,443,198.51.100.2", "2001:db8::1,53",]
-        );
     }
 }
 

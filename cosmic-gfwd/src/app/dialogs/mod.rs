@@ -5,12 +5,15 @@ use cosmic::widget::{self, button, dropdown, settings};
 
 use crate::core::{
     IPSET_TYPES, RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec,
-    ValidationError, validate_forward_address, validate_ipset_entry, validate_ipset_name,
-    validate_ipset_type, validate_port_protocol, validate_port_spec, validate_source,
+    ValidationError, validate_forward_address, validate_interface_name, validate_ipset_entry,
+    validate_ipset_name, validate_ipset_type, validate_port_protocol, validate_port_spec,
+    validate_source,
 };
 use crate::fl;
 use crate::models::IcmpTypeInfo;
 use crate::models::ZoneTarget;
+
+use super::outcome::Outcome;
 
 const PORT_PROTOCOLS: [&str; 4] = ["tcp", "udp", "sctp", "dccp"];
 
@@ -109,6 +112,334 @@ impl DialogState {
             DialogKind::IpSet => self.ipset = IpSetFormState::default(),
         }
     }
+}
+
+/// Authoritative state for every feature form.
+pub(crate) type State = DialogState;
+
+/// Immutable feature data used by dialog reduction.
+pub(crate) struct Context<'a> {
+    pub(crate) selected_zone: Option<&'a str>,
+    pub(crate) interfaces: &'a [String],
+    pub(crate) enabled_services: &'a [String],
+    pub(crate) blocked_icmp: &'a [String],
+    pub(crate) mutation_pending: bool,
+}
+
+/// Dialogs do not own asynchronous work; submissions are routed to domain slices.
+#[derive(Debug)]
+pub(crate) enum Effect {}
+
+/// Validated, localization-independent submission intent.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum Submission {
+    Zone {
+        name: String,
+        description: String,
+        target: ZoneTarget,
+    },
+    Service {
+        zone: String,
+        service: String,
+    },
+    Port {
+        zone: String,
+        port: String,
+        protocol: String,
+    },
+    SourcePort {
+        zone: String,
+        port: String,
+        protocol: String,
+    },
+    ForwardPort {
+        zone: String,
+        port: String,
+        protocol: String,
+        to_port: String,
+        to_addr: String,
+    },
+    Interface {
+        zone: String,
+        interface: String,
+    },
+    Source {
+        zone: String,
+        source: String,
+    },
+    Icmp {
+        zone: String,
+        icmp: String,
+    },
+    RichRule {
+        zone: String,
+        rule: String,
+    },
+    IpSet {
+        name: String,
+        ipset_type: String,
+        entries: Vec<String>,
+    },
+}
+
+/// Root coordination emitted by dialog reduction.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) enum Request {
+    Submit(Submission),
+    CloseDrawer,
+}
+
+/// Reduce form editing, validation, cancellation, and submission.
+pub(crate) fn update(
+    state: &mut State,
+    message: DialogMessage,
+    context: Context<'_>,
+) -> Outcome<Effect, Request> {
+    if context.mutation_pending && matches!(message, DialogMessage::Submit(_)) {
+        return Outcome::default();
+    }
+    match message {
+        DialogMessage::ZoneNameChanged(value) => state.zone.name = value,
+        DialogMessage::ZoneDescriptionChanged(value) => state.zone.description = value,
+        DialogMessage::ZoneTargetSelected(index) => state.zone.target = target_from_index(index),
+        DialogMessage::ServiceSearchChanged(value) => state.service.search = value,
+        DialogMessage::ServiceSelected(service) => {
+            let Some(zone) = selected_zone(state, context.selected_zone) else {
+                return Outcome::default();
+            };
+            if context.enabled_services.contains(&service) {
+                state.operation_error = Some(fl!("error-service-already-enabled"));
+                return Outcome::default();
+            }
+            return submit(Submission::Service { zone, service });
+        }
+        DialogMessage::PortNumberChanged(value) => {
+            state.port.port = value;
+            state.port.port_touched = true;
+        }
+        DialogMessage::PortProtocolSelected(index) => {
+            state.port.protocol = protocol_from_index(index);
+        }
+        DialogMessage::PortForwardDestIpChanged(value) => {
+            state.port.dest_ip = value;
+            state.port.dest_ip_touched = true;
+        }
+        DialogMessage::PortForwardDestPortChanged(value) => {
+            state.port.dest_port = value;
+            state.port.dest_port_touched = true;
+        }
+        DialogMessage::InterfaceSelected(index) => {
+            if index == 0 {
+                state.interface.interface.clear();
+                state.interface.error = None;
+            } else if let Some(interface) = context.interfaces.get(index - 1) {
+                state.interface.interface = interface.clone();
+                validate_interface(state);
+            }
+        }
+        DialogMessage::InterfaceNameChanged(value) => {
+            state.interface.interface = value;
+            validate_interface(state);
+        }
+        DialogMessage::SourceAddressChanged(value) => {
+            state.source.source = value;
+            state.source.touched = true;
+        }
+        DialogMessage::IcmpSearchChanged(value) => state.icmp.search = value,
+        DialogMessage::IcmpSelected(icmp) => {
+            let Some(zone) = selected_zone(state, context.selected_zone) else {
+                return Outcome::default();
+            };
+            if context.blocked_icmp.contains(&icmp) {
+                state.operation_error = Some(fl!("error-icmp-already-blocked"));
+                return Outcome::default();
+            }
+            return submit(Submission::Icmp { zone, icmp });
+        }
+        DialogMessage::RichRuleRawModeToggled(value) => state.rich_rule.raw_mode = value,
+        DialogMessage::RichRuleRawChanged(value) => state.rich_rule.raw_rule = value,
+        DialogMessage::RichRuleFamilySelected(value) => state.rich_rule.family = value,
+        DialogMessage::RichRuleSourceChanged(value) => state.rich_rule.source = value,
+        DialogMessage::RichRuleSourceInvertToggled(value) => state.rich_rule.source_invert = value,
+        DialogMessage::RichRuleDestinationChanged(value) => state.rich_rule.destination = value,
+        DialogMessage::RichRuleDestinationInvertToggled(value) => {
+            state.rich_rule.destination_invert = value;
+        }
+        DialogMessage::RichRuleElementSelected(value) => {
+            state.rich_rule.element = value;
+            state.rich_rule.element_value.clear();
+        }
+        DialogMessage::RichRuleElementValueChanged(value) => {
+            state.rich_rule.element_value = value;
+        }
+        DialogMessage::RichRulePortProtocolSelected(value) => {
+            state.rich_rule.port_protocol = protocol_from_index(value);
+        }
+        DialogMessage::RichRuleActionSelected(value) => state.rich_rule.action = value,
+        DialogMessage::RichRuleRejectTypeChanged(value) => state.rich_rule.reject_type = value,
+        DialogMessage::RichRuleMarkChanged(value) => state.rich_rule.mark = value,
+        DialogMessage::IpSetNameChanged(value) => {
+            state.ipset.name = value;
+            state.ipset.name_touched = true;
+        }
+        DialogMessage::IpSetTypeSelected(index) => {
+            state.ipset.ipset_type = ipset_from_index(index);
+        }
+        DialogMessage::IpSetEntriesChanged(value) => {
+            state.ipset.entries = value;
+            state.ipset.entries_touched = true;
+        }
+        DialogMessage::Submit(kind) => return submit_form(state, kind, context.selected_zone),
+        DialogMessage::Cancel(kind) => {
+            state.reset(kind);
+            return Outcome::request(Request::CloseDrawer);
+        }
+    }
+    Outcome::default()
+}
+
+fn submit_form(
+    state: &mut State,
+    kind: DialogKind,
+    selected: Option<&str>,
+) -> Outcome<Effect, Request> {
+    match kind {
+        DialogKind::Zone => {
+            let name = state.zone.name.trim().to_string();
+            if name.is_empty() {
+                state.operation_error = Some(fl!("error-required-field"));
+                return Outcome::default();
+            }
+            submit(Submission::Zone {
+                name,
+                description: state.zone.description.trim().to_string(),
+                target: state.zone.target.clone(),
+            })
+        }
+        DialogKind::Service | DialogKind::Icmp => Outcome::default(),
+        DialogKind::Port => {
+            state.port.port_touched = true;
+            if state.port.kind == PortKind::Forward {
+                state.port.dest_ip_touched = true;
+                state.port.dest_port_touched = true;
+            }
+            if !state.port.is_valid() {
+                state.operation_error = Some(fl!("validation-fix-fields"));
+                return Outcome::default();
+            }
+            let Some(zone) = selected_zone(state, selected) else {
+                return Outcome::default();
+            };
+            let port = state.port.port.trim().to_string();
+            let protocol = state.port.protocol.trim().to_string();
+            match state.port.kind {
+                PortKind::Destination => submit(Submission::Port {
+                    zone,
+                    port,
+                    protocol,
+                }),
+                PortKind::Source => submit(Submission::SourcePort {
+                    zone,
+                    port,
+                    protocol,
+                }),
+                PortKind::Forward => submit(Submission::ForwardPort {
+                    zone,
+                    port,
+                    protocol,
+                    to_port: state.port.dest_port.trim().to_string(),
+                    to_addr: state.port.dest_ip.trim().to_string(),
+                }),
+            }
+        }
+        DialogKind::Interface => {
+            if !validate_interface(state) {
+                return Outcome::default();
+            }
+            let Some(zone) = selected_zone(state, selected) else {
+                return Outcome::default();
+            };
+            submit(Submission::Interface {
+                zone,
+                interface: state.interface.interface.trim().to_string(),
+            })
+        }
+        DialogKind::Source => {
+            state.source.touched = true;
+            if !state.source.is_valid() {
+                state.operation_error = Some(fl!("validation-fix-fields"));
+                return Outcome::default();
+            }
+            let Some(zone) = selected_zone(state, selected) else {
+                return Outcome::default();
+            };
+            submit(Submission::Source {
+                zone,
+                source: state.source.source.trim().to_string(),
+            })
+        }
+        DialogKind::RichRule => {
+            let Ok(rule) = state.rich_rule.generated_rule() else {
+                state.operation_error = Some(fl!("validation-fix-fields"));
+                return Outcome::default();
+            };
+            let Some(zone) = selected_zone(state, selected) else {
+                return Outcome::default();
+            };
+            submit(Submission::RichRule { zone, rule })
+        }
+        DialogKind::IpSet => {
+            state.ipset.name_touched = true;
+            state.ipset.entries_touched = true;
+            if !state.ipset.is_valid() {
+                state.operation_error = Some(fl!("validation-fix-fields"));
+                return Outcome::default();
+            }
+            submit(Submission::IpSet {
+                name: state.ipset.name.trim().to_string(),
+                ipset_type: state.ipset.ipset_type.trim().to_string(),
+                entries: split_ipset_entries(&state.ipset.entries),
+            })
+        }
+    }
+}
+
+fn selected_zone(state: &mut State, selected: Option<&str>) -> Option<String> {
+    selected.map(str::to_string).or_else(|| {
+        state.operation_error = Some(fl!("error-select-zone-first"));
+        None
+    })
+}
+
+fn validate_interface(state: &mut State) -> bool {
+    match validate_interface_name(state.interface.interface.trim()) {
+        Ok(()) => {
+            state.interface.error = None;
+            true
+        }
+        Err(error) => {
+            state.interface.error = Some(localized_validation_error(error));
+            false
+        }
+    }
+}
+
+fn split_ipset_entries(entries: &str) -> Vec<String> {
+    entries
+        .lines()
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn submit(submission: Submission) -> Outcome<Effect, Request> {
+    Outcome::request(Request::Submit(submission))
+}
+
+/// Exhaustively run a dialog effect. Dialogs currently emit no effects.
+pub(crate) fn effects(effect: Effect) -> cosmic::Task<DialogMessage> {
+    match effect {}
 }
 
 /// Search state for the configured-service picker.
@@ -1145,5 +1476,72 @@ mod tests {
 
         state.raw_mode = true;
         assert_eq!(state.raw_rule, "  <rule><drop/></rule>  ");
+    }
+
+    #[test]
+    fn submissions_route_all_port_kinds_with_normalized_values() {
+        for (kind, expected) in [
+            (
+                PortKind::Destination,
+                Submission::Port {
+                    zone: "public".into(),
+                    port: "443".into(),
+                    protocol: "tcp".into(),
+                },
+            ),
+            (
+                PortKind::Source,
+                Submission::SourcePort {
+                    zone: "public".into(),
+                    port: "443".into(),
+                    protocol: "tcp".into(),
+                },
+            ),
+            (
+                PortKind::Forward,
+                Submission::ForwardPort {
+                    zone: "public".into(),
+                    port: "443".into(),
+                    protocol: "tcp".into(),
+                    to_port: "8443".into(),
+                    to_addr: "192.0.2.1".into(),
+                },
+            ),
+        ] {
+            let mut state = DialogState {
+                port: PortFormState {
+                    kind,
+                    port: "443".into(),
+                    protocol: "tcp".into(),
+                    dest_port: "8443".into(),
+                    dest_ip: "192.0.2.1".into(),
+                    ..PortFormState::default()
+                },
+                ..DialogState::default()
+            };
+            let outcome = update(
+                &mut state,
+                DialogMessage::Submit(DialogKind::Port),
+                Context {
+                    selected_zone: Some("public"),
+                    interfaces: &[],
+                    enabled_services: &[],
+                    blocked_icmp: &[],
+                    mutation_pending: false,
+                },
+            );
+            assert!(matches!(
+                outcome.requests.as_slice(),
+                [Request::Submit(actual)] if actual == &expected
+            ));
+        }
+    }
+
+    #[test]
+    fn ipset_submission_preserves_composite_tuple_commas() {
+        assert_eq!(
+            split_ipset_entries("192.0.2.1,443,198.51.100.2\n\n  2001:db8::1,53  \n"),
+            ["192.0.2.1,443,198.51.100.2", "2001:db8::1,53"]
+        );
     }
 }
