@@ -6,7 +6,7 @@ use crate::core::{
     ZoneReconciliationData, validate_interface_name, validate_ipset_entry,
 };
 use crate::fl;
-use crate::models::{IcmpTypeInfo, IpSetDetails, ZoneDetails, ZoneTarget};
+use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, IpSetViewAction, IpSetViewState, PortFormState,
     PortKind, Sidebar, SidebarItem, ZoneViewAction, ZoneViewState, drawer_cancel_footer,
@@ -54,18 +54,8 @@ pub struct AppModel {
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
     dialogs: DialogState,
-    /// Available network interfaces for the interface dialog.
-    interfaces: catalogs::CatalogState<String>,
-    /// Whether interface discovery is in progress.
-    /// Error message when interface discovery fails.
-    /// Permanent firewalld service catalog.
-    services: catalogs::CatalogState<String>,
-    /// Whether the service catalog is being loaded.
-    /// Error returned while loading the service catalog.
-    /// Configured ICMP types available to block.
-    icmp_types: catalogs::CatalogState<IcmpTypeInfo>,
-    /// Whether the ICMP catalog is being loaded.
-    /// Error returned while loading the ICMP catalog.
+    /// Typed option catalogs used by dialog forms.
+    catalogs: catalogs::State,
     /// Globally serialized mutations, confirmations, reload state, and notifications.
     operations: operations::State<Message, Confirmation>,
     /// Current activation state of the firewalld systemd unit.
@@ -153,9 +143,7 @@ impl cosmic::Application for AppModel {
             reconciliation: reconciliation::State::default(),
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
-            interfaces: catalogs::CatalogState::default(),
-            services: catalogs::CatalogState::default(),
-            icmp_types: catalogs::CatalogState::default(),
+            catalogs: catalogs::State::default(),
             operations: operations::State::new(Message::DismissToast),
             firewalld_status: FirewalldStatus::Loading,
             key_binds: HashMap::new(),
@@ -297,7 +285,7 @@ impl cosmic::Application for AppModel {
             .interface
             .error
             .as_deref()
-            .or(self.interfaces.error());
+            .or(self.catalogs.interfaces.error());
         let can_submit_interface = self.dialogs.interface.error.is_none()
             && !self.dialogs.interface.interface.trim().is_empty();
         let can_submit = !self.mutation_pending();
@@ -347,10 +335,10 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     service_drawer(
                         &self.dialogs.service,
-                        self.services.items(),
+                        self.catalogs.services.items(),
                         enabled_services,
-                        self.services.is_loading(),
-                        self.services.error(),
+                        self.catalogs.services.is_loading(),
+                        self.catalogs.services.error(),
                     ),
                     error,
                 ),
@@ -373,8 +361,8 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     interface_drawer(
                         &self.dialogs.interface,
-                        self.interfaces.items(),
-                        self.interfaces.is_loading(),
+                        self.catalogs.interfaces.items(),
+                        self.catalogs.interfaces.is_loading(),
                         interface_error,
                     ),
                     error,
@@ -401,10 +389,10 @@ impl cosmic::Application for AppModel {
                 drawer_with_error(
                     icmp_drawer(
                         &self.dialogs.icmp,
-                        self.icmp_types.items(),
+                        self.catalogs.icmp_types.items(),
                         blocked_icmp,
-                        self.icmp_types.is_loading(),
-                        self.icmp_types.error(),
+                        self.catalogs.icmp_types.is_loading(),
+                        self.catalogs.icmp_types.error(),
                     ),
                     error,
                 ),
@@ -746,40 +734,9 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
-            Message::Catalog(catalogs::Message::Interfaces(result)) => match result {
-                Ok(interfaces) => {
-                    self.interfaces.finish(interfaces);
-                    if !self.interfaces.items().is_empty()
-                        && !self
-                            .interfaces
-                            .items()
-                            .iter()
-                            .any(|iface| iface == &self.dialogs.interface.interface)
-                    {
-                        self.dialogs.interface.interface.clear();
-                        self.dialogs.interface.error = None;
-                    }
-                }
-                Err(error) => {
-                    self.interfaces.fail(error.to_string());
-                }
-            },
-            Message::Catalog(catalogs::Message::Services(result)) => match result {
-                Ok(services) => {
-                    self.services.finish(services);
-                }
-                Err(error) => {
-                    self.services.fail(error.to_string());
-                }
-            },
-            Message::Catalog(catalogs::Message::IcmpTypes(result)) => match result {
-                Ok(types) => {
-                    self.icmp_types.finish(types);
-                }
-                Err(error) => {
-                    self.icmp_types.fail(error.to_string());
-                }
-            },
+            Message::Catalog(message) => {
+                return self.update_catalogs(message);
+            }
             Message::Zone(zones::Message::DefaultSet(result)) => match result {
                 Ok(()) => {
                     return Task::batch(vec![
@@ -987,6 +944,30 @@ impl AppModel {
             }
         }
         Task::batch(router.into_effects())
+    }
+
+    /// Delegate a catalog message and apply its root requests before starting loads.
+    fn update_catalogs(&mut self, message: catalogs::Message) -> Task<cosmic::Action<Message>> {
+        let selected_interface = self.dialogs.interface.interface.clone();
+        let outcome = catalogs::update(
+            &mut self.catalogs,
+            message,
+            catalogs::Context {
+                selected_interface: &selected_interface,
+            },
+        );
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                catalogs::Request::ClearInterfaceSelection => {
+                    self.dialogs.interface.interface.clear();
+                    self.dialogs.interface.error = None;
+                }
+            }
+        }
+        Task::batch(router.into_effects().into_iter().map(|effect| {
+            catalogs::effects(effect).map(|message| cosmic::Action::from(Message::Catalog(message)))
+        }))
     }
 
     fn mutation_pending(&self) -> bool {
@@ -1377,7 +1358,7 @@ impl AppModel {
                 if index == 0 {
                     self.dialogs.interface.interface.clear();
                     self.dialogs.interface.error = None;
-                } else if let Some(interface) = self.interfaces.items().get(index - 1) {
+                } else if let Some(interface) = self.catalogs.interfaces.items().get(index - 1) {
                     self.dialogs.interface.interface = interface.clone();
                     self.validate_interface_value();
                 }
@@ -1650,21 +1631,6 @@ impl AppModel {
         broker.get_active_zones().await
     }
 
-    async fn load_interfaces() -> Result<Vec<String>, BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.get_interfaces().await
-    }
-
-    async fn load_services() -> Result<Vec<String>, BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.get_services().await
-    }
-
-    async fn load_icmp_types() -> Result<Vec<IcmpTypeInfo>, BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.get_icmp_types().await
-    }
-
     async fn add_service(zone_name: String, service: String) -> Result<(), BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.add_service(&zone_name, &service).await
@@ -1887,25 +1853,15 @@ impl AppModel {
     }
 
     fn start_interfaces_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.interfaces.finish(Vec::new());
-        self.interfaces.begin_load();
-        Task::perform(Self::load_interfaces(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::Interfaces(result)))
-        })
+        self.update_catalogs(catalogs::Message::LoadInterfaces)
     }
 
     fn start_services_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.services.begin_load();
-        Task::perform(Self::load_services(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::Services(result)))
-        })
+        self.update_catalogs(catalogs::Message::LoadServices)
     }
 
     fn start_icmp_types_load(&mut self) -> Task<cosmic::Action<Message>> {
-        self.icmp_types.begin_load();
-        Task::perform(Self::load_icmp_types(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::IcmpTypes(result)))
-        })
+        self.update_catalogs(catalogs::Message::LoadIcmpTypes)
     }
 
     fn start_service_add(
