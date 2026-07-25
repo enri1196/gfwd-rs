@@ -58,10 +58,10 @@ fails, the warning remains visible and the manual **Refresh** action remains ava
 ## Migration scope
 
 Cosmic Gfwd intentionally migrates only workflows that were functional in the GTK application.
-The unused GTK direct-rule and policy model stubs are not target features. Source ports remain
-display/removal-only until a complete creation workflow is designed. COSMIC-native improvements
-remain authoritative: every active zone is badged in the sidebar, the default zone is changed from
-the sidebar context menu, and zone sections use contextual add actions.
+The unused GTK direct-rule and policy model stubs are not target features. Source ports support
+complete creation, display, and removal workflows. COSMIC-native improvements remain authoritative:
+every active zone is badged in the sidebar, the default zone is changed from the sidebar context
+menu, and zone sections use contextual add actions.
 
 ## Developers
 
