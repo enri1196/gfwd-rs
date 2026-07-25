@@ -1,3 +1,5 @@
+//! Navigation model materialization.
+
 use std::borrow::Cow;
 use std::collections::HashSet;
 
