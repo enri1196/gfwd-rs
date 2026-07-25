@@ -87,3 +87,67 @@ impl FwdBroker {
         Ok(ConfigFirewalld1Proxy::new(&self.conn).await?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::models::ZoneTarget;
+
+    use super::FwdBroker;
+
+    async fn assert_public_call_surface(broker: &FwdBroker, target: &ZoneTarget) {
+        let _ = broker.permanent_zone_snapshot("public").await;
+        let _ = broker.runtime_zone_snapshot("public").await;
+        let _ = broker.reconcile_zone("public").await;
+        let _ = broker.configuration_events(Some("public".into()));
+        let _ = broker.set_masquerade("public", true).await;
+        let _ = broker.set_icmp_block_inversion("public", true).await;
+        let _ = broker.firewalld_status().await;
+        let _ = broker.start_firewalld().await;
+        let _ = broker.stop_firewalld().await;
+        let _ = broker.apply_permanent_configuration().await;
+        let _ = broker.persist_runtime_configuration().await;
+        let _ = broker.get_zones().await;
+        let _ = broker.get_services().await;
+        let _ = broker.get_icmp_types().await;
+        let _ = broker.add_service("public", "ssh").await;
+        let _ = broker.get_default_zone().await;
+        let _ = broker.set_default_zone("public").await;
+        let _ = broker.get_active_zones().await;
+        let _ = broker.get_interfaces().await;
+        let _ = broker.add_zone("test", "test zone", target).await;
+        let _ = broker.add_port("public", "443", "tcp").await;
+        let _ = broker
+            .add_forward_port("public", "443", "tcp", "8443", "")
+            .await;
+        let _ = broker.add_interface("public", "eth0").await;
+        let _ = broker.add_source("public", "192.0.2.0/24").await;
+        let _ = broker.add_icmp_block("public", "echo-request").await;
+        let _ = broker.add_rich_rule("public", "rule accept").await;
+        let _ = broker.remove_zone("test").await;
+        let _ = broker.remove_service("public", "ssh").await;
+        let _ = broker.remove_interface("public", "eth0").await;
+        let _ = broker.remove_source("public", "192.0.2.0/24").await;
+        let _ = broker.remove_port("public", "443", "tcp").await;
+        let _ = broker
+            .remove_forward_port("public", "443", "tcp", "8443", "")
+            .await;
+        let _ = broker.remove_source_port("public", "443", "tcp").await;
+        let _ = broker.remove_icmp_block("public", "echo-request").await;
+        let _ = broker.remove_rich_rule("public", "rule accept").await;
+        let _ = broker.get_zone_details("public").await;
+        let _ = broker.get_ipsets().await;
+        let _ = broker.get_ipset_details("test").await;
+        let _ = broker.add_ipset_entry("test", "192.0.2.1").await;
+        let _ = broker.remove_ipset_entry("test", "192.0.2.1").await;
+        let _ = broker.remove_ipset("test").await;
+        let _ = broker
+            .create_ipset("test", "hash:ip", vec!["192.0.2.1".into()])
+            .await;
+    }
+
+    #[test]
+    fn broker_public_call_surface_is_preserved() {
+        let _ = FwdBroker::get;
+        let _ = assert_public_call_surface;
+    }
+}

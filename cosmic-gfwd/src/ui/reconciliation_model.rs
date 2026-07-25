@@ -278,6 +278,36 @@ mod tests {
     }
 
     #[test]
+    fn incomplete_comparison_without_known_differences_is_never_in_sync() {
+        let state = ZoneReconciliationState::from_data(
+            "public".into(),
+            data(
+                Vec::new(),
+                ComparisonCompleteness::Incomplete {
+                    permanent_unknown: BTreeSet::from(["future-setting".into()]),
+                    runtime_unknown: BTreeSet::new(),
+                },
+            ),
+        );
+
+        let presentation = ReconciliationPresentation::from_state(&state, false);
+
+        assert_eq!(
+            presentation.status,
+            ReconciliationPresentationStatus::Incomplete {
+                known_difference_count: 0,
+            }
+        );
+        assert_ne!(
+            presentation.status,
+            ReconciliationPresentationStatus::InSync
+        );
+        assert!(presentation.actions.can_review);
+        assert!(!presentation.actions.can_apply_permanent);
+        assert!(!presentation.actions.can_save_runtime);
+    }
+
+    #[test]
     fn unavailable_runtime_remains_refreshable() {
         let state = ZoneReconciliationState::Unavailable {
             zone: Some("public".into()),

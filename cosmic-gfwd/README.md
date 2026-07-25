@@ -67,6 +67,36 @@ the sidebar context menu, and zone sections use contextual add actions.
 
 Developers should install [rustup][rustup] and configure their editor to use [rust-analyzer][rust-analyzer]. To improve compilation times, disable LTO in the release profile, install the [mold][mold] linker, and configure [sccache][sccache] for use with Rust. The [mold][mold] linker will only improve link times if LTO is disabled.
 
+### Reconciliation architecture
+
+Selected-zone permanent/runtime reconciliation follows a one-way dependency path:
+
+```text
+UI views
+    ↓
+presentation model
+    ↓
+application controller
+    ↓
+broker
+    ↓
+gfwd-bus proxies
+```
+
+`core/reconciliation.rs` owns typed snapshots and pure comparison semantics, while
+`core/events.rs` owns pure refresh coordination and event-coalescing behavior. The
+`core/broker/` module tree is the exclusive owner of system-bus connections, proxy
+construction, and signal streams.
+
+`app/reconciliation.rs` owns the selected-zone reconciliation lifecycle, including request
+generations, stale-response rejection, watcher health, and follow-up refresh scheduling.
+`ui/reconciliation_model.rs` converts that domain state into localization-independent status,
+difference groups, unknown keys, and action availability. The selected-zone banner and review
+drawer both render this same presentation model.
+
+Neither global direction is automatic. Applying permanent configuration to runtime and saving
+runtime configuration permanently always remain explicit, separately confirmed operations.
+
 [fluent]: https://projectfluent.org/
 [fluent-guide]: https://projectfluent.org/fluent/guide/hello.html
 [iso-codes]: https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
