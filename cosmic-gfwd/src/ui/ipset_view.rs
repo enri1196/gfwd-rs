@@ -61,7 +61,7 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
             list = list.push(button);
         }
 
-        let list_element = list_with_scroll(list, state.ipsets.len());
+        let list_element = list_with_scroll(list.into(), state.ipsets.len());
         list_section = list_section.add(list_element);
     }
 
@@ -150,7 +150,7 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
                         .iter()
                         .map(|entry| entry_item_row(entry, mutation_pending, map)),
                 );
-            let entries_element = list_with_scroll(entries_list, details.entries.len());
+            let entries_element = list_with_scroll(entries_list.into(), details.entries.len());
             entries_section = entries_section.add(entries_element);
         }
 
@@ -187,7 +187,7 @@ fn entry_item_row<'a, Message: 'static + Clone>(
 }
 
 fn list_with_scroll<'a, Message: 'static>(
-    list: widget::Column<'a, Message>,
+    list: cosmic::Element<'a, Message>,
     item_count: usize,
 ) -> cosmic::Element<'a, Message> {
     if item_count > MAX_LIST_ITEMS {
@@ -197,6 +197,6 @@ fn list_with_scroll<'a, Message: 'static>(
             .width(Length::Fill)
             .into()
     } else {
-        list.into()
+        list
     }
 }

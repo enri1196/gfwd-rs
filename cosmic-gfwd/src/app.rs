@@ -21,7 +21,6 @@ use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, Toasts, about::About, menu, nav_bar};
 use futures_util::{StreamExt, stream::BoxStream};
-use slotmap::Key;
 use std::collections::{HashMap, HashSet};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -297,16 +296,9 @@ impl cosmic::Application for AppModel {
         Some(self.sidebar.nav_model())
     }
 
-    /// The context menu to display for the given nav bar item ID.
-    fn nav_context_menu(
-        &self,
-        id: nav_bar::Id,
-    ) -> Option<Vec<menu::Tree<cosmic::Action<Self::Message>>>> {
-        let context_id = if id.is_null() {
-            self.sidebar.nav_model().active()
-        } else {
-            id
-        };
+    /// The context menu to display for the active nav-bar item.
+    fn nav_context_menu(&self) -> Option<Vec<menu::Tree<cosmic::Action<Self::Message>>>> {
+        let context_id = self.sidebar.nav_model().active();
 
         let Some(item) = self.sidebar.item_for_id(context_id) else {
             return Some(Vec::new());
@@ -606,9 +598,9 @@ impl cosmic::Application for AppModel {
         ];
         let selected_zone = self.current_zone_name();
         subscriptions.push(
-            Subscription::run_with_id(
-                ("firewalld-configuration-events", selected_zone.clone()),
-                configuration_event_messages(selected_zone),
+            Subscription::run_with(
+                selected_zone.clone(),
+                configuration_event_subscription,
             )
             .map(Message::Reconciliation),
         );
@@ -2615,6 +2607,14 @@ fn configuration_event_messages(
             }
         }
     })
+}
+
+/// Builds the selected-zone configuration subscription for libcosmic's keyed
+/// subscription API.
+fn configuration_event_subscription(
+    selected_zone: &Option<String>,
+) -> BoxStream<'static, reconciliation::Message> {
+    configuration_event_messages(selected_zone.clone())
 }
 
 fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {

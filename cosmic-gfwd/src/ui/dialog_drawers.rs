@@ -933,7 +933,7 @@ pub fn drawer_footer_with_submit(
     let submit_message = can_submit.then_some(DialogMessage::Submit(kind));
 
     widget::row::with_capacity(3)
-        .push(widget::horizontal_space())
+        .push(widget::space::horizontal())
         .push(button::text(fl!("dialog-cancel")).on_press(DialogMessage::Cancel(kind)))
         .push(button::suggested(submit_label).on_press_maybe(submit_message))
         .spacing(spacing.space_s)
@@ -944,7 +944,7 @@ pub fn drawer_footer_with_submit(
 /// Builds a footer for picker drawers whose rows are the primary actions.
 pub fn drawer_cancel_footer(kind: DialogKind) -> cosmic::Element<'static, DialogMessage> {
     widget::row::with_capacity(2)
-        .push(widget::horizontal_space())
+        .push(widget::space::horizontal())
         .push(button::text(fl!("dialog-cancel")).on_press(DialogMessage::Cancel(kind)))
         .into()
 }

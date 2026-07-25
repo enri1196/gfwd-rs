@@ -17,6 +17,20 @@ GFWD provides a graphical interface for configuring firewalld, the dynamic firew
 - **Validation and Feedback**: Validate structured input and report asynchronous operation results
 - **Modern UI**: Native libcosmic interface with context drawers, dialogs, and toasts
 
+### Frosted glass
+
+The application follows libcosmic's native frosted-glass integration. The dependency is
+tracked from the libcosmic git `master` branch; the lockfile currently resolves it to the
+upstream commit used for this build. No custom blur widget or compositor-specific drawing is
+needed: on COSMIC Wayland, libcosmic marks this normal application window for the
+`ext-background-effect-v1` blur protocol when the system theme enables frosted windows.
+
+To try it, enable **COSMIC Settings → Desktop → Appearance → Style → Frosted Glass**, with
+**Windows** selected. Build and run GFWD in a COSMIC Wayland session. The effect is controlled by
+the desktop theme, so it remains disabled on other compositors, on X11, or when the theme's
+window-frosting option is off. The `dbus-config` and `wayland`/`wgpu` features already enabled in
+`cosmic-gfwd/Cargo.toml` are the relevant project prerequisites.
+
 ### Supported Operations
 
 - List all firewall zones
