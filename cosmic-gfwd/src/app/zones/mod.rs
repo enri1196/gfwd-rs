@@ -3,8 +3,14 @@ use std::collections::HashSet;
 use crate::{
     core::{BrokerError, FirewalldStatus},
     models::ZoneDetails,
-    ui::ZoneViewAction,
 };
+
+mod view;
+
+pub(crate) use view::{ZoneViewAction, ZoneViewState, view_zone_content};
+
+/// Authoritative selected-zone detail projection.
+pub(crate) type State = ZoneViewState;
 
 /// Messages owned by the zone and ordinary firewalld-control slice.
 #[derive(Clone, Debug)]

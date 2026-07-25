@@ -9,10 +9,9 @@ use crate::fl;
 use crate::models::{IpSetDetails, ZoneDetails, ZoneTarget};
 use crate::ui::{
     DialogKind, DialogMessage, DialogState, PortFormState, PortKind, Sidebar, SidebarItem,
-    ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
-    drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
-    port_drawer, rich_rule_drawer, service_drawer, source_drawer, target_from_index,
-    view_zone_content,
+    drawer_cancel_footer, drawer_footer_with_submit, drawer_with_error, icmp_drawer,
+    interface_drawer, ipset_drawer, localized_validation_error, port_drawer, rich_rule_drawer,
+    service_drawer, source_drawer, target_from_index,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -24,6 +23,7 @@ use futures_util::{StreamExt, stream::BoxStream};
 use ipsets::{IpSetViewAction, view_ipset_content};
 use reconciliation::reconciliation_drawer;
 use std::collections::{HashMap, HashSet};
+use zones::{ZoneViewAction, ZoneViewState, view_zone_content};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -50,7 +50,7 @@ pub struct AppModel {
     /// Contains items assigned to the nav bar panel.
     sidebar: Sidebar,
     /// State for the current zone detail view.
-    zone_view: ZoneViewState,
+    zones: zones::State,
     /// Selected-zone reconciliation lifecycle and refresh coordination.
     reconciliation: reconciliation::State,
     /// State for the IP set view.
@@ -142,7 +142,7 @@ impl cosmic::Application for AppModel {
             context_page: ContextPage::default(),
             about,
             sidebar,
-            zone_view: ZoneViewState::Empty,
+            zones: zones::State::Empty,
             reconciliation: reconciliation::State::default(),
             ipsets: ipsets::State::default(),
             dialogs: DialogState::default(),
@@ -293,11 +293,11 @@ impl cosmic::Application for AppModel {
             && !self.dialogs.interface.interface.trim().is_empty();
         let can_submit = !self.mutation_pending();
         let error = self.dialogs.operation_error.as_deref();
-        let enabled_services = match &self.zone_view {
+        let enabled_services = match &self.zones {
             ZoneViewState::Ready(details) => details.services.as_slice(),
             _ => &[],
         };
-        let blocked_icmp = match &self.zone_view {
+        let blocked_icmp = match &self.zones {
             ZoneViewState::Ready(details) => details.icmp_blocks.as_slice(),
             _ => &[],
         };
@@ -495,7 +495,7 @@ impl cosmic::Application for AppModel {
                 })
             }
             _ => view_zone_content(
-                &self.zone_view,
+                &self.zones,
                 &self.firewalld_status,
                 self.reconciliation.state(),
                 self.reconciliation.watch_warning(),
@@ -633,7 +633,7 @@ impl cosmic::Application for AppModel {
                 if self.firewalld_status == FirewalldStatus::Active
                     && !self.reconciliation.is_refreshing()
                 {
-                    if let ZoneViewState::Ready(details) = &self.zone_view {
+                    if let ZoneViewState::Ready(details) = &self.zones {
                         return self.start_zone_reconciliation(details.name.clone());
                     }
                 } else {
@@ -671,7 +671,7 @@ impl cosmic::Application for AppModel {
                     Err(error) => {
                         eprintln!("failed to load zones: {error}");
                         self.sidebar.set_error(error.to_string());
-                        self.zone_view = ZoneViewState::Error {
+                        self.zones = ZoneViewState::Error {
                             zone: "zones".to_string(),
                             message: error.to_string(),
                         };
@@ -680,8 +680,8 @@ impl cosmic::Application for AppModel {
                 let task = match self.sidebar.active_item() {
                     Some(SidebarItem::Zone { name, .. }) => self.start_zone_load(name.clone()),
                     _ => {
-                        if !matches!(self.zone_view, ZoneViewState::Error { .. }) {
-                            self.zone_view = ZoneViewState::Empty;
+                        if !matches!(self.zones, ZoneViewState::Error { .. }) {
+                            self.zones = ZoneViewState::Empty;
                             self.reconciliation.set_unavailable(None);
                         }
                         self.finish_configuration_refresh()
@@ -703,7 +703,7 @@ impl cosmic::Application for AppModel {
 
                 match *result {
                     Ok(details) => {
-                        self.zone_view = ZoneViewState::Ready(Box::new(details));
+                        self.zones = ZoneViewState::Ready(Box::new(details));
                         if self.firewalld_status == FirewalldStatus::Active {
                             return self.start_zone_reconciliation(zone_name);
                         }
@@ -711,7 +711,7 @@ impl cosmic::Application for AppModel {
                         return self.finish_configuration_refresh();
                     }
                     Err(error) => {
-                        self.zone_view = ZoneViewState::Error {
+                        self.zones = ZoneViewState::Error {
                             zone: zone_name.clone(),
                             message: error.to_string(),
                         };
@@ -770,7 +770,7 @@ impl cosmic::Application for AppModel {
                         self.sidebar.active_item(),
                         Some(SidebarItem::Zone { name, .. }) if name == &zone_name
                     ) {
-                        self.zone_view = ZoneViewState::Empty;
+                        self.zones = ZoneViewState::Empty;
                         self.reconciliation.set_unavailable(None);
                     }
                     return Task::batch(vec![
@@ -1044,7 +1044,7 @@ impl AppModel {
                     self.sidebar.active_item(),
                     Some(SidebarItem::Zone { name, .. }) if name == &zone
                 ) && matches!(
-                    &self.zone_view,
+                    &self.zones,
                     ZoneViewState::Ready(details) if details.name == zone
                 );
                 if !is_current || !self.reconciliation.complete_load(zone, generation, *result) {
@@ -1142,7 +1142,7 @@ impl AppModel {
     }
 
     fn current_zone_name(&self) -> Option<String> {
-        match &self.zone_view {
+        match &self.zones {
             ZoneViewState::Ready(details) => Some(details.name.clone()),
             _ => None,
         }
@@ -1169,7 +1169,7 @@ impl AppModel {
             Some(SidebarItem::Zone { name, .. }) => self.start_zone_load(name.clone()),
             Some(SidebarItem::IpSets) => self.start_ipsets_load(),
             _ => {
-                self.zone_view = ZoneViewState::Empty;
+                self.zones = ZoneViewState::Empty;
                 Task::none()
             }
         };
@@ -1268,7 +1268,7 @@ impl AppModel {
             | ZoneViewAction::RemoveRichRule(_) => {}
         }
 
-        let zone_name = match &self.zone_view {
+        let zone_name = match &self.zones {
             ZoneViewState::Ready(details) => details.name.clone(),
             _ => return Task::none(),
         };
@@ -1330,7 +1330,7 @@ impl AppModel {
                     return Task::none();
                 };
                 let already_enabled = matches!(
-                    &self.zone_view,
+                    &self.zones,
                     ZoneViewState::Ready(details) if details.services.contains(&service)
                 );
                 if already_enabled {
@@ -1380,7 +1380,7 @@ impl AppModel {
                     return Task::none();
                 };
                 let already_blocked = matches!(
-                    &self.zone_view,
+                    &self.zones,
                     ZoneViewState::Ready(details) if details.icmp_blocks.contains(&icmp_type)
                 );
                 if already_blocked {
@@ -2185,7 +2185,7 @@ impl AppModel {
     fn start_zone_load(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
         self.reconciliation
             .selection_changed(Some(zone_name.clone()));
-        self.zone_view = ZoneViewState::Loading {
+        self.zones = ZoneViewState::Loading {
             zone: zone_name.clone(),
         };
 

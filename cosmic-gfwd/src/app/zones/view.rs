@@ -1,3 +1,5 @@
+//! Zone and firewalld status view.
+
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings};
 
@@ -5,6 +7,7 @@ use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
 use crate::models::zone::ZoneDetails;
 
+use crate::app::dialogs::PortKind;
 use crate::app::reconciliation::{
     ReconciliationAction, ReconciliationPresentation, ReconciliationPresentationStatus,
 };
@@ -39,7 +42,7 @@ pub enum ZoneViewAction {
     AddInterface,
     /// Opens the shared port form for the selected semantic port kind.
     AddPort {
-        kind: super::PortKind,
+        kind: PortKind,
     },
     AddSource,
     AddIcmpBlock,
@@ -237,7 +240,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .collect(),
         fl!("zone-empty-ports"),
         Some((
-            port_add_action(super::PortKind::Destination),
+            port_add_action(PortKind::Destination),
             fl!("action-add-port"),
         )),
         map,
@@ -267,7 +270,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .collect(),
         fl!("zone-empty-forward-ports"),
         Some((
-            port_add_action(super::PortKind::Forward),
+            port_add_action(PortKind::Forward),
             fl!("action-add-forward-port"),
         )),
         map,
@@ -278,7 +281,7 @@ fn zone_details<'a, Message: 'static + Clone>(
         source_port_rows(&details.source_ports),
         fl!("zone-empty-source-ports"),
         Some((
-            port_add_action(super::PortKind::Source),
+            port_add_action(PortKind::Source),
             fl!("action-add-source-port"),
         )),
         map,
@@ -508,7 +511,7 @@ fn list_or_none(items: &[String], empty_label: &str) -> String {
 }
 
 /// Build the semantic add action shared by the three port sections.
-fn port_add_action(kind: super::PortKind) -> ZoneViewAction {
+fn port_add_action(kind: PortKind) -> ZoneViewAction {
     ZoneViewAction::AddPort { kind }
 }
 
@@ -560,9 +563,9 @@ mod tests {
     #[test]
     fn port_section_add_actions_select_the_requested_kind() {
         for kind in [
-            super::super::PortKind::Destination,
-            super::super::PortKind::Source,
-            super::super::PortKind::Forward,
+            super::PortKind::Destination,
+            super::PortKind::Source,
+            super::PortKind::Forward,
         ] {
             assert!(matches!(
                 port_add_action(kind),
@@ -574,9 +577,9 @@ mod tests {
     #[test]
     fn source_port_section_offers_add_and_existing_remove_actions() {
         assert!(matches!(
-            port_add_action(super::super::PortKind::Source),
+            port_add_action(super::PortKind::Source),
             ZoneViewAction::AddPort {
-                kind: super::super::PortKind::Source
+                kind: super::PortKind::Source
             }
         ));
 

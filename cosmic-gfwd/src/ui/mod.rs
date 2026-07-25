@@ -1,5 +1,4 @@
 pub mod sidebar;
-pub mod zone_view;
 
 pub(crate) use crate::app::dialogs::{
     DialogKind, DialogMessage, DialogState, PortFormState, PortKind, drawer_cancel_footer,
@@ -8,4 +7,3 @@ pub(crate) use crate::app::dialogs::{
     target_from_index,
 };
 pub use sidebar::{Sidebar, SidebarItem};
-pub use zone_view::{ZoneViewAction, ZoneViewState, view_zone_content};

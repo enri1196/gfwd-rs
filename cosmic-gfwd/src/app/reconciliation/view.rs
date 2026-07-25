@@ -5,7 +5,7 @@ use crate::core::{
 };
 use crate::fl;
 
-use crate::ui::ZoneViewAction;
+use crate::app::zones::ZoneViewAction;
 
 use super::model::{
     ReconciliationPresentation, ReconciliationPresentationStatus, UnknownSettingNames,
