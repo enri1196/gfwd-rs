@@ -24,16 +24,20 @@ pub(crate) enum Message {
     },
     /// A broker configuration event or watcher failure was received.
     ConfigurationEvent(Result<crate::core::ConfigurationEvent, String>),
+    /// Applying permanent configuration to the global runtime finished.
+    PermanentApplied(Result<(), crate::core::BrokerError>),
+    /// Persisting the global runtime configuration permanently finished.
+    RuntimePersisted(Result<(), crate::core::BrokerError>),
 }
 
 /// Owns selected-zone reconciliation state and pure refresh coordination.
 #[derive(Debug, Default)]
-pub(crate) struct ReconciliationController {
+pub(crate) struct State {
     state: ZoneReconciliationState,
     coordinator: ConfigurationRefreshCoordinator,
 }
 
-impl ReconciliationController {
+impl State {
     /// Return the current independently loaded reconciliation state.
     pub(crate) fn state(&self) -> &ZoneReconciliationState {
         &self.state
@@ -135,7 +139,7 @@ mod tests {
         reconciliation::{ZoneReconciliation, ZoneSettingsSnapshot},
     };
 
-    use super::ReconciliationController;
+    use super::State;
 
     fn in_sync_data() -> ZoneReconciliationData {
         ZoneReconciliationData {
@@ -150,7 +154,7 @@ mod tests {
 
     #[test]
     fn selection_changes_reset_state_and_advance_identity() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
 
         let first = controller.selection_changed(Some("public".into()));
         let second = controller.selection_changed(Some("work".into()));
@@ -165,7 +169,7 @@ mod tests {
 
     #[test]
     fn stale_zone_and_generation_responses_are_ignored() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         controller.selection_changed(Some("public".into()));
         let stale_generation = controller.begin_load("public".into());
         controller.selection_changed(Some("work".into()));
@@ -180,7 +184,7 @@ mod tests {
 
     #[test]
     fn event_burst_during_load_schedules_one_follow_up() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         controller.selection_changed(Some("public".into()));
         controller.begin_load("public".into());
 
@@ -198,7 +202,7 @@ mod tests {
 
     #[test]
     fn successful_refresh_can_return_to_idle() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         assert_eq!(
             controller.handle_configuration_event(false),
             RefreshRequest::Start
@@ -209,7 +213,7 @@ mod tests {
 
     #[test]
     fn failed_refresh_can_recover_with_queued_work() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         assert_eq!(
             controller.handle_configuration_event(false),
             RefreshRequest::Start
@@ -225,7 +229,7 @@ mod tests {
 
     #[test]
     fn watcher_failure_and_recovery_preserve_manual_state() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         controller.selection_changed(Some("public".into()));
         controller.watcher_failed("permission denied".into());
 
@@ -238,7 +242,7 @@ mod tests {
 
     #[test]
     fn successful_and_failed_loads_preserve_selected_zone() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         controller.selection_changed(Some("public".into()));
         let generation = controller.begin_load("public".into());
         assert!(controller.complete_load("public".into(), generation, Ok(in_sync_data()),));
@@ -262,7 +266,7 @@ mod tests {
 
     #[test]
     fn permanent_zone_rename_rebinds_selection() {
-        let mut controller = ReconciliationController::default();
+        let mut controller = State::default();
         controller.selection_changed(Some("old".into()));
 
         controller.selection_changed(Some("new".into()));

@@ -18,7 +18,7 @@ pub(crate) enum Message {
         /// Zone requested by the asynchronous task.
         zone_name: String,
         /// Loaded details or the broker failure.
-        result: Result<ZoneDetails, BrokerError>,
+        result: Box<Result<ZoneDetails, BrokerError>>,
     },
     /// The configured default zone finished loading.
     DefaultLoaded(Result<String, BrokerError>),

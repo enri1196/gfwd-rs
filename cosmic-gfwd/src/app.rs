@@ -40,7 +40,7 @@ pub struct AppModel {
     /// State for the current zone detail view.
     zone_view: ZoneViewState,
     /// Selected-zone reconciliation lifecycle and refresh coordination.
-    reconciliation: reconciliation::ReconciliationController,
+    reconciliation: reconciliation::State,
     /// State for the IP set view.
     ipset_view: IpSetViewState,
     /// Stores form state for context drawer dialogs.
@@ -83,11 +83,6 @@ pub enum Message {
     Dialog(DialogMessage),
     Reconciliation(reconciliation::Message),
 
-    FirewalldControlFinished {
-        apply_permanent: bool,
-        result: Result<(), BrokerError>,
-    },
-    RuntimeConfigurationPersisted(Result<(), BrokerError>),
     DismissToast(ToastId),
     CancelConfirmation,
     ConfirmDestructive,
@@ -147,7 +142,7 @@ impl cosmic::Application for AppModel {
             about,
             sidebar,
             zone_view: ZoneViewState::Empty,
-            reconciliation: reconciliation::ReconciliationController::default(),
+            reconciliation: reconciliation::State::default(),
             ipset_view: IpSetViewState::default(),
             dialogs: DialogState::default(),
             interfaces: catalogs::CatalogState::default(),
@@ -654,41 +649,11 @@ impl cosmic::Application for AppModel {
                         .set_unavailable(self.current_zone_name());
                 }
             }
-            Message::FirewalldControlFinished {
-                apply_permanent,
-                result,
-            } => {
-                if result.is_ok() && apply_permanent {
-                    self.runtime_reload_needed = false;
-                }
-                let mut tasks = vec![
-                    self.finish_mutation(&result),
-                    self.start_firewalld_status_load(),
-                ];
-                if result.is_ok() && apply_permanent {
-                    tasks.push(self.start_zones_load());
-                }
-                return Task::batch(tasks);
-            }
             Message::Zone(zones::Message::DaemonControlFinished(result)) => {
                 return Task::batch(vec![
                     self.finish_mutation(&result),
                     self.start_firewalld_status_load(),
                 ]);
-            }
-            Message::RuntimeConfigurationPersisted(result) => {
-                let mut tasks = vec![self.finish_mutation(&result)];
-                if result.is_ok() {
-                    tasks.extend([
-                        self.start_firewalld_status_load(),
-                        self.start_zones_load(),
-                        self.start_ipsets_load(),
-                        self.start_services_load(),
-                        self.start_icmp_types_load(),
-                        self.start_interfaces_load(),
-                    ]);
-                }
-                return Task::batch(tasks);
             }
 
             Message::Navigation(navigation::Message::UpdateConfig(config)) => {
@@ -744,7 +709,7 @@ impl cosmic::Application for AppModel {
                     return Task::none();
                 }
 
-                match result {
+                match *result {
                     Ok(details) => {
                         self.zone_view = ZoneViewState::Ready(Box::new(details));
                         if self.firewalld_status == FirewalldStatus::Active {
@@ -777,7 +742,7 @@ impl cosmic::Application for AppModel {
                     self.sidebar.set_active_zones(HashSet::new());
                 }
             },
-            Message::Catalog(catalogs::Message::InterfacesLoaded(result)) => match result {
+            Message::Catalog(catalogs::Message::Interfaces(result)) => match result {
                 Ok(interfaces) => {
                     self.interfaces.finish(interfaces);
                     if !self.interfaces.items().is_empty()
@@ -795,7 +760,7 @@ impl cosmic::Application for AppModel {
                     self.interfaces.fail(error.to_string());
                 }
             },
-            Message::Catalog(catalogs::Message::ServicesLoaded(result)) => match result {
+            Message::Catalog(catalogs::Message::Services(result)) => match result {
                 Ok(services) => {
                     self.services.finish(services);
                 }
@@ -803,7 +768,7 @@ impl cosmic::Application for AppModel {
                     self.services.fail(error.to_string());
                 }
             },
-            Message::Catalog(catalogs::Message::IcmpTypesLoaded(result)) => match result {
+            Message::Catalog(catalogs::Message::IcmpTypes(result)) => match result {
                 Ok(types) => {
                     self.icmp_types.finish(types);
                 }
@@ -1089,6 +1054,33 @@ impl AppModel {
                     return Task::none();
                 }
                 self.finish_configuration_refresh()
+            }
+            reconciliation::Message::PermanentApplied(result) => {
+                if result.is_ok() {
+                    self.runtime_reload_needed = false;
+                }
+                let mut tasks = vec![
+                    self.finish_mutation(&result),
+                    self.start_firewalld_status_load(),
+                ];
+                if result.is_ok() {
+                    tasks.push(self.start_zones_load());
+                }
+                Task::batch(tasks)
+            }
+            reconciliation::Message::RuntimePersisted(result) => {
+                let mut tasks = vec![self.finish_mutation(&result)];
+                if result.is_ok() {
+                    tasks.extend([
+                        self.start_firewalld_status_load(),
+                        self.start_zones_load(),
+                        self.start_ipsets_load(),
+                        self.start_services_load(),
+                        self.start_icmp_types_load(),
+                        self.start_interfaces_load(),
+                    ]);
+                }
+                Task::batch(tasks)
             }
         }
     }
@@ -1882,23 +1874,21 @@ impl AppModel {
         self.interfaces.finish(Vec::new());
         self.interfaces.begin_load();
         Task::perform(Self::load_interfaces(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::InterfacesLoaded(
-                result,
-            )))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::Interfaces(result)))
         })
     }
 
     fn start_services_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.services.begin_load();
         Task::perform(Self::load_services(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::ServicesLoaded(result)))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::Services(result)))
         })
     }
 
     fn start_icmp_types_load(&mut self) -> Task<cosmic::Action<Message>> {
         self.icmp_types.begin_load();
         Task::perform(Self::load_icmp_types(), |result| {
-            cosmic::Action::from(Message::Catalog(catalogs::Message::IcmpTypesLoaded(result)))
+            cosmic::Action::from(Message::Catalog(catalogs::Message::IcmpTypes(result)))
         })
     }
 
@@ -1983,10 +1973,9 @@ impl AppModel {
             return Task::none();
         }
         Task::perform(Self::apply_permanent_configuration(), |result| {
-            cosmic::Action::from(Message::FirewalldControlFinished {
-                apply_permanent: true,
-                result,
-            })
+            cosmic::Action::from(Message::Reconciliation(
+                reconciliation::Message::PermanentApplied(result),
+            ))
         })
     }
 
@@ -1995,7 +1984,9 @@ impl AppModel {
             return Task::none();
         }
         Task::perform(Self::persist_runtime_configuration(), |result| {
-            cosmic::Action::from(Message::RuntimeConfigurationPersisted(result))
+            cosmic::Action::from(Message::Reconciliation(
+                reconciliation::Message::RuntimePersisted(result),
+            ))
         })
     }
 
@@ -2274,7 +2265,7 @@ impl AppModel {
         Task::perform(Self::load_zone_details(zone_name), move |result| {
             cosmic::Action::from(Message::Zone(zones::Message::DetailsLoaded {
                 zone_name: zone_name_for_task.clone(),
-                result,
+                result: Box::new(result),
             }))
         })
     }

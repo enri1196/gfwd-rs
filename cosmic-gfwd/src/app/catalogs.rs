@@ -7,11 +7,11 @@ use crate::{core::BrokerError, models::IcmpTypeInfo};
 #[derive(Clone, Debug)]
 pub(crate) enum Message {
     /// Network interface discovery completed.
-    InterfacesLoaded(Result<Vec<String>, BrokerError>),
+    Interfaces(Result<Vec<String>, BrokerError>),
     /// Permanent service discovery completed.
-    ServicesLoaded(Result<Vec<String>, BrokerError>),
+    Services(Result<Vec<String>, BrokerError>),
     /// ICMP-type discovery completed.
-    IcmpTypesLoaded(Result<Vec<IcmpTypeInfo>, BrokerError>),
+    IcmpTypes(Result<Vec<IcmpTypeInfo>, BrokerError>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
