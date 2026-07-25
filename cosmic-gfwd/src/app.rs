@@ -11,8 +11,8 @@ use crate::ui::{
     DialogKind, DialogMessage, DialogState, PortFormState, PortKind, Sidebar, SidebarItem,
     ZoneViewAction, ZoneViewState, drawer_cancel_footer, drawer_footer_with_submit,
     drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer, localized_validation_error,
-    port_drawer, reconciliation_drawer, rich_rule_drawer, service_drawer, source_drawer,
-    target_from_index, view_zone_content,
+    port_drawer, rich_rule_drawer, service_drawer, source_drawer, target_from_index,
+    view_zone_content,
 };
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
@@ -22,6 +22,7 @@ use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use futures_util::{StreamExt, stream::BoxStream};
 use ipsets::{IpSetViewAction, view_ipset_content};
+use reconciliation::reconciliation_drawer;
 use std::collections::{HashMap, HashSet};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -32,7 +33,7 @@ mod ipsets;
 mod navigation;
 mod operations;
 mod outcome;
-mod reconciliation;
+pub(crate) mod reconciliation;
 mod router;
 mod zones;
 
@@ -1280,14 +1281,14 @@ impl AppModel {
     /// Route actions shared by the reconciliation banner and review drawer.
     fn handle_reconciliation_action(
         &mut self,
-        action: crate::ui::ReconciliationAction,
+        action: reconciliation::ReconciliationAction,
     ) -> Task<cosmic::Action<Message>> {
         match action {
-            crate::ui::ReconciliationAction::Review => {
+            reconciliation::ReconciliationAction::Review => {
                 self.open_context_page(ContextPage::ReviewReconciliation);
                 Task::none()
             }
-            crate::ui::ReconciliationAction::Refresh => {
+            reconciliation::ReconciliationAction::Refresh => {
                 let Some(zone_name) = self.current_zone_name() else {
                     return Task::none();
                 };
@@ -1297,11 +1298,11 @@ impl AppModel {
                 }
                 self.start_zone_reconciliation(zone_name)
             }
-            crate::ui::ReconciliationAction::ApplyPermanentToRuntime => {
+            reconciliation::ReconciliationAction::ApplyPermanentToRuntime => {
                 self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
                 Task::none()
             }
-            crate::ui::ReconciliationAction::SaveRuntimeAsPermanent => {
+            reconciliation::ReconciliationAction::SaveRuntimeAsPermanent => {
                 self.operations.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
                 Task::none()
             }

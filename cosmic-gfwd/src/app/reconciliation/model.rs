@@ -1,4 +1,4 @@
-//! Semantic presentation state for permanent/runtime reconciliation views.
+//! Semantic presentation state for this slice's views.
 //!
 //! This module deliberately contains no localization or widget code. Both the
 //! selected-zone banner and the review drawer use this adapter so status,

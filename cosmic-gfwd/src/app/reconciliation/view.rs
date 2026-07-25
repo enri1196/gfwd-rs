@@ -5,11 +5,10 @@ use crate::core::{
 };
 use crate::fl;
 
-use super::{
-    ZoneViewAction,
-    reconciliation_model::{
-        ReconciliationPresentation, ReconciliationPresentationStatus, UnknownSettingNames,
-    },
+use crate::ui::ZoneViewAction;
+
+use super::model::{
+    ReconciliationPresentation, ReconciliationPresentationStatus, UnknownSettingNames,
 };
 
 /// User actions originating from reconciliation views.

@@ -1,6 +1,4 @@
 pub mod dialog_drawers;
-pub(crate) mod reconciliation_model;
-pub mod reconciliation_view;
 pub mod sidebar;
 pub mod zone_view;
 
@@ -10,7 +8,5 @@ pub use dialog_drawers::{
     localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
     target_from_index,
 };
-pub(crate) use reconciliation_view::ReconciliationAction;
-pub use reconciliation_view::reconciliation_drawer;
 pub use sidebar::{Sidebar, SidebarItem};
 pub use zone_view::{ZoneViewAction, ZoneViewState, view_zone_content};

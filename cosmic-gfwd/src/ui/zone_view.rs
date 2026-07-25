@@ -5,7 +5,9 @@ use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
 use crate::models::zone::ZoneDetails;
 
-use super::reconciliation_model::{ReconciliationPresentation, ReconciliationPresentationStatus};
+use crate::app::reconciliation::{
+    ReconciliationAction, ReconciliationPresentation, ReconciliationPresentationStatus,
+};
 
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
@@ -31,7 +33,7 @@ pub enum ZoneViewAction {
     /// Requests confirmation before stopping the firewalld systemd unit.
     StopFirewalld,
     /// Performs an action on permanent/runtime reconciliation.
-    Reconciliation(super::ReconciliationAction),
+    Reconciliation(ReconciliationAction),
     /// Opens the configured-service picker for the selected zone.
     AddService,
     AddInterface,
@@ -160,7 +162,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .actions
             .can_apply_permanent
             .then_some(map(ZoneViewAction::Reconciliation(
-                super::ReconciliationAction::ApplyPermanentToRuntime,
+                ReconciliationAction::ApplyPermanentToRuntime,
             ))),
     );
     let firewalld = settings::section()
@@ -355,14 +357,14 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
                         .actions
                         .can_review
                         .then_some(map(ZoneViewAction::Reconciliation(
-                            super::ReconciliationAction::Review,
+                            ReconciliationAction::Review,
                         ))),
                 ),
             )
             .push(
                 button::standard(fl!("reconciliation-refresh")).on_press_maybe(
                     presentation.actions.can_refresh.then_some(map(
-                        ZoneViewAction::Reconciliation(super::ReconciliationAction::Refresh),
+                        ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
                     )),
                 ),
             )

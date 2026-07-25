@@ -5,6 +5,12 @@
 //! runtime/permanent comparison. It intentionally has no dependency on COSMIC
 //! widgets, tasks, or localization.
 
+mod model;
+mod view;
+
+pub(crate) use model::{ReconciliationPresentation, ReconciliationPresentationStatus};
+pub(crate) use view::{ReconciliationAction, reconciliation_drawer};
+
 use crate::core::{
     ConfigurationRefreshCoordinator, RefreshRequest, ZoneReconciliationData,
     ZoneReconciliationState,
