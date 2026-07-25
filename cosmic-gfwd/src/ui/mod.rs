@@ -1,5 +1,6 @@
 pub mod dialog_drawers;
 pub mod ipset_view;
+pub(crate) mod reconciliation_model;
 pub mod reconciliation_view;
 pub mod sidebar;
 pub mod zone_view;
