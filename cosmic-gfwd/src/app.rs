@@ -26,6 +26,12 @@ use std::collections::{HashMap, HashSet};
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
+mod catalogs;
+mod ipsets;
+mod navigation;
+mod reconciliation;
+mod zones;
+
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
 pub struct AppModel {
@@ -2638,8 +2644,3 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
-mod catalogs;
-mod ipsets;
-mod navigation;
-mod reconciliation;
-mod zones;
