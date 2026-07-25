@@ -76,13 +76,10 @@ pub struct AppModel {
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    LaunchUrl(String),
-    ToggleContextPage(ContextPage),
+    Navigation(navigation::Message),
     Dialog(DialogMessage),
-    NavMenuAction(NavMenuAction),
     ZoneAction(ZoneViewAction),
     IpSetAction(IpSetViewAction),
-    UpdateConfig(Config),
     ZonesLoaded(Result<Vec<String>, BrokerError>),
     ZoneDetailsLoaded {
         zone_name: String,
@@ -365,8 +362,8 @@ impl cosmic::Application for AppModel {
         Some(match self.context_page {
             ContextPage::About => context_drawer::about(
                 &self.about,
-                |url| Message::LaunchUrl(url.to_string()),
-                Message::ToggleContextPage(ContextPage::About),
+                |url| Message::Navigation(navigation::Message::LaunchUrl(url.to_string())),
+                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::About)),
             ),
             ContextPage::ReviewReconciliation => context_drawer::context_drawer(
                 reconciliation_drawer(
@@ -376,7 +373,9 @@ impl cosmic::Application for AppModel {
                     self.reconciliation.watch_warning(),
                     Message::ZoneAction,
                 ),
-                Message::ToggleContextPage(ContextPage::ReviewReconciliation),
+                Message::Navigation(navigation::Message::ToggleContextPage(
+                    ContextPage::ReviewReconciliation,
+                )),
             )
             .title(fl!("reconciliation-review-title")),
             ContextPage::AddZone => context_drawer::context_drawer(
@@ -593,7 +592,7 @@ impl cosmic::Application for AppModel {
                     //     tracing::error!(?why, "app config error");
                     // }
 
-                    Message::UpdateConfig(update.config)
+                    Message::Navigation(navigation::Message::UpdateConfig(update.config))
                 }),
         ];
         let selected_zone = self.current_zone_name();
@@ -611,7 +610,7 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ToggleContextPage(context_page) => {
+            Message::Navigation(navigation::Message::ToggleContextPage(context_page)) => {
                 let mut tasks = Vec::new();
                 let requires_zone = matches!(
                     context_page,
@@ -652,7 +651,7 @@ impl cosmic::Application for AppModel {
                 return self.handle_dialog_message(dialog_message);
             }
 
-            Message::NavMenuAction(action) => {
+            Message::Navigation(navigation::Message::MenuAction(action)) => {
                 return self.handle_nav_menu_action(action);
             }
 
@@ -733,16 +732,18 @@ impl cosmic::Application for AppModel {
                 return Task::batch(tasks);
             }
 
-            Message::UpdateConfig(config) => {
+            Message::Navigation(navigation::Message::UpdateConfig(config)) => {
                 self.config = config;
             }
 
-            Message::LaunchUrl(url) => match open::that_detached(&url) {
-                Ok(()) => {}
-                Err(err) => {
-                    eprintln!("failed to open {url:?}: {err}");
+            Message::Navigation(navigation::Message::LaunchUrl(url)) => {
+                match open::that_detached(&url) {
+                    Ok(()) => {}
+                    Err(err) => {
+                        eprintln!("failed to open {url:?}: {err}");
+                    }
                 }
-            },
+            }
             Message::ZonesLoaded(result) => {
                 let mut tasks = Vec::new();
                 match result {
@@ -2640,7 +2641,7 @@ impl menu::action::MenuAction for NavMenuAction {
     type Message = cosmic::Action<Message>;
 
     fn message(&self) -> Self::Message {
-        cosmic::Action::App(Message::NavMenuAction(*self))
+        cosmic::Action::App(Message::Navigation(navigation::Message::MenuAction(*self)))
     }
 }
 
@@ -2661,16 +2662,33 @@ impl menu::action::MenuAction for MenuAction {
 
     fn message(&self) -> Self::Message {
         match self {
-            MenuAction::About => Message::ToggleContextPage(ContextPage::About),
-            MenuAction::AddZone => Message::ToggleContextPage(ContextPage::AddZone),
-            MenuAction::AddPort => Message::ToggleContextPage(ContextPage::AddPort),
-            MenuAction::AddInterface => Message::ToggleContextPage(ContextPage::AddInterface),
-            MenuAction::AddSource => Message::ToggleContextPage(ContextPage::AddSource),
-            MenuAction::AddIcmp => Message::ToggleContextPage(ContextPage::AddIcmp),
-            MenuAction::AddRichRule => Message::ToggleContextPage(ContextPage::AddRichRule),
-            MenuAction::AddIpSet => Message::ToggleContextPage(ContextPage::AddIpSet),
+            MenuAction::About => {
+                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::About))
+            }
+            MenuAction::AddZone => {
+                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::AddZone))
+            }
+            MenuAction::AddPort => {
+                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::AddPort))
+            }
+            MenuAction::AddInterface => Message::Navigation(
+                navigation::Message::ToggleContextPage(ContextPage::AddInterface),
+            ),
+            MenuAction::AddSource => Message::Navigation(navigation::Message::ToggleContextPage(
+                ContextPage::AddSource,
+            )),
+            MenuAction::AddIcmp => {
+                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::AddIcmp))
+            }
+            MenuAction::AddRichRule => Message::Navigation(navigation::Message::ToggleContextPage(
+                ContextPage::AddRichRule,
+            )),
+            MenuAction::AddIpSet => Message::Navigation(navigation::Message::ToggleContextPage(
+                ContextPage::AddIpSet,
+            )),
         }
     }
 }
 mod catalogs;
+mod navigation;
 mod reconciliation;
