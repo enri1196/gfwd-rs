@@ -2,8 +2,7 @@
 
 use crate::config::Config;
 use crate::core::{
-    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, RefreshRequest,
-    ZoneReconciliationData, validate_interface_name,
+    BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker, validate_interface_name,
 };
 use crate::fl;
 use crate::models::{ZoneDetails, ZoneTarget};
@@ -19,7 +18,6 @@ use dialogs::{
     localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
     target_from_index,
 };
-use futures_util::{StreamExt, stream::BoxStream};
 use ipsets::view_ipset_content;
 use navigation::SidebarItem;
 use reconciliation::reconciliation_drawer;
@@ -538,8 +536,11 @@ impl cosmic::Application for AppModel {
         ];
         let selected_zone = self.current_zone_name();
         subscriptions.push(
-            Subscription::run_with(selected_zone.clone(), configuration_event_subscription)
-                .map(Message::Reconciliation),
+            Subscription::run_with(
+                selected_zone.clone(),
+                reconciliation::configuration_event_subscription,
+            )
+            .map(Message::Reconciliation),
         );
 
         Subscription::batch(subscriptions)
@@ -903,75 +904,82 @@ impl AppModel {
         toast
     }
 
-    fn schedule_configuration_refresh(
-        &mut self,
-        event: ConfigurationEvent,
-    ) -> Task<cosmic::Action<Message>> {
-        let blocked = self.mutation_pending() || self.reconciliation.is_loading();
-        match self.reconciliation.handle_configuration_event(blocked) {
-            RefreshRequest::Start => self.start_configuration_refresh(event),
-            RefreshRequest::Coalesced => Task::none(),
-        }
-    }
-
     /// Apply a semantic reconciliation message and execute any root application effect.
     fn handle_reconciliation_message(
         &mut self,
         message: reconciliation::Message,
     ) -> Task<cosmic::Action<Message>> {
-        match message {
-            reconciliation::Message::ConfigurationEvent(result) => match result {
-                Ok(event) => self.schedule_configuration_refresh(event),
-                Err(error) => {
-                    self.reconciliation.watcher_failed(error);
-                    Task::none()
-                }
+        let selected_zone = self.current_zone_name();
+        let ready_zone = match &self.zones {
+            ZoneViewState::Ready(details) => Some(details.name.clone()),
+            _ => None,
+        };
+        let outcome = reconciliation::update(
+            &mut self.reconciliation,
+            message,
+            reconciliation::Context {
+                selected_zone: selected_zone.as_deref(),
+                ready_zone: ready_zone.as_deref(),
+                firewalld_active: self.firewalld_status == FirewalldStatus::Active,
+                mutation_pending: self.operations.mutation_pending(),
             },
-            reconciliation::Message::LoadCompleted {
-                zone,
-                generation,
-                result,
-            } => {
-                let is_current = matches!(
-                    self.navigation.active_item(),
-                    Some(SidebarItem::Zone { name, .. }) if name == &zone
-                ) && matches!(
-                    &self.zones,
-                    ZoneViewState::Ready(details) if details.name == zone
-                );
-                if !is_current || !self.reconciliation.complete_load(zone, generation, *result) {
-                    return Task::none();
+        );
+        let mut tasks = Vec::new();
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                reconciliation::Request::OpenReview => {
+                    self.open_context_page(ContextPage::ReviewReconciliation);
                 }
-                self.finish_configuration_refresh()
-            }
-            reconciliation::Message::PermanentApplied(result) => {
-                if result.is_ok() {
+                reconciliation::Request::ConfirmApplyPermanent => {
+                    self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
+                }
+                reconciliation::Request::ConfirmPersistRuntime => {
+                    self.operations.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
+                }
+                reconciliation::Request::BeginMutation(mutation) => {
+                    let operation = match mutation {
+                        reconciliation::Mutation::ApplyPermanent => {
+                            fl!("operation-apply-permanent")
+                        }
+                        reconciliation::Mutation::PersistRuntime => {
+                            fl!("operation-save-runtime")
+                        }
+                    };
+                    let _ = self.begin_mutation(operation);
+                }
+                reconciliation::Request::FinishMutation(result) => {
+                    tasks.push(self.finish_mutation(&result));
+                }
+                reconciliation::Request::ClearRuntimeDirty => {
                     self.operations.runtime_reload_needed = false;
                 }
-                let mut tasks = vec![
-                    self.finish_mutation(&result),
-                    self.start_firewalld_status_load(),
-                ];
-                if result.is_ok() {
+                reconciliation::Request::ConfigurationRefresh(event) => {
+                    tasks.push(self.start_configuration_refresh(event));
+                }
+                reconciliation::Request::RefreshFirewalldStatus => {
+                    tasks.push(self.start_firewalld_status_load());
+                }
+                reconciliation::Request::RefreshZones => {
                     tasks.push(self.start_zones_load());
                 }
-                Task::batch(tasks)
-            }
-            reconciliation::Message::RuntimePersisted(result) => {
-                let mut tasks = vec![self.finish_mutation(&result)];
-                if result.is_ok() {
+                reconciliation::Request::RefreshIpSets => {
+                    tasks.push(self.start_ipsets_load());
+                }
+                reconciliation::Request::RefreshCatalogs => {
                     tasks.extend([
-                        self.start_firewalld_status_load(),
-                        self.start_zones_load(),
-                        self.start_ipsets_load(),
                         self.start_services_load(),
                         self.start_icmp_types_load(),
                         self.start_interfaces_load(),
                     ]);
                 }
-                Task::batch(tasks)
             }
         }
+        tasks.extend(router.into_effects().into_iter().map(|effect| {
+            reconciliation::effects(effect)
+                .map(|message| cosmic::Action::from(Message::Reconciliation(message)))
+        }));
+        Task::batch(tasks)
     }
 
     fn start_configuration_refresh(
@@ -1010,11 +1018,16 @@ impl AppModel {
     }
 
     fn finish_configuration_refresh(&mut self) -> Task<cosmic::Action<Message>> {
-        if self.reconciliation.refresh_finished() {
-            self.start_configuration_refresh(ConfigurationEvent::Reloaded)
-        } else {
-            Task::none()
+        let mut router =
+            router::Router::new(reconciliation::finish_refresh(&mut self.reconciliation));
+        let mut tasks = Vec::new();
+        while let Some(request) = router.pop_request() {
+            if let reconciliation::Request::ConfigurationRefresh(event) = request {
+                tasks.push(self.start_configuration_refresh(event));
+            }
         }
+        debug_assert!(router.into_effects().is_empty());
+        Task::batch(tasks)
     }
 
     fn open_context_page(&mut self, context_page: ContextPage) {
@@ -1173,30 +1186,7 @@ impl AppModel {
         &mut self,
         action: reconciliation::ReconciliationAction,
     ) -> Task<cosmic::Action<Message>> {
-        match action {
-            reconciliation::ReconciliationAction::Review => {
-                self.open_context_page(ContextPage::ReviewReconciliation);
-                Task::none()
-            }
-            reconciliation::ReconciliationAction::Refresh => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    return Task::none();
-                };
-                if self.firewalld_status != FirewalldStatus::Active {
-                    self.reconciliation.set_unavailable(Some(zone_name));
-                    return Task::none();
-                }
-                self.start_zone_reconciliation(zone_name)
-            }
-            reconciliation::ReconciliationAction::ApplyPermanentToRuntime => {
-                self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
-                Task::none()
-            }
-            reconciliation::ReconciliationAction::SaveRuntimeAsPermanent => {
-                self.operations.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
-                Task::none()
-            }
-        }
+        self.handle_reconciliation_message(reconciliation::Message::Action(action))
     }
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
@@ -1489,13 +1479,6 @@ impl AppModel {
         broker.get_zone_details(&zone_name).await
     }
 
-    async fn load_zone_reconciliation(
-        zone_name: String,
-    ) -> Result<ZoneReconciliationData, BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.reconcile_zone(&zone_name).await
-    }
-
     async fn load_default_zone() -> Result<String, BrokerError> {
         let broker = FwdBroker::get().await?;
         broker.get_default_zone().await
@@ -1533,16 +1516,6 @@ impl AppModel {
         } else {
             broker.stop_firewalld().await
         }
-    }
-
-    async fn apply_permanent_configuration() -> Result<(), BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.apply_permanent_configuration().await
-    }
-
-    async fn persist_runtime_configuration() -> Result<(), BrokerError> {
-        let broker = FwdBroker::get().await?;
-        broker.persist_runtime_configuration().await
     }
 
     async fn set_default_zone(zone_name: String) -> Result<(), BrokerError> {
@@ -1782,25 +1755,11 @@ impl AppModel {
     }
 
     fn start_permanent_apply(&mut self) -> Task<cosmic::Action<Message>> {
-        if !self.begin_mutation(fl!("operation-apply-permanent")) {
-            return Task::none();
-        }
-        Task::perform(Self::apply_permanent_configuration(), |result| {
-            cosmic::Action::from(Message::Reconciliation(
-                reconciliation::Message::PermanentApplied(result),
-            ))
-        })
+        self.handle_reconciliation_message(reconciliation::Message::ApplyPermanent)
     }
 
     fn start_runtime_configuration_persist(&mut self) -> Task<cosmic::Action<Message>> {
-        if !self.begin_mutation(fl!("operation-save-runtime")) {
-            return Task::none();
-        }
-        Task::perform(Self::persist_runtime_configuration(), |result| {
-            cosmic::Action::from(Message::Reconciliation(
-                reconciliation::Message::RuntimePersisted(result),
-            ))
-        })
+        self.handle_reconciliation_message(reconciliation::Message::PersistRuntime)
     }
 
     fn start_default_zone_set(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
@@ -2084,17 +2043,7 @@ impl AppModel {
     }
 
     fn start_zone_reconciliation(&mut self, zone_name: String) -> Task<cosmic::Action<Message>> {
-        let generation = self.reconciliation.begin_load(zone_name.clone());
-        let zone_name_for_task = zone_name.clone();
-        Task::perform(Self::load_zone_reconciliation(zone_name), move |result| {
-            cosmic::Action::from(Message::Reconciliation(
-                reconciliation::Message::LoadCompleted {
-                    zone: zone_name_for_task.clone(),
-                    generation,
-                    result: Box::new(result.map_err(|error| error.to_string())),
-                },
-            ))
-        })
+        self.handle_reconciliation_message(reconciliation::Message::Load(zone_name))
     }
 
     fn start_ipsets_load(&mut self) -> Task<cosmic::Action<Message>> {
@@ -2278,38 +2227,6 @@ pub enum ContextPage {
     AddRichRule,
     AddIpSet,
     ReviewReconciliation,
-}
-
-fn configuration_event_messages(
-    selected_zone: Option<String>,
-) -> BoxStream<'static, reconciliation::Message> {
-    Box::pin(async_stream::stream! {
-        let broker = match FwdBroker::get().await {
-            Ok(broker) => broker,
-            Err(error) => {
-                yield reconciliation::Message::ConfigurationEvent(Err(error.to_string()));
-                return;
-            }
-        };
-        let mut events = broker.configuration_events(selected_zone);
-        while let Some(event) = events.next().await {
-            let failed = event.is_err();
-            yield reconciliation::Message::ConfigurationEvent(
-                event.map_err(|error| error.to_string())
-            );
-            if failed {
-                return;
-            }
-        }
-    })
-}
-
-/// Builds the selected-zone configuration subscription for libcosmic's keyed
-/// subscription API.
-fn configuration_event_subscription(
-    selected_zone: &Option<String>,
-) -> BoxStream<'static, reconciliation::Message> {
-    configuration_event_messages(selected_zone.clone())
 }
 
 fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
