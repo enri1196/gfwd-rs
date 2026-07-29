@@ -1,0 +1,357 @@
+// SPDX-License-Identifier: MIT
+
+use super::dialogs::{
+    DialogKind, drawer_cancel_footer, drawer_footer_with_submit, drawer_with_error, icmp_drawer,
+    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
+};
+use super::ipsets::view_ipset_content;
+use super::navigation::SidebarItem;
+use super::reconciliation::reconciliation_drawer;
+use super::zones::{ZoneViewState, view_zone_content};
+use super::{AppModel, Confirmation, ContextPage, MenuAction, Message, NavMenuAction};
+use crate::fl;
+use cosmic::app::context_drawer as cosmic_context_drawer;
+use cosmic::iced::Length;
+use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::prelude::*;
+use cosmic::widget::{self, menu};
+use std::collections::HashMap;
+
+/// Render the application's menu bar.
+pub(crate) fn header_start(app: &AppModel) -> Vec<Element<'_, Message>> {
+    let menu_bar = menu::bar(vec![
+        menu::Tree::with_children(
+            menu::root(fl!("menu-zones")).apply(Element::from),
+            menu::items(
+                &app.key_binds,
+                vec![menu::Item::Button(
+                    fl!("action-add-zone"),
+                    None,
+                    MenuAction::AddZone,
+                )],
+            ),
+        ),
+        menu::Tree::with_children(
+            menu::root(fl!("menu-rules")).apply(Element::from),
+            menu::items(
+                &app.key_binds,
+                vec![
+                    menu::Item::Button(fl!("action-add-port"), None, MenuAction::AddPort),
+                    menu::Item::Button(fl!("action-add-rich-rule"), None, MenuAction::AddRichRule),
+                    menu::Item::Button(fl!("action-add-icmp"), None, MenuAction::AddIcmp),
+                    menu::Item::Button(fl!("action-add-source"), None, MenuAction::AddSource),
+                    menu::Item::Button(fl!("action-add-interface"), None, MenuAction::AddInterface),
+                ],
+            ),
+        ),
+        menu::Tree::with_children(
+            menu::root(fl!("menu-objects")).apply(Element::from),
+            menu::items(
+                &app.key_binds,
+                vec![menu::Item::Button(
+                    fl!("action-add-ipset"),
+                    None,
+                    MenuAction::AddIpSet,
+                )],
+            ),
+        ),
+        menu::Tree::with_children(
+            menu::root(fl!("menu-help")).apply(Element::from),
+            menu::items(
+                &app.key_binds,
+                vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+            ),
+        ),
+    ]);
+
+    vec![menu_bar.into()]
+}
+
+/// Render the context menu for the currently selected navigation item.
+pub(crate) fn nav_context_menu(app: &AppModel) -> Option<Vec<menu::Tree<cosmic::Action<Message>>>> {
+    let context_id = app.navigation.nav_model().active();
+
+    let Some(item) = app.navigation.item_for_id(context_id) else {
+        return Some(Vec::new());
+    };
+
+    match item {
+        SidebarItem::Zone { .. } => {
+            let key_binds = HashMap::new();
+            Some(menu::items(
+                &key_binds,
+                vec![
+                    menu::Item::Button(
+                        fl!("context-open-zone"),
+                        None,
+                        NavMenuAction::Open(context_id),
+                    ),
+                    menu::Item::Button(
+                        fl!("context-activate-zone"),
+                        None,
+                        NavMenuAction::Activate(context_id),
+                    ),
+                    menu::Item::Button(
+                        fl!("context-set-default-zone"),
+                        None,
+                        NavMenuAction::SetDefault(context_id),
+                    ),
+                    menu::Item::Button(
+                        fl!("context-delete-zone"),
+                        None,
+                        NavMenuAction::Delete(context_id),
+                    ),
+                ],
+            ))
+        }
+        _ => Some(Vec::new()),
+    }
+}
+
+/// Render the active context drawer.
+pub(crate) fn context_drawer(
+    app: &AppModel,
+) -> Option<cosmic_context_drawer::ContextDrawer<'_, Message>> {
+    if !app.core.window.show_context {
+        return None;
+    }
+
+    let interface_error = app
+        .dialogs
+        .interface
+        .error
+        .as_deref()
+        .or(app.catalogs.interfaces.error());
+    let can_submit_interface =
+        app.dialogs.interface.error.is_none() && !app.dialogs.interface.interface.trim().is_empty();
+    let can_submit = !app.mutation_pending();
+    let error = app.dialogs.operation_error.as_deref();
+    let enabled_services = match &app.zones {
+        ZoneViewState::Ready(details) => details.services.as_slice(),
+        _ => &[],
+    };
+    let blocked_icmp = match &app.zones {
+        ZoneViewState::Ready(details) => details.icmp_blocks.as_slice(),
+        _ => &[],
+    };
+
+    Some(match app.context_page {
+        ContextPage::About => cosmic_context_drawer::about(
+            &app.about,
+            |url| Message::Navigation(super::navigation::Message::LaunchUrl(url.to_string())),
+            Message::Navigation(super::navigation::Message::ToggleContextPage(
+                ContextPage::About,
+            )),
+        ),
+        ContextPage::ReviewReconciliation => cosmic_context_drawer::context_drawer(
+            reconciliation_drawer(
+                app.reconciliation.state(),
+                app.mutation_pending(),
+                app.dialogs.operation_error.as_deref(),
+                app.reconciliation.watch_warning(),
+                |action| Message::Zone(super::zones::Message::View(action)),
+            ),
+            Message::Navigation(super::navigation::Message::ToggleContextPage(
+                ContextPage::ReviewReconciliation,
+            )),
+        )
+        .title(fl!("reconciliation-review-title")),
+        ContextPage::AddZone => cosmic_context_drawer::context_drawer(
+            drawer_with_error(super::dialogs::zone_drawer(&app.dialogs.zone), error),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Zone),
+        )
+        .title(fl!("drawer-title-zone"))
+        .footer(drawer_footer_with_submit(
+            DialogKind::Zone,
+            can_submit && !app.dialogs.zone.name.trim().is_empty(),
+        ))
+        .map(Message::Dialog),
+        ContextPage::AddService => cosmic_context_drawer::context_drawer(
+            drawer_with_error(
+                service_drawer(
+                    &app.dialogs.service,
+                    app.catalogs.services.items(),
+                    enabled_services,
+                    app.catalogs.services.is_loading(),
+                    app.catalogs.services.error(),
+                ),
+                error,
+            ),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Service),
+        )
+        .title(fl!("dialog-service-title"))
+        .footer(drawer_cancel_footer(DialogKind::Service))
+        .map(Message::Dialog),
+        ContextPage::AddPort => cosmic_context_drawer::context_drawer(
+            drawer_with_error(port_drawer(&app.dialogs.port), error),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Port),
+        )
+        .title(port_drawer_title(app.dialogs.port.kind))
+        .footer(drawer_footer_with_submit(
+            DialogKind::Port,
+            can_submit && app.dialogs.port.is_valid(),
+        ))
+        .map(Message::Dialog),
+        ContextPage::AddInterface => cosmic_context_drawer::context_drawer(
+            drawer_with_error(
+                interface_drawer(
+                    &app.dialogs.interface,
+                    app.catalogs.interfaces.items(),
+                    app.catalogs.interfaces.is_loading(),
+                    interface_error,
+                ),
+                error,
+            ),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Interface),
+        )
+        .title(fl!("drawer-title-interface"))
+        .footer(drawer_footer_with_submit(
+            DialogKind::Interface,
+            can_submit && can_submit_interface,
+        ))
+        .map(Message::Dialog),
+        ContextPage::AddSource => cosmic_context_drawer::context_drawer(
+            drawer_with_error(source_drawer(&app.dialogs.source), error),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Source),
+        )
+        .title(fl!("drawer-title-source"))
+        .footer(drawer_footer_with_submit(
+            DialogKind::Source,
+            can_submit && app.dialogs.source.is_valid(),
+        ))
+        .map(Message::Dialog),
+        ContextPage::AddIcmp => cosmic_context_drawer::context_drawer(
+            drawer_with_error(
+                icmp_drawer(
+                    &app.dialogs.icmp,
+                    app.catalogs.icmp_types.items(),
+                    blocked_icmp,
+                    app.catalogs.icmp_types.is_loading(),
+                    app.catalogs.icmp_types.error(),
+                ),
+                error,
+            ),
+            super::dialogs::DialogMessage::Cancel(DialogKind::Icmp),
+        )
+        .title(fl!("drawer-title-icmp"))
+        .footer(drawer_cancel_footer(DialogKind::Icmp))
+        .map(Message::Dialog),
+        ContextPage::AddRichRule => cosmic_context_drawer::context_drawer(
+            drawer_with_error(rich_rule_drawer(&app.dialogs.rich_rule), error),
+            super::dialogs::DialogMessage::Cancel(DialogKind::RichRule),
+        )
+        .title(fl!("drawer-title-rich-rule"))
+        .footer(drawer_footer_with_submit(
+            DialogKind::RichRule,
+            can_submit && app.dialogs.rich_rule.generated_rule().is_ok(),
+        ))
+        .map(Message::Dialog),
+        ContextPage::AddIpSet => cosmic_context_drawer::context_drawer(
+            drawer_with_error(ipset_drawer(&app.dialogs.ipset), error),
+            super::dialogs::DialogMessage::Cancel(DialogKind::IpSet),
+        )
+        .title(fl!("drawer-title-ipset"))
+        .footer(drawer_footer_with_submit(
+            DialogKind::IpSet,
+            can_submit && app.dialogs.ipset.is_valid(),
+        ))
+        .map(Message::Dialog),
+    })
+}
+
+/// Render the destructive-operation confirmation dialog.
+pub(crate) fn dialog(app: &AppModel) -> Option<Element<'_, Message>> {
+    let confirmation = app.operations.confirmation.as_ref()?;
+    let (title, body, confirm_label) = match confirmation {
+        Confirmation::DeleteZone(zone) => (
+            fl!("confirm-delete-zone-title"),
+            fl!("confirm-delete-zone-body", zone = zone),
+            fl!("confirm-delete"),
+        ),
+        Confirmation::DeleteIpSet(ipset) => (
+            fl!("confirm-delete-ipset-title"),
+            fl!("confirm-delete-ipset-body", ipset = ipset),
+            fl!("confirm-delete"),
+        ),
+        Confirmation::StopFirewalld => (
+            fl!("confirm-stop-firewalld-title"),
+            fl!("confirm-stop-firewalld-body"),
+            fl!("firewalld-stop"),
+        ),
+        Confirmation::ApplyPermanentConfiguration => (
+            fl!("confirm-apply-permanent-title"),
+            fl!("confirm-apply-permanent-body"),
+            fl!("confirm-apply-permanent-action"),
+        ),
+        Confirmation::SaveRuntimeConfiguration => (
+            fl!("confirm-save-runtime-title"),
+            fl!("confirm-save-runtime-body"),
+            fl!("confirm-save-runtime-action"),
+        ),
+    };
+
+    Some(
+        widget::dialog()
+            .title(title)
+            .body(body)
+            .primary_action(
+                widget::button::destructive(confirm_label).on_press(Message::ConfirmDestructive),
+            )
+            .secondary_action(
+                widget::button::text(fl!("dialog-cancel")).on_press(Message::CancelConfirmation),
+            )
+            .into(),
+    )
+}
+
+/// Render the pending-operation footer.
+pub(crate) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
+    app.operations.pending.as_ref().map(|operation| {
+        widget::container(widget::text::caption(fl!(
+            "operation-pending",
+            operation = operation
+        )))
+        .padding(cosmic::theme::spacing().space_xs)
+        .width(Length::Fill)
+        .into()
+    })
+}
+
+/// Render the active application page.
+pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
+    let space_m = cosmic::theme::spacing().space_m;
+    let content: Element<_> = match app.navigation.active_item() {
+        Some(SidebarItem::IpSets) => {
+            view_ipset_content(&app.ipsets, app.mutation_pending(), |action| {
+                Message::IpSet(super::ipsets::Message::View(action))
+            })
+        }
+        _ => view_zone_content(
+            &app.zones,
+            &app.firewalld_status,
+            app.reconciliation.state(),
+            app.reconciliation.watch_warning(),
+            app.mutation_pending(),
+            |action| Message::Zone(super::zones::Message::View(action)),
+        ),
+    };
+
+    widget::toaster(
+        &app.operations.toasts,
+        widget::container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(space_m)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center),
+    )
+}
+
+/// Return the localized drawer title for the active port operation.
+fn port_drawer_title(kind: super::dialogs::PortKind) -> String {
+    match kind {
+        super::dialogs::PortKind::Destination => fl!("drawer-title-destination-port"),
+        super::dialogs::PortKind::Source => fl!("drawer-title-source-port"),
+        super::dialogs::PortKind::Forward => fl!("drawer-title-forward-port"),
+    }
+}

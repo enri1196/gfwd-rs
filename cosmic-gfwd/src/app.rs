@@ -4,22 +4,14 @@ use crate::config::Config;
 use crate::core::{BrokerError, ConfigurationEvent, FirewalldStatus, FwdBroker};
 use crate::fl;
 use crate::models::{ZoneDetails, ZoneTarget};
-use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Length, Subscription};
+use cosmic::iced::Subscription;
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
-use dialogs::{
-    DialogKind, DialogMessage, DialogState, PortKind, drawer_cancel_footer,
-    drawer_footer_with_submit, drawer_with_error, icmp_drawer, interface_drawer, ipset_drawer,
-    localized_validation_error, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
-};
-use ipsets::view_ipset_content;
+use dialogs::{DialogKind, DialogMessage, DialogState, localized_validation_error};
 use navigation::SidebarItem;
-use reconciliation::reconciliation_drawer;
 use std::collections::{HashMap, HashSet};
-use zones::{ZoneViewAction, ZoneViewState, view_zone_content};
+use zones::{ZoneViewAction, ZoneViewState};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -32,6 +24,7 @@ mod operations;
 mod outcome;
 pub(crate) mod reconciliation;
 mod router;
+mod view;
 mod zones;
 
 /// The application model stores app-specific state used to describe its interface and
@@ -171,60 +164,7 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        let menu_bar = menu::bar(vec![
-            menu::Tree::with_children(
-                menu::root(fl!("menu-zones")).apply(Element::from),
-                menu::items(
-                    &self.key_binds,
-                    vec![menu::Item::Button(
-                        fl!("action-add-zone"),
-                        None,
-                        MenuAction::AddZone,
-                    )],
-                ),
-            ),
-            menu::Tree::with_children(
-                menu::root(fl!("menu-rules")).apply(Element::from),
-                menu::items(
-                    &self.key_binds,
-                    vec![
-                        menu::Item::Button(fl!("action-add-port"), None, MenuAction::AddPort),
-                        menu::Item::Button(
-                            fl!("action-add-rich-rule"),
-                            None,
-                            MenuAction::AddRichRule,
-                        ),
-                        menu::Item::Button(fl!("action-add-icmp"), None, MenuAction::AddIcmp),
-                        menu::Item::Button(fl!("action-add-source"), None, MenuAction::AddSource),
-                        menu::Item::Button(
-                            fl!("action-add-interface"),
-                            None,
-                            MenuAction::AddInterface,
-                        ),
-                    ],
-                ),
-            ),
-            menu::Tree::with_children(
-                menu::root(fl!("menu-objects")).apply(Element::from),
-                menu::items(
-                    &self.key_binds,
-                    vec![menu::Item::Button(
-                        fl!("action-add-ipset"),
-                        None,
-                        MenuAction::AddIpSet,
-                    )],
-                ),
-            ),
-            menu::Tree::with_children(
-                menu::root(fl!("menu-help")).apply(Element::from),
-                menu::items(
-                    &self.key_binds,
-                    vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
-                ),
-            ),
-        ]);
-
-        vec![menu_bar.into()]
+        view::header_start(self)
     }
 
     /// Enables the COSMIC application to create a nav bar with this model.
@@ -234,248 +174,22 @@ impl cosmic::Application for AppModel {
 
     /// The context menu to display for the active nav-bar item.
     fn nav_context_menu(&self) -> Option<Vec<menu::Tree<cosmic::Action<Self::Message>>>> {
-        let context_id = self.navigation.nav_model().active();
-
-        let Some(item) = self.navigation.item_for_id(context_id) else {
-            return Some(Vec::new());
-        };
-
-        match item {
-            SidebarItem::Zone { .. } => {
-                let key_binds = HashMap::new();
-                Some(menu::items(
-                    &key_binds,
-                    vec![
-                        menu::Item::Button(
-                            fl!("context-open-zone"),
-                            None,
-                            NavMenuAction::Open(context_id),
-                        ),
-                        menu::Item::Button(
-                            fl!("context-activate-zone"),
-                            None,
-                            NavMenuAction::Activate(context_id),
-                        ),
-                        menu::Item::Button(
-                            fl!("context-set-default-zone"),
-                            None,
-                            NavMenuAction::SetDefault(context_id),
-                        ),
-                        menu::Item::Button(
-                            fl!("context-delete-zone"),
-                            None,
-                            NavMenuAction::Delete(context_id),
-                        ),
-                    ],
-                ))
-            }
-            _ => Some(Vec::new()),
-        }
+        view::nav_context_menu(self)
     }
 
     /// Display a context drawer if the context page is requested.
-    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
-        if !self.core.window.show_context {
-            return None;
-        }
-
-        let interface_error = self
-            .dialogs
-            .interface
-            .error
-            .as_deref()
-            .or(self.catalogs.interfaces.error());
-        let can_submit_interface = self.dialogs.interface.error.is_none()
-            && !self.dialogs.interface.interface.trim().is_empty();
-        let can_submit = !self.mutation_pending();
-        let error = self.dialogs.operation_error.as_deref();
-        let enabled_services = match &self.zones {
-            ZoneViewState::Ready(details) => details.services.as_slice(),
-            _ => &[],
-        };
-        let blocked_icmp = match &self.zones {
-            ZoneViewState::Ready(details) => details.icmp_blocks.as_slice(),
-            _ => &[],
-        };
-
-        Some(match self.context_page {
-            ContextPage::About => context_drawer::about(
-                &self.about,
-                |url| Message::Navigation(navigation::Message::LaunchUrl(url.to_string())),
-                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::About)),
-            ),
-            ContextPage::ReviewReconciliation => context_drawer::context_drawer(
-                reconciliation_drawer(
-                    self.reconciliation.state(),
-                    self.mutation_pending(),
-                    self.dialogs.operation_error.as_deref(),
-                    self.reconciliation.watch_warning(),
-                    |action| Message::Zone(zones::Message::View(action)),
-                ),
-                Message::Navigation(navigation::Message::ToggleContextPage(
-                    ContextPage::ReviewReconciliation,
-                )),
-            )
-            .title(fl!("reconciliation-review-title")),
-            ContextPage::AddZone => context_drawer::context_drawer(
-                drawer_with_error(dialogs::zone_drawer(&self.dialogs.zone), error),
-                DialogMessage::Cancel(DialogKind::Zone),
-            )
-            .title(fl!("drawer-title-zone"))
-            .footer(drawer_footer_with_submit(
-                DialogKind::Zone,
-                can_submit && !self.dialogs.zone.name.trim().is_empty(),
-            ))
-            .map(Message::Dialog),
-            ContextPage::AddService => context_drawer::context_drawer(
-                drawer_with_error(
-                    service_drawer(
-                        &self.dialogs.service,
-                        self.catalogs.services.items(),
-                        enabled_services,
-                        self.catalogs.services.is_loading(),
-                        self.catalogs.services.error(),
-                    ),
-                    error,
-                ),
-                DialogMessage::Cancel(DialogKind::Service),
-            )
-            .title(fl!("dialog-service-title"))
-            .footer(drawer_cancel_footer(DialogKind::Service))
-            .map(Message::Dialog),
-            ContextPage::AddPort => context_drawer::context_drawer(
-                drawer_with_error(port_drawer(&self.dialogs.port), error),
-                DialogMessage::Cancel(DialogKind::Port),
-            )
-            .title(port_drawer_title(self.dialogs.port.kind))
-            .footer(drawer_footer_with_submit(
-                DialogKind::Port,
-                can_submit && self.dialogs.port.is_valid(),
-            ))
-            .map(Message::Dialog),
-            ContextPage::AddInterface => context_drawer::context_drawer(
-                drawer_with_error(
-                    interface_drawer(
-                        &self.dialogs.interface,
-                        self.catalogs.interfaces.items(),
-                        self.catalogs.interfaces.is_loading(),
-                        interface_error,
-                    ),
-                    error,
-                ),
-                DialogMessage::Cancel(DialogKind::Interface),
-            )
-            .title(fl!("drawer-title-interface"))
-            .footer(drawer_footer_with_submit(
-                DialogKind::Interface,
-                can_submit && can_submit_interface,
-            ))
-            .map(Message::Dialog),
-            ContextPage::AddSource => context_drawer::context_drawer(
-                drawer_with_error(source_drawer(&self.dialogs.source), error),
-                DialogMessage::Cancel(DialogKind::Source),
-            )
-            .title(fl!("drawer-title-source"))
-            .footer(drawer_footer_with_submit(
-                DialogKind::Source,
-                can_submit && self.dialogs.source.is_valid(),
-            ))
-            .map(Message::Dialog),
-            ContextPage::AddIcmp => context_drawer::context_drawer(
-                drawer_with_error(
-                    icmp_drawer(
-                        &self.dialogs.icmp,
-                        self.catalogs.icmp_types.items(),
-                        blocked_icmp,
-                        self.catalogs.icmp_types.is_loading(),
-                        self.catalogs.icmp_types.error(),
-                    ),
-                    error,
-                ),
-                DialogMessage::Cancel(DialogKind::Icmp),
-            )
-            .title(fl!("drawer-title-icmp"))
-            .footer(drawer_cancel_footer(DialogKind::Icmp))
-            .map(Message::Dialog),
-            ContextPage::AddRichRule => context_drawer::context_drawer(
-                drawer_with_error(rich_rule_drawer(&self.dialogs.rich_rule), error),
-                DialogMessage::Cancel(DialogKind::RichRule),
-            )
-            .title(fl!("drawer-title-rich-rule"))
-            .footer(drawer_footer_with_submit(
-                DialogKind::RichRule,
-                can_submit && self.dialogs.rich_rule.generated_rule().is_ok(),
-            ))
-            .map(Message::Dialog),
-            ContextPage::AddIpSet => context_drawer::context_drawer(
-                drawer_with_error(ipset_drawer(&self.dialogs.ipset), error),
-                DialogMessage::Cancel(DialogKind::IpSet),
-            )
-            .title(fl!("drawer-title-ipset"))
-            .footer(drawer_footer_with_submit(
-                DialogKind::IpSet,
-                can_submit && self.dialogs.ipset.is_valid(),
-            ))
-            .map(Message::Dialog),
-        })
+    fn context_drawer(
+        &self,
+    ) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Self::Message>> {
+        view::context_drawer(self)
     }
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
-        let confirmation = self.operations.confirmation.as_ref()?;
-        let (title, body, confirm_label) = match confirmation {
-            Confirmation::DeleteZone(zone) => (
-                fl!("confirm-delete-zone-title"),
-                fl!("confirm-delete-zone-body", zone = zone),
-                fl!("confirm-delete"),
-            ),
-            Confirmation::DeleteIpSet(ipset) => (
-                fl!("confirm-delete-ipset-title"),
-                fl!("confirm-delete-ipset-body", ipset = ipset),
-                fl!("confirm-delete"),
-            ),
-            Confirmation::StopFirewalld => (
-                fl!("confirm-stop-firewalld-title"),
-                fl!("confirm-stop-firewalld-body"),
-                fl!("firewalld-stop"),
-            ),
-            Confirmation::ApplyPermanentConfiguration => (
-                fl!("confirm-apply-permanent-title"),
-                fl!("confirm-apply-permanent-body"),
-                fl!("confirm-apply-permanent-action"),
-            ),
-            Confirmation::SaveRuntimeConfiguration => (
-                fl!("confirm-save-runtime-title"),
-                fl!("confirm-save-runtime-body"),
-                fl!("confirm-save-runtime-action"),
-            ),
-        };
-
-        Some(
-            widget::dialog()
-                .title(title)
-                .body(body)
-                .primary_action(
-                    widget::button::destructive(confirm_label)
-                        .on_press(Message::ConfirmDestructive),
-                )
-                .secondary_action(
-                    widget::button::text(fl!("dialog-cancel"))
-                        .on_press(Message::CancelConfirmation),
-                )
-                .into(),
-        )
+        view::dialog(self)
     }
 
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
-        self.operations.pending.as_ref().map(|operation| {
-            widget::container(widget::text::caption(fl!(
-                "operation-pending",
-                operation = operation
-            )))
-            .padding(cosmic::theme::spacing().space_xs)
-            .width(Length::Fill)
-            .into()
-        })
+        view::footer(self)
     }
 
     /// Describes the interface based on the current state of the application model.
@@ -483,32 +197,7 @@ impl cosmic::Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
-        let space_m = cosmic::theme::spacing().space_m;
-        let content: Element<_> = match self.navigation.active_item() {
-            Some(SidebarItem::IpSets) => {
-                view_ipset_content(&self.ipsets, self.mutation_pending(), |action| {
-                    Message::IpSet(ipsets::Message::View(action))
-                })
-            }
-            _ => view_zone_content(
-                &self.zones,
-                &self.firewalld_status,
-                self.reconciliation.state(),
-                self.reconciliation.watch_warning(),
-                self.mutation_pending(),
-                |action| Message::Zone(zones::Message::View(action)),
-            ),
-        };
-
-        widget::toaster(
-            &self.operations.toasts,
-            widget::container(content)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(space_m)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-        )
+        view::view(self)
     }
 
     /// Register subscriptions for this application.
@@ -1907,15 +1596,6 @@ impl AppModel {
         } else {
             Task::none()
         }
-    }
-}
-
-/// Return the localized drawer title for the active port operation.
-fn port_drawer_title(kind: PortKind) -> String {
-    match kind {
-        PortKind::Destination => fl!("drawer-title-destination-port"),
-        PortKind::Source => fl!("drawer-title-source-port"),
-        PortKind::Forward => fl!("drawer-title-forward-port"),
     }
 }
 
