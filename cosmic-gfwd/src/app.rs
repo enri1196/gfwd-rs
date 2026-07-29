@@ -8,8 +8,8 @@ use cosmic::iced::Subscription;
 use cosmic::prelude::*;
 use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use dialogs::{DialogKind, DialogMessage, DialogState, localized_validation_error};
-use navigation::SidebarItem;
-use std::collections::{HashMap, HashSet};
+use navigation::{MenuAction as NavMenuAction, SidebarItem};
+use std::collections::HashMap;
 use zones::{ZoneViewAction, ZoneViewState};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -241,49 +241,10 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::Navigation(navigation::Message::ToggleContextPage(context_page)) => {
-                let mut tasks = Vec::new();
-                let requires_zone = matches!(
-                    context_page,
-                    ContextPage::AddService
-                        | ContextPage::AddPort
-                        | ContextPage::AddInterface
-                        | ContextPage::AddSource
-                        | ContextPage::AddIcmp
-                        | ContextPage::AddRichRule
-                );
-                if self.context_page == context_page {
-                    // Close the context drawer if the toggled context page is the same.
-                    self.core.window.show_context = !self.core.window.show_context;
-                } else {
-                    // Open the context drawer to display the requested context page.
-                    self.context_page = context_page;
-                    self.core.window.show_context = true;
-                }
-                if self.core.window.show_context {
-                    self.reset_dialog_for_context(context_page);
-                    if requires_zone && self.current_zone_name().is_none() {
-                        self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
-                    }
-                    if context_page == ContextPage::AddInterface {
-                        tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
-                    } else if context_page == ContextPage::AddService {
-                        tasks.push(self.update_catalogs(catalogs::Message::LoadServices));
-                    } else if context_page == ContextPage::AddIcmp {
-                        tasks.push(self.update_catalogs(catalogs::Message::LoadIcmpTypes));
-                    }
-                }
-                if !tasks.is_empty() {
-                    return Task::batch(tasks);
-                }
-            }
+            Message::Navigation(message) => return self.update_navigation(message),
 
             Message::Dialog(dialog_message) => {
                 return self.handle_dialog_message(dialog_message);
-            }
-
-            Message::Navigation(navigation::Message::MenuAction(action)) => {
-                return self.handle_nav_menu_action(action);
             }
 
             Message::Zone(zones::Message::View(action)) => {
@@ -349,51 +310,10 @@ impl cosmic::Application for AppModel {
                 ]);
             }
 
-            Message::Navigation(navigation::Message::UpdateConfig(config)) => {
-                self.config = config;
-            }
-
-            Message::Navigation(navigation::Message::LaunchUrl(url)) => {
-                match open::that_detached(&url) {
-                    Ok(()) => {}
-                    Err(err) => {
-                        eprintln!("failed to open {url:?}: {err}");
-                    }
-                }
-            }
             Message::Zone(zones::Message::ListLoaded(result)) => {
-                let mut tasks = Vec::new();
-                match result {
-                    Ok(zones) => {
-                        self.navigation.set_zones(zones);
-                        tasks.push(zones::effects::start_default_zone_load(self));
-                        tasks.push(zones::effects::start_active_zones_load(self));
-                    }
-                    Err(error) => {
-                        eprintln!("failed to load zones: {error}");
-                        self.navigation.set_error(error.to_string());
-                        self.zones = ZoneViewState::Error {
-                            zone: "zones".to_string(),
-                            message: error.to_string(),
-                        };
-                    }
-                }
-                let task = match self.navigation.active_item() {
-                    Some(SidebarItem::Zone { name, .. }) => {
-                        zones::effects::start_zone_load(self, name.clone())
-                    }
-                    _ => {
-                        if !matches!(self.zones, ZoneViewState::Error { .. }) {
-                            self.zones = ZoneViewState::Empty;
-                            self.reconciliation.set_unavailable(None);
-                        }
-                        self.finish_configuration_refresh()
-                    }
-                };
-
-                tasks.push(self.update_title());
-                tasks.push(task);
-                return Task::batch(tasks);
+                return self.update_navigation(navigation::Message::ZonesLoaded(
+                    result.map_err(|error| error.to_string()),
+                ));
             }
             Message::Zone(zones::Message::DetailsLoaded { zone_name, result }) => {
                 let is_active = matches!(
@@ -425,20 +345,16 @@ impl cosmic::Application for AppModel {
                     }
                 }
             }
-            Message::Zone(zones::Message::DefaultLoaded(result)) => match result {
-                Ok(zone) => self.navigation.set_default_zone(Some(zone)),
-                Err(error) => {
-                    eprintln!("failed to load default zone: {error}");
-                    self.navigation.set_default_zone(None);
-                }
-            },
-            Message::Zone(zones::Message::ActiveLoaded(result)) => match result {
-                Ok(active_zones) => self.navigation.set_active_zones(active_zones),
-                Err(error) => {
-                    eprintln!("failed to load active zones: {error}");
-                    self.navigation.set_active_zones(HashSet::new());
-                }
-            },
+            Message::Zone(zones::Message::DefaultLoaded(result)) => {
+                return self.update_navigation(navigation::Message::DefaultZoneLoaded(
+                    result.map_err(|error| error.to_string()),
+                ));
+            }
+            Message::Zone(zones::Message::ActiveLoaded(result)) => {
+                return self.update_navigation(navigation::Message::ActiveZonesLoaded(
+                    result.map_err(|error| error.to_string()),
+                ));
+            }
             Message::Catalog(message) => {
                 return self.update_catalogs(message);
             }
@@ -521,7 +437,7 @@ impl cosmic::Application for AppModel {
 
     /// Called when a nav item is selected.
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
-        self.handle_nav_select(id)
+        self.update_navigation(navigation::Message::Select(id))
     }
 }
 
@@ -758,53 +674,96 @@ impl AppModel {
         }
     }
 
-    fn handle_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Message>> {
-        self.navigation.activate(id);
-
-        let task = match self.navigation.active_item() {
-            Some(SidebarItem::Zone { name, .. }) => {
-                zones::effects::start_zone_load(self, name.clone())
-            }
-            Some(SidebarItem::IpSets) => self.update_ipsets(ipsets::Message::LoadList),
-            _ => {
-                self.zones = ZoneViewState::Empty;
-                Task::none()
-            }
-        };
-
-        Task::batch(vec![self.update_title(), task])
-    }
-
-    fn handle_nav_menu_action(&mut self, action: NavMenuAction) -> Task<cosmic::Action<Message>> {
-        match action {
-            NavMenuAction::Open(id) => self.handle_nav_select(id),
-            NavMenuAction::Activate(id) => {
-                if self.navigation.zone_name_for_id(id).is_none() {
-                    return Task::none();
+    /// Reduce navigation state and execute its root-owned requests in FIFO order.
+    fn update_navigation(&mut self, message: navigation::Message) -> Task<cosmic::Action<Message>> {
+        let outcome = navigation::update(&mut self.navigation, message, navigation::Context);
+        let mut tasks = Vec::new();
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                navigation::Request::LoadZone(zone_name) => {
+                    tasks.push(zones::effects::start_zone_load(self, zone_name));
                 }
-                let task = self.handle_nav_select(id);
-                self.context_page = ContextPage::AddInterface;
-                self.core.window.show_context = true;
-                self.reset_dialog_for_context(ContextPage::AddInterface);
-                Task::batch(vec![
-                    task,
-                    self.update_catalogs(catalogs::Message::LoadInterfaces),
-                ])
-            }
-            NavMenuAction::SetDefault(id) => {
-                let Some(zone_name) = self.navigation.zone_name_for_id(id) else {
-                    return Task::none();
-                };
-                zones::effects::start_default_zone_set(self, zone_name)
-            }
-            NavMenuAction::Delete(id) => {
-                let Some(zone_name) = self.navigation.zone_name_for_id(id) else {
-                    return Task::none();
-                };
-                self.operations.confirmation = Some(Confirmation::DeleteZone(zone_name));
-                Task::none()
+                navigation::Request::LoadIpSets => {
+                    tasks.push(self.update_ipsets(ipsets::Message::LoadList));
+                }
+                navigation::Request::OpenContextPage(context_page) => {
+                    self.open_context_page(context_page);
+                }
+                navigation::Request::ToggleContextPage(context_page) => {
+                    let requires_zone = matches!(
+                        context_page,
+                        ContextPage::AddService
+                            | ContextPage::AddPort
+                            | ContextPage::AddInterface
+                            | ContextPage::AddSource
+                            | ContextPage::AddIcmp
+                            | ContextPage::AddRichRule
+                    );
+                    if self.context_page == context_page {
+                        self.core.window.show_context = !self.core.window.show_context;
+                    } else {
+                        self.context_page = context_page;
+                        self.core.window.show_context = true;
+                    }
+                    if self.core.window.show_context {
+                        self.reset_dialog_for_context(context_page);
+                        if requires_zone && self.current_zone_name().is_none() {
+                            self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
+                        }
+                        match context_page {
+                            ContextPage::AddInterface => {
+                                tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
+                            }
+                            ContextPage::AddService => {
+                                tasks.push(self.update_catalogs(catalogs::Message::LoadServices));
+                            }
+                            ContextPage::AddIcmp => {
+                                tasks.push(self.update_catalogs(catalogs::Message::LoadIcmpTypes));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                navigation::Request::LoadInterfaceCatalog => {
+                    tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
+                }
+                navigation::Request::SetDefaultZone(zone_name) => {
+                    tasks.push(zones::effects::start_default_zone_set(self, zone_name));
+                }
+                navigation::Request::ConfirmDeleteZone(zone_name) => {
+                    self.operations.confirmation = Some(Confirmation::DeleteZone(zone_name));
+                }
+                navigation::Request::RefreshTitle => tasks.push(self.update_title()),
+                navigation::Request::ClearSelectedZone => {
+                    self.zones = ZoneViewState::Empty;
+                    self.reconciliation.set_unavailable(None);
+                }
+                navigation::Request::LoadDefaultZone => {
+                    tasks.push(zones::effects::start_default_zone_load(self));
+                }
+                navigation::Request::LoadActiveZones => {
+                    tasks.push(zones::effects::start_active_zones_load(self));
+                }
+                navigation::Request::FinishConfigurationRefresh => {
+                    tasks.push(self.finish_configuration_refresh());
+                }
+                navigation::Request::ShowZoneListError(message) => {
+                    self.zones = ZoneViewState::Error {
+                        zone: "zones".to_string(),
+                        message,
+                    };
+                }
+                navigation::Request::UpdateConfig(config) => self.config = config,
+                navigation::Request::LaunchUrl(url) => {
+                    if let Err(error) = open::that_detached(&url) {
+                        eprintln!("failed to open {url:?}: {error}");
+                    }
+                }
             }
         }
+        debug_assert!(router.into_effects().is_empty());
+        Task::batch(tasks)
     }
 
     fn handle_zone_action(&mut self, action: ZoneViewAction) -> Task<cosmic::Action<Message>> {
@@ -1069,22 +1028,6 @@ fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
         ContextPage::AddRichRule => Some(DialogKind::RichRule),
         ContextPage::AddIpSet => Some(DialogKind::IpSet),
         ContextPage::About | ContextPage::ReviewReconciliation => None,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NavMenuAction {
-    Open(nav_bar::Id),
-    Activate(nav_bar::Id),
-    SetDefault(nav_bar::Id),
-    Delete(nav_bar::Id),
-}
-
-impl menu::action::MenuAction for NavMenuAction {
-    type Message = cosmic::Action<Message>;
-
-    fn message(&self) -> Self::Message {
-        cosmic::Action::App(Message::Navigation(navigation::Message::MenuAction(*self)))
     }
 }
 

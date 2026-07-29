@@ -1,6 +1,8 @@
 //! Navigation model materialization.
 
 use std::borrow::Cow;
+#[cfg(test)]
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 use cosmic::widget::nav_bar;
@@ -69,6 +71,8 @@ enum SidebarStatus {
 
 pub struct Sidebar {
     nav: nav_bar::Model,
+    #[cfg(test)]
+    zone_ids: HashMap<String, nav_bar::Id>,
     zones: Vec<String>,
     default_zone: Option<String>,
     active_zones: HashSet<String>,
@@ -80,6 +84,8 @@ impl Sidebar {
     pub fn new() -> Self {
         let mut sidebar = Self {
             nav: nav_bar::Model::default(),
+            #[cfg(test)]
+            zone_ids: HashMap::new(),
             zones: Vec::new(),
             default_zone: None,
             active_zones: HashSet::new(),
@@ -116,6 +122,12 @@ impl Sidebar {
     pub fn zone_name_for_id(&self, id: nav_bar::Id) -> Option<String> {
         self.item_for_id(id)
             .and_then(|item| item.zone_name().map(|name| name.to_string()))
+    }
+
+    /// Return the current navigation identifier for a materialized zone.
+    #[cfg(test)]
+    pub(crate) fn zone_id(&self, zone_name: &str) -> Option<nav_bar::Id> {
+        self.zone_ids.get(zone_name).copied()
     }
 
     pub fn set_loading(&mut self) {
@@ -155,6 +167,36 @@ impl Sidebar {
     pub fn set_error(&mut self, message: impl Into<String>) {
         self.status = SidebarStatus::Error(message.into());
         self.rebuild_items();
+    }
+
+    /// Return the default and runtime-active indicators for a permanent zone.
+    #[cfg(test)]
+    pub(crate) fn zone_indicators(&self, zone_name: &str) -> Option<(bool, bool)> {
+        self.build_zone_items()
+            .into_iter()
+            .find_map(|item| match item {
+                SidebarItem::Zone {
+                    name,
+                    is_default,
+                    is_active,
+                } if name == zone_name => Some((is_default, is_active)),
+                _ => None,
+            })
+    }
+
+    /// Report whether the sidebar currently presents its zone-list loading state.
+    #[cfg(test)]
+    pub(crate) fn is_loading(&self) -> bool {
+        matches!(self.status, SidebarStatus::Loading)
+    }
+
+    /// Return the zone-list error currently presented by the sidebar.
+    #[cfg(test)]
+    pub(crate) fn error_message(&self) -> Option<&str> {
+        match &self.status {
+            SidebarStatus::Error(message) => Some(message),
+            _ => None,
+        }
     }
 
     fn active_key(&self) -> Option<ActiveSidebarItem> {
@@ -202,6 +244,8 @@ impl Sidebar {
             .map(ActiveSidebarItem::Zone)
             .or_else(|| self.active_key());
         self.nav.clear();
+        #[cfg(test)]
+        self.zone_ids.clear();
 
         let mut first_id = None;
         let mut active_id = None;
@@ -222,13 +266,18 @@ impl Sidebar {
             };
 
             let needs_divider = !added_separator && !matches!(item, SidebarItem::IpSets);
-            let mut entry = self.nav.insert().text(label).data(item);
+            let mut entry = self.nav.insert().text(label).data(item.clone());
             if needs_divider {
                 entry = entry.divider_above(true);
                 added_separator = true;
             }
 
             let id = entry.id();
+
+            #[cfg(test)]
+            if let SidebarItem::Zone { name, .. } = item {
+                self.zone_ids.insert(name, id);
+            }
 
             if first_id.is_none() {
                 first_id = Some(id);
