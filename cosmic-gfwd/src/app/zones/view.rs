@@ -16,6 +16,7 @@ const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
 const ADD_ICON: &str = "list-add-symbolic";
 const REMOVE_ICON: &str = "user-trash-symbolic";
+const REFRESH_ICON: &str = "view-refresh-symbolic";
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewState {
@@ -352,26 +353,26 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let status = reconciliation_status(presentation.status);
-    let actions =
-        widget::row::with_capacity(2)
-            .push(
-                button::standard(fl!("reconciliation-review")).on_press_maybe(
-                    presentation
-                        .actions
-                        .can_review
-                        .then_some(map(ZoneViewAction::Reconciliation(
-                            ReconciliationAction::Review,
-                        ))),
-                ),
-            )
-            .push(
-                button::standard(fl!("reconciliation-refresh")).on_press_maybe(
-                    presentation.actions.can_refresh.then_some(map(
-                        ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
-                    )),
-                ),
-            )
-            .spacing(cosmic::theme::spacing().space_s);
+    let actions = widget::row::with_capacity(2)
+        .push(
+            button::standard(fl!("reconciliation-review")).on_press_maybe(
+                presentation
+                    .actions
+                    .can_review
+                    .then_some(map(ZoneViewAction::Reconciliation(
+                        ReconciliationAction::Review,
+                    ))),
+            ),
+        )
+        .push(
+            button::icon(icon::from_name(REFRESH_ICON))
+                .tooltip(fl!("reconciliation-refresh"))
+                .extra_small()
+                .on_press_maybe(presentation.actions.can_refresh.then_some(map(
+                    ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
+                ))),
+        )
+        .spacing(cosmic::theme::spacing().space_s);
 
     let section = settings::section()
         .title(fl!("reconciliation-section"))
