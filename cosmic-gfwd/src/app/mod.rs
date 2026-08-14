@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use zones::{ZoneViewAction, ZoneViewState};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+const APP_ICON: &[u8] = include_bytes!("../../resources/icons/hicolor/scalable/apps/icon.svg");
 
 mod catalogs;
 pub(crate) mod dialogs;
