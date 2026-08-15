@@ -191,7 +191,7 @@ fn zone_details<'a, Message: 'static + Clone>(
         );
 
     let services = list_section(
-        fl!("zone-section-services"),
+        section_title(fl!("zone-section-services"), details.services.len()),
         details
             .services
             .iter()
@@ -204,7 +204,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let interfaces = list_section(
-        fl!("zone-section-interfaces"),
+        section_title(fl!("zone-section-interfaces"), details.interfaces.len()),
         details
             .interfaces
             .iter()
@@ -222,7 +222,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let sources = list_section(
-        fl!("zone-section-sources"),
+        section_title(fl!("zone-section-sources"), details.sources.len()),
         details
             .sources
             .iter()
@@ -235,7 +235,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let ports = list_section(
-        fl!("zone-section-ports"),
+        section_title(fl!("zone-section-ports"), details.ports.len()),
         details
             .ports
             .iter()
@@ -256,7 +256,10 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let forward_ports = list_section(
-        fl!("zone-section-forward-ports"),
+        section_title(
+            fl!("zone-section-forward-ports"),
+            details.forward_ports.len(),
+        ),
         details
             .forward_ports
             .iter()
@@ -286,7 +289,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let source_ports = list_section(
-        fl!("zone-section-source-ports"),
+        section_title(fl!("zone-section-source-ports"), details.source_ports.len()),
         source_port_rows(&details.source_ports),
         fl!("zone-empty-source-ports"),
         Some((
@@ -297,7 +300,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let icmp_blocks = list_section(
-        fl!("zone-section-icmp"),
+        section_title(fl!("zone-section-icmp"), details.icmp_blocks.len()),
         details
             .icmp_blocks
             .iter()
@@ -310,7 +313,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     );
 
     let rich_rules = list_section(
-        fl!("zone-section-rich-rules"),
+        section_title(fl!("zone-section-rich-rules"), details.rich_rules.len()),
         details
             .rich_rules
             .iter()
@@ -322,37 +325,31 @@ fn zone_details<'a, Message: 'static + Clone>(
         map,
     );
 
-    let left_column = widget::column::with_capacity(4)
+    let sections = widget::column::with_capacity(10)
         .push(reconciliation_section)
-        .push(firewalld)
         .push(overview)
-        .push(services)
+        .push(firewalld)
         .push(interfaces)
-        .spacing(space_m)
-        .width(Length::Fill);
-
-    let right_column = widget::column::with_capacity(5)
+        .push(sources)
+        .push(services)
         .push(ports)
         .push(forward_ports)
         .push(source_ports)
-        .push(sources)
         .push(icmp_blocks)
         .push(rich_rules)
         .spacing(space_m)
         .width(Length::Fill);
 
-    let columns = widget::row::with_capacity(2)
-        .push(left_column)
-        .push(right_column)
-        .spacing(space_l)
-        .width(Length::Fill);
-
     widget::column::with_capacity(2)
         .push(header)
-        .push(columns)
+        .push(sections)
         .spacing(space_l)
         .width(Length::Fill)
         .into()
+}
+
+fn section_title(title: String, count: usize) -> String {
+    format!("{title} ({count})")
 }
 
 fn reconciliation_banner<'a, Message: 'static + Clone>(
