@@ -250,6 +250,69 @@ fn plan_reconciliation_request(request: reconciliation::Request) -> Reconciliati
     }
 }
 
+/// Pure root policy for one firewalld configuration event.
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum ConfigurationRefreshPlan {
+    ReloadEverything,
+    ReloadCurrentReconciliation { zone: String },
+    ReloadCurrentZone { zone: String },
+    ReloadZones,
+    PreserveRenameAndReloadZones { old_zone: String, new_zone: String },
+    FinishWithoutReload,
+}
+
+/// Minimum immutable root context needed to classify a configuration event.
+#[derive(Clone, Copy, Debug)]
+struct ConfigurationRefreshContext<'a> {
+    selected_zone: Option<&'a str>,
+}
+
+fn plan_configuration_refresh(
+    event: ConfigurationEvent,
+    context: ConfigurationRefreshContext<'_>,
+) -> ConfigurationRefreshPlan {
+    match event {
+        ConfigurationEvent::Reloaded => ConfigurationRefreshPlan::ReloadEverything,
+        ConfigurationEvent::RuntimeZoneChanged { zone } => {
+            if context.selected_zone == Some(zone.as_str()) {
+                ConfigurationRefreshPlan::ReloadCurrentReconciliation { zone }
+            } else {
+                ConfigurationRefreshPlan::FinishWithoutReload
+            }
+        }
+        ConfigurationEvent::PermanentZoneUpdated { zone } => {
+            if context.selected_zone == Some(zone.as_str()) {
+                ConfigurationRefreshPlan::ReloadCurrentZone { zone }
+            } else {
+                ConfigurationRefreshPlan::FinishWithoutReload
+            }
+        }
+        ConfigurationEvent::PermanentZoneRemoved { .. } => ConfigurationRefreshPlan::ReloadZones,
+        ConfigurationEvent::PermanentZoneRenamed { old_zone, new_zone } => {
+            ConfigurationRefreshPlan::PreserveRenameAndReloadZones { old_zone, new_zone }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReloadEverythingStep {
+    FirewalldStatus,
+    Zones,
+    IpSets,
+    Services,
+    IcmpTypes,
+    Interfaces,
+}
+
+const RELOAD_EVERYTHING_STEPS: [ReloadEverythingStep; 6] = [
+    ReloadEverythingStep::FirewalldStatus,
+    ReloadEverythingStep::Zones,
+    ReloadEverythingStep::IpSets,
+    ReloadEverythingStep::Services,
+    ReloadEverythingStep::IcmpTypes,
+    ReloadEverythingStep::Interfaces,
+];
+
 /// Create a COSMIC application from the app model
 impl cosmic::Application for AppModel {
     /// The async executor that will be used to run your application's commands.
@@ -768,37 +831,44 @@ impl AppModel {
         &mut self,
         event: ConfigurationEvent,
     ) -> Task<cosmic::Action<Message>> {
-        match event {
-            ConfigurationEvent::Reloaded => Task::batch(vec![
-                zones::effects::start_firewalld_status_load(self),
-                zones::effects::start_zones_load(self),
-                self.update_ipsets(ipsets::Message::LoadList),
-                self.update_catalogs(catalogs::Message::LoadServices),
-                self.update_catalogs(catalogs::Message::LoadIcmpTypes),
-                self.update_catalogs(catalogs::Message::LoadInterfaces),
-            ]),
-            ConfigurationEvent::RuntimeZoneChanged { zone } => {
-                let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
-                if !is_current {
-                    return self.finish_configuration_refresh();
-                }
+        let selected_zone = self.current_zone_name();
+        match plan_configuration_refresh(
+            event,
+            ConfigurationRefreshContext {
+                selected_zone: selected_zone.as_deref(),
+            },
+        ) {
+            ConfigurationRefreshPlan::ReloadEverything => self.reload_everything(),
+            ConfigurationRefreshPlan::ReloadCurrentReconciliation { zone } => {
                 self.handle_reconciliation_message(reconciliation::Message::Load(zone))
             }
-            ConfigurationEvent::PermanentZoneUpdated { zone } => {
-                let is_current = self.current_zone_name().as_deref() == Some(zone.as_str());
-                if !is_current {
-                    return self.finish_configuration_refresh();
-                }
+            ConfigurationRefreshPlan::ReloadCurrentZone { zone } => {
                 zones::effects::start_zone_load(self, zone)
             }
-            ConfigurationEvent::PermanentZoneRemoved { .. } => {
-                zones::effects::start_zones_load(self)
-            }
-            ConfigurationEvent::PermanentZoneRenamed { old_zone, new_zone } => {
+            ConfigurationRefreshPlan::ReloadZones => zones::effects::start_zones_load(self),
+            ConfigurationRefreshPlan::PreserveRenameAndReloadZones { old_zone, new_zone } => {
                 self.navigation.preserve_zone_rename(&old_zone, &new_zone);
                 zones::effects::start_zones_load(self)
             }
+            ConfigurationRefreshPlan::FinishWithoutReload => self.finish_configuration_refresh(),
         }
+    }
+
+    fn reload_everything(&mut self) -> Task<cosmic::Action<Message>> {
+        Task::batch(RELOAD_EVERYTHING_STEPS.map(|step| match step {
+            ReloadEverythingStep::FirewalldStatus => {
+                zones::effects::start_firewalld_status_load(self)
+            }
+            ReloadEverythingStep::Zones => zones::effects::start_zones_load(self),
+            ReloadEverythingStep::IpSets => self.update_ipsets(ipsets::Message::LoadList),
+            ReloadEverythingStep::Services => self.update_catalogs(catalogs::Message::LoadServices),
+            ReloadEverythingStep::IcmpTypes => {
+                self.update_catalogs(catalogs::Message::LoadIcmpTypes)
+            }
+            ReloadEverythingStep::Interfaces => {
+                self.update_catalogs(catalogs::Message::LoadInterfaces)
+            }
+        }))
     }
 
     fn finish_configuration_refresh(&mut self) -> Task<cosmic::Action<Message>> {
@@ -1402,5 +1472,135 @@ mod tests {
         );
         assert!(state.take_deferred_refresh());
         assert!(!state.take_deferred_refresh());
+    }
+
+    #[test]
+    fn reloaded_configuration_plans_the_complete_ordered_refresh() {
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::Reloaded,
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::ReloadEverything
+        );
+        assert_eq!(
+            RELOAD_EVERYTHING_STEPS,
+            [
+                ReloadEverythingStep::FirewalldStatus,
+                ReloadEverythingStep::Zones,
+                ReloadEverythingStep::IpSets,
+                ReloadEverythingStep::Services,
+                ReloadEverythingStep::IcmpTypes,
+                ReloadEverythingStep::Interfaces,
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_zone_refresh_only_targets_the_current_reconciliation() {
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::RuntimeZoneChanged {
+                    zone: "public".into(),
+                },
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::ReloadCurrentReconciliation {
+                zone: "public".into(),
+            }
+        );
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::RuntimeZoneChanged {
+                    zone: "work".into(),
+                },
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::FinishWithoutReload
+        );
+    }
+
+    #[test]
+    fn permanent_zone_update_only_reloads_current_zone_details() {
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::PermanentZoneUpdated {
+                    zone: "public".into(),
+                },
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::ReloadCurrentZone {
+                zone: "public".into(),
+            }
+        );
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::PermanentZoneUpdated {
+                    zone: "work".into(),
+                },
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::FinishWithoutReload
+        );
+    }
+
+    #[test]
+    fn permanent_removal_reloads_the_zone_list() {
+        assert_eq!(
+            plan_configuration_refresh(
+                ConfigurationEvent::PermanentZoneRemoved {
+                    zone: "work".into(),
+                },
+                ConfigurationRefreshContext {
+                    selected_zone: Some("public"),
+                },
+            ),
+            ConfigurationRefreshPlan::ReloadZones
+        );
+    }
+
+    #[test]
+    fn permanent_rename_preserves_selection_before_reloading_zones() {
+        let plan = plan_configuration_refresh(
+            ConfigurationEvent::PermanentZoneRenamed {
+                old_zone: "public".into(),
+                new_zone: "public2".into(),
+            },
+            ConfigurationRefreshContext {
+                selected_zone: Some("public"),
+            },
+        );
+        assert_eq!(
+            plan,
+            ConfigurationRefreshPlan::PreserveRenameAndReloadZones {
+                old_zone: "public".into(),
+                new_zone: "public2".into(),
+            }
+        );
+
+        let mut navigation = navigation::State::new();
+        navigation.set_zones(vec!["public".into()]);
+        let zone_id = navigation.zone_id("public").expect("zone is materialized");
+        let _ = navigation::update(
+            &mut navigation,
+            navigation::Message::Select(zone_id),
+            navigation::Context,
+        );
+        navigation.preserve_zone_rename("public", "public2");
+        navigation.set_zones(vec!["public2".into()]);
+        assert!(matches!(
+            navigation.active_item(),
+            Some(SidebarItem::Zone { name, .. }) if name == "public2"
+        ));
     }
 }
