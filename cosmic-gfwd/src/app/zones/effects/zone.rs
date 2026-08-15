@@ -32,3 +32,8 @@ pub(crate) async fn remove_zone(zone_name: String) -> Result<(), BrokerError> {
     let broker = FwdBroker::get().await?;
     broker.remove_zone(&zone_name).await
 }
+
+pub(crate) async fn rename_zone(old_name: String, new_name: String) -> Result<(), BrokerError> {
+    let broker = FwdBroker::get().await?;
+    broker.rename_zone(&old_name, &new_name).await
+}

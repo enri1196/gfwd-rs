@@ -40,6 +40,7 @@ pub(crate) enum MenuAction {
     AssignInterface(nav_bar::Id),
     /// Make a zone the permanent default.
     SetDefault(nav_bar::Id),
+    Rename(nav_bar::Id),
     /// Request confirmation before deleting a zone.
     Delete(nav_bar::Id),
 }
@@ -64,6 +65,7 @@ pub(crate) enum Request {
     SetDefaultZone(String),
     /// Present the root-owned destructive confirmation for a zone.
     ConfirmDeleteZone(String),
+    RenameZone(String),
     /// Ask the root to apply the current navigation label to the window title.
     RefreshTitle,
     /// Clear zone detail content and mark reconciliation unavailable.
@@ -147,6 +149,11 @@ fn menu_action(state: &mut State, action: MenuAction) -> Outcome {
         MenuAction::SetDefault(id) => state
             .zone_name_for_id(id)
             .map(Request::SetDefaultZone)
+            .map(Outcome::request)
+            .unwrap_or_default(),
+        MenuAction::Rename(id) => state
+            .zone_name_for_id(id)
+            .map(Request::RenameZone)
             .map(Outcome::request)
             .unwrap_or_default(),
         MenuAction::Delete(id) => state
@@ -250,6 +257,10 @@ mod tests {
         assert_eq!(
             menu_action(&mut state, MenuAction::SetDefault(id)).requests,
             &[Request::SetDefaultZone("public".to_string())]
+        );
+        assert_eq!(
+            menu_action(&mut state, MenuAction::Rename(id)).requests,
+            &[Request::RenameZone("public".to_string())]
         );
         assert_eq!(
             menu_action(&mut state, MenuAction::Delete(id)).requests,

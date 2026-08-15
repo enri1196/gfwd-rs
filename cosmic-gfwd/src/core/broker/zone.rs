@@ -240,6 +240,13 @@ impl FwdBroker {
         Ok(())
     }
 
+    /// Permanently rename a non-built-in zone.
+    pub async fn rename_zone(&self, old_name: &str, new_name: &str) -> Result<(), BrokerError> {
+        let proxy = self.zone(old_name).await?;
+        proxy.rename(new_name).await?;
+        Ok(())
+    }
+
     /// Permanently remove a service from a zone.
     pub async fn remove_service(&self, zone_name: &str, service: &str) -> Result<(), BrokerError> {
         let cfg = self.config().await?;

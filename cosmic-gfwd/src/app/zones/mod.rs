@@ -81,6 +81,10 @@ pub(crate) enum Message {
         description: String,
         target: ZoneTarget,
     },
+    Rename {
+        old_name: String,
+        new_name: String,
+    },
     Delete(String),
     AddService {
         zone: String,
@@ -136,6 +140,11 @@ pub(crate) enum Message {
         zone_name: String,
         result: Result<(), BrokerError>,
     },
+    Renamed {
+        old_name: String,
+        new_name: String,
+        result: Result<(), BrokerError>,
+    },
     Deleted {
         zone_name: String,
         result: Result<(), BrokerError>,
@@ -165,6 +174,10 @@ pub(crate) enum Effect {
         name: String,
         description: String,
         target: ZoneTarget,
+    },
+    RenameZone {
+        old_name: String,
+        new_name: String,
     },
     DeleteZone(String),
     AddService {
@@ -256,6 +269,7 @@ pub(crate) enum Effect {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Mutation {
     CreateZone,
+    RenameZone,
     DeleteZone,
     AddService,
     AddPort,
@@ -286,6 +300,7 @@ pub(crate) enum Request {
     ReconciliationSelectionChanged(Option<String>),
     LoadReconciliation(String),
     ReconciliationUnavailable(Option<String>),
+    PreserveZoneRename { old_name: String, new_name: String },
     ReconciliationAction(ReconciliationAction),
     FinishConfigurationRefresh,
     ConfirmDeleteZone(String),
@@ -372,6 +387,11 @@ pub(crate) fn update(
                 description,
                 target,
             },
+        ),
+        Message::Rename { old_name, new_name } => begin_effect(
+            context.mutation_pending,
+            Mutation::RenameZone,
+            Effect::RenameZone { old_name, new_name },
         ),
         Message::Delete(zone) => begin_effect(
             context.mutation_pending,
@@ -470,6 +490,11 @@ pub(crate) fn update(
         Message::FirewalldStatusLoaded(result) => finish_status(state, result, context),
         Message::DefaultSet(result) => finish_default(result),
         Message::Created { zone_name, result } => finish_create(zone_name, result),
+        Message::Renamed {
+            old_name,
+            new_name,
+            result,
+        } => finish_rename(old_name, new_name, result),
         Message::Deleted { zone_name, result } => {
             finish_delete(state, zone_name, result, context.selected_zone)
         }
@@ -712,6 +737,27 @@ fn finish_create(_zone: String, result: Result<(), BrokerError>) -> Outcome<Effe
         Ok(()) => Outcome {
             effects: Vec::new(),
             requests: vec![
+                Request::MarkRuntimeDirty,
+                Request::ResetDialog(DialogKind::Zone),
+                Request::CloseDrawer,
+                Request::FinishMutation(Ok(())),
+                Request::RefreshZones,
+            ],
+        },
+        Err(error) => Outcome::request(Request::FinishMutation(Err(error))),
+    }
+}
+
+fn finish_rename(
+    old_name: String,
+    new_name: String,
+    result: Result<(), BrokerError>,
+) -> Outcome<Effect, Request> {
+    match result {
+        Ok(()) => Outcome {
+            effects: Vec::new(),
+            requests: vec![
+                Request::PreserveZoneRename { old_name, new_name },
                 Request::MarkRuntimeDirty,
                 Request::ResetDialog(DialogKind::Zone),
                 Request::CloseDrawer,

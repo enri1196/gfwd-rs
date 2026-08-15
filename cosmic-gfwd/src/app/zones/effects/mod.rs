@@ -44,6 +44,17 @@ pub(crate) fn effects(effect: Effect) -> Task<Message> {
                 }
             })
         }
+        Effect::RenameZone { old_name, new_name } => {
+            let completed_old = old_name.clone();
+            let completed_new = new_name.clone();
+            Task::perform(zone::rename_zone(old_name, new_name), move |result| {
+                Message::Renamed {
+                    old_name: completed_old.clone(),
+                    new_name: completed_new.clone(),
+                    result,
+                }
+            })
+        }
         Effect::DeleteZone(zone_name) => {
             let completed_zone = zone_name.clone();
             Task::perform(zone::remove_zone(zone_name), move |result| {

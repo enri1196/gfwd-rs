@@ -14,6 +14,7 @@ pub enum Message {
 #[derive(Debug, Clone)]
 pub struct ZoneFormState {
     pub name: String,
+    pub rename_from: Option<String>,
     pub description: String,
     pub target: ZoneTarget,
 }
@@ -22,9 +23,17 @@ impl Default for ZoneFormState {
     fn default() -> Self {
         Self {
             name: String::new(),
+            rename_from: None,
             description: String::new(),
             target: ZoneTarget::Default,
         }
+    }
+}
+
+impl ZoneFormState {
+    pub fn begin_rename(&mut self, zone: String) {
+        self.name = zone.clone();
+        self.rename_from = Some(zone);
     }
 }
 

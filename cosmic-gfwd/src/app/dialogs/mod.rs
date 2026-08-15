@@ -112,6 +112,7 @@ pub(crate) enum Effect {}
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum Submission {
     Zone {
+        rename_from: Option<String>,
         name: String,
         description: String,
         target: ZoneTarget,
@@ -240,6 +241,7 @@ fn submit_form(
                 return Outcome::default();
             }
             submit(Submission::Zone {
+                rename_from: state.zone.rename_from.clone(),
                 name,
                 description: state.zone.description.trim().to_string(),
                 target: state.zone.target.clone(),

@@ -104,6 +104,11 @@ pub(crate) fn nav_context_menu(app: &AppModel) -> Option<Vec<menu::Tree<cosmic::
                         NavMenuAction::SetDefault(context_id),
                     ),
                     menu::Item::Button(
+                        fl!("context-rename-zone"),
+                        None,
+                        NavMenuAction::Rename(context_id),
+                    ),
+                    menu::Item::Button(
                         fl!("context-delete-zone"),
                         None,
                         NavMenuAction::Delete(context_id),
@@ -239,7 +244,11 @@ pub(crate) fn context_drawer(
 
     let drawer = match descriptor.title {
         super::ContextTitle::None => drawer,
-        title => drawer.title(context_page_title(title, app.dialogs.port.kind)),
+        title => drawer.title(context_page_title(
+            title,
+            app.dialogs.port.kind,
+            app.dialogs.zone.rename_from.is_some(),
+        )),
     };
     let drawer = match descriptor.footer {
         super::ContextFooter::None => drawer,
@@ -360,10 +369,15 @@ pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
 }
 
 /// Resolve the localized title selected by the shared context-page descriptor.
-fn context_page_title(title: super::ContextTitle, port_kind: super::dialogs::PortKind) -> String {
+fn context_page_title(
+    title: super::ContextTitle,
+    port_kind: super::dialogs::PortKind,
+    renaming_zone: bool,
+) -> String {
     match title {
         super::ContextTitle::None => unreachable!("title-less pages skip title resolution"),
         super::ContextTitle::Reconciliation => fl!("reconciliation-review-title"),
+        super::ContextTitle::Zone if renaming_zone => fl!("drawer-title-rename-zone"),
         super::ContextTitle::Zone => fl!("drawer-title-zone"),
         super::ContextTitle::Service => fl!("dialog-service-title"),
         super::ContextTitle::Port => match port_kind {

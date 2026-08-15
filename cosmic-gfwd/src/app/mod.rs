@@ -649,6 +649,10 @@ impl AppModel {
                 zones::Request::ReconciliationUnavailable(zone) => {
                     self.reconciliation.set_unavailable(zone);
                 }
+                zones::Request::PreserveZoneRename { old_name, new_name } => {
+                    self.navigation.preserve_zone_rename(&old_name, &new_name);
+                    self.reconciliation.selection_changed(Some(new_name));
+                }
                 zones::Request::ReconciliationAction(action) => {
                     tasks.push(self.handle_reconciliation_action(action));
                 }
@@ -664,6 +668,7 @@ impl AppModel {
                 zones::Request::BeginMutation(mutation) => {
                     let operation = match mutation {
                         zones::Mutation::CreateZone => fl!("operation-create-zone"),
+                        zones::Mutation::RenameZone => fl!("operation-rename-zone"),
                         zones::Mutation::DeleteZone => fl!("operation-delete-zone"),
                         zones::Mutation::AddService => fl!("operation-add-service"),
                         zones::Mutation::AddPort => fl!("operation-add-port"),
@@ -749,6 +754,10 @@ impl AppModel {
                 navigation::Request::ConfirmDeleteZone(zone_name) => {
                     tasks.push(self.update_zones(zones::Message::ConfirmDelete(zone_name)));
                 }
+                navigation::Request::RenameZone(zone_name) => {
+                    tasks.push(self.open_context_page(ContextPage::AddZone));
+                    self.dialogs.zone.begin_rename(zone_name);
+                }
                 navigation::Request::RefreshTitle => tasks.push(self.update_title()),
                 navigation::Request::ClearSelectedZone => {
                     tasks.push(self.update_zones(zones::Message::ClearSelection));
@@ -810,15 +819,23 @@ impl AppModel {
             match request {
                 dialogs::Request::Submit(submission) => match submission {
                     dialogs::Submission::Zone {
+                        rename_from,
                         name,
                         description,
                         target,
                     } => {
-                        tasks.push(self.update_zones(zones::Message::Create {
-                            name,
-                            description,
-                            target,
-                        }));
+                        tasks.push(if let Some(old_name) = rename_from {
+                            self.update_zones(zones::Message::Rename {
+                                old_name,
+                                new_name: name,
+                            })
+                        } else {
+                            self.update_zones(zones::Message::Create {
+                                name,
+                                description,
+                                target,
+                            })
+                        });
                     }
                     dialogs::Submission::Service { zone, service } => {
                         tasks.push(self.update_zones(zones::Message::AddService { zone, service }));
