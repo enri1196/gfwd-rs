@@ -130,6 +130,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, Message>
     let mut sections = Vec::new();
     let mut port_section = settings::section()
         .title(fl!("dialog-port-section"))
+        .add(widget::text::caption(fl!("dialog-port-format-hint")))
         .add(
             settings::item::builder(fl!("dialog-port-label")).control(
                 widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)

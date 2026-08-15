@@ -136,7 +136,9 @@ pub(crate) fn context_drawer(
         .or(app.catalogs.interfaces.error());
     let can_submit_interface =
         app.dialogs.interface.error.is_none() && !app.dialogs.interface.interface.trim().is_empty();
-    let can_submit = !app.mutation_pending();
+    let selected_zone = app.current_zone_name();
+    let can_submit = !app.mutation_pending()
+        && (!app.context_page.descriptor().requires_zone || selected_zone.is_some());
     let error = app.dialogs.operation_error.as_deref();
     let enabled_services = app
         .zones
@@ -249,6 +251,8 @@ pub(crate) fn context_drawer(
             title,
             app.dialogs.port.kind,
             app.dialogs.zone.rename_from.is_some(),
+            descriptor.requires_zone,
+            selected_zone.as_deref(),
         )),
     };
     let drawer = match descriptor.footer {
@@ -376,8 +380,10 @@ fn context_page_title(
     title: super::ContextTitle,
     port_kind: super::dialogs::PortKind,
     renaming_zone: bool,
+    requires_zone: bool,
+    selected_zone: Option<&str>,
 ) -> String {
-    match title {
+    let title = match title {
         super::ContextTitle::None => unreachable!("title-less pages skip title resolution"),
         super::ContextTitle::Reconciliation => fl!("reconciliation-review-title"),
         super::ContextTitle::Zone if renaming_zone => fl!("drawer-title-rename-zone"),
@@ -393,5 +399,9 @@ fn context_page_title(
         super::ContextTitle::Icmp => fl!("drawer-title-icmp"),
         super::ContextTitle::RichRule => fl!("drawer-title-rich-rule"),
         super::ContextTitle::IpSet => fl!("drawer-title-ipset"),
+    };
+    if requires_zone && let Some(zone) = selected_zone {
+        return fl!("drawer-title-selected-zone", title = title, zone = zone);
     }
+    title
 }

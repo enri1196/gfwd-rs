@@ -39,13 +39,16 @@ pub(super) fn touch(state: &mut SourceFormState) {
 }
 
 pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Message> {
-    let mut section = settings::section().title(fl!("dialog-source-section")).add(
-        settings::item::builder(fl!("dialog-source-label")).control(
-            widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
-                .on_input(Message::AddressChanged)
-                .width(Length::Fill),
-        ),
-    );
+    let mut section = settings::section()
+        .title(fl!("dialog-source-section"))
+        .add(widget::text::caption(fl!("dialog-source-format-hint")))
+        .add(
+            settings::item::builder(fl!("dialog-source-label")).control(
+                widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
+                    .on_input(Message::AddressChanged)
+                    .width(Length::Fill),
+            ),
+        );
     if state.touched
         && let Err(error) = validate_source(&state.source)
     {

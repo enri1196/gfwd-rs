@@ -144,6 +144,7 @@ pub(super) fn update(state: &mut RichRuleFormState, message: Message) {
 pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a, Message> {
     let mode = settings::section()
         .title(fl!("dialog-rich-rule-mode-section"))
+        .add(widget::text::caption(fl!("dialog-rich-rule-format-hint")))
         .add(
             settings::item::builder(fl!("dialog-rich-rule-raw-mode"))
                 .description(fl!("dialog-rich-rule-raw-description"))

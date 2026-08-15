@@ -83,6 +83,7 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Messag
 
     let mut section = settings::section()
         .title(fl!("dialog-ipset-section"))
+        .add(widget::text::caption(fl!("dialog-ipset-entry-format-hint")))
         .add(
             settings::item::builder(fl!("dialog-ipset-name-label")).control(
                 widget::text_input::text_input(fl!("dialog-ipset-name-placeholder"), &state.name)
