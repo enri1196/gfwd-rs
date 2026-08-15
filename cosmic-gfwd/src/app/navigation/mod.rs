@@ -36,10 +36,8 @@ pub(crate) enum Message {
 /// Context-menu commands associated with a sidebar entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MenuAction {
-    /// Select and open an entry.
-    Open(nav_bar::Id),
     /// Select a zone and open its interface drawer.
-    Activate(nav_bar::Id),
+    AssignInterface(nav_bar::Id),
     /// Make a zone the permanent default.
     SetDefault(nav_bar::Id),
     /// Request confirmation before deleting a zone.
@@ -132,8 +130,7 @@ fn selection_outcome_for(item: Option<&SidebarItem>) -> Outcome {
 /// Reduce a navigation context-menu command without touching root state.
 fn menu_action(state: &mut State, action: MenuAction) -> Outcome {
     match action {
-        MenuAction::Open(id) => select(state, id),
-        MenuAction::Activate(id) => {
+        MenuAction::AssignInterface(id) => {
             let Some(zone_name) = state.zone_name_for_id(id) else {
                 return Outcome::default();
             };
@@ -243,14 +240,7 @@ mod tests {
         let id = state.zone_id("public").expect("zone is materialized");
 
         assert_eq!(
-            menu_action(&mut state, MenuAction::Open(id)).requests,
-            &[
-                Request::LoadZone("public".to_string()),
-                Request::RefreshTitle
-            ]
-        );
-        assert_eq!(
-            menu_action(&mut state, MenuAction::Activate(id)).requests,
+            menu_action(&mut state, MenuAction::AssignInterface(id)).requests,
             &[
                 Request::LoadZone("public".to_string()),
                 Request::RefreshTitle,

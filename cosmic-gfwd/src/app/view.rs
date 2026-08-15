@@ -83,14 +83,9 @@ pub(crate) fn nav_context_menu(app: &AppModel) -> Option<Vec<menu::Tree<cosmic::
                 &key_binds,
                 vec![
                     menu::Item::Button(
-                        fl!("context-open-zone"),
+                        fl!("context-assign-interface"),
                         None,
-                        NavMenuAction::Open(context_id),
-                    ),
-                    menu::Item::Button(
-                        fl!("context-activate-zone"),
-                        None,
-                        NavMenuAction::Activate(context_id),
+                        NavMenuAction::AssignInterface(context_id),
                     ),
                     menu::Item::Button(
                         fl!("context-set-default-zone"),
