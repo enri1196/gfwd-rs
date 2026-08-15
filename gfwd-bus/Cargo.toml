@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zbus = "5.18.0"
-zbus_macros = "5.18.0"
-zvariant = "5.13.1"
+zbus = "5.19.0"
+zbus_macros = "5.19.0"
+zvariant = "5.14.0"
 serde = { version = "1.0.229", features = ["derive"] }
 
 [features]
