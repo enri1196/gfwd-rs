@@ -1,7 +1,7 @@
 //! Zone and firewalld status view.
 
 use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, button, settings};
+use cosmic::widget::{self, button, icon, settings};
 
 use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
@@ -14,6 +14,8 @@ use crate::app::reconciliation::{
 
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
+
+const REMOVE_ICON: &str = "user-trash-symbolic";
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewState {
@@ -497,7 +499,11 @@ fn list_item_row<'a, Message: 'static + Clone>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let remove = button::text(fl!("action-remove")).on_press(map(action));
+    let remove = button::icon(icon::from_name(REMOVE_ICON))
+        .class(cosmic::theme::Button::Destructive)
+        .tooltip(fl!("action-remove"))
+        .extra_small()
+        .on_press(map(action));
 
     widget::row::with_capacity(2)
         .push(widget::text::body(label).width(Length::Fill))

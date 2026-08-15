@@ -1,7 +1,7 @@
 //! IP-set list and detail view.
 
 use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, button, settings};
+use cosmic::widget::{self, button, icon, settings};
 
 use crate::core::validate_ipset_entry;
 use crate::fl;
@@ -9,6 +9,8 @@ use crate::models::IpSetDetails;
 
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
+
+const REMOVE_ICON: &str = "user-trash-symbolic";
 
 #[derive(Debug, Clone, Default)]
 pub struct IpSetViewState {
@@ -203,9 +205,13 @@ fn entry_item_row<'a, Message: 'static + Clone>(
     map: impl Fn(IpSetViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let remove = button::text(fl!("action-remove")).on_press_maybe(
-        (!mutation_pending).then_some(map(IpSetViewAction::RemoveEntry(entry.to_string()))),
-    );
+    let remove = button::icon(icon::from_name(REMOVE_ICON))
+        .class(cosmic::theme::Button::Destructive)
+        .tooltip(fl!("action-remove"))
+        .extra_small()
+        .on_press_maybe(
+            (!mutation_pending).then_some(map(IpSetViewAction::RemoveEntry(entry.to_string()))),
+        );
 
     widget::row::with_capacity(2)
         .push(widget::text::body(entry).width(Length::Fill))
