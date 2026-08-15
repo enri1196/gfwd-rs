@@ -343,18 +343,19 @@ pub(crate) fn footer(app: &AppModel) -> Option<Element<'_, Message>> {
 pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
     let space_m = cosmic::theme::spacing().space_m;
     let content: Element<_> = match app.navigation.active_item() {
-        Some(SidebarItem::IpSets) => {
-            view_ipset_content(&app.ipsets, app.mutation_pending(), |action| {
-                Message::IpSet(super::ipsets::Message::View(action))
-            })
-        }
+        Some(SidebarItem::IpSets) => view_ipset_content(
+            &app.ipsets,
+            app.mutation_pending(),
+            app.operations.pending_label(),
+            |action| Message::IpSet(super::ipsets::Message::View(action)),
+        ),
         _ => view_zone_content(
             app.zones.detail(),
             app.zones.firewalld_status(),
             app.reconciliation.state(),
             app.reconciliation.watch_warning(),
             app.reconciliation.last_checked_age_seconds(),
-            app.mutation_pending(),
+            app.operations.pending_label(),
             |action| Message::Zone(super::zones::Message::View(action)),
         ),
     };

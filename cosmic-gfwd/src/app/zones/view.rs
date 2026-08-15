@@ -76,7 +76,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     reconciliation: &'a ZoneReconciliationState,
     watch_warning: Option<&'a str>,
     last_checked_age_seconds: Option<u64>,
-    mutation_pending: bool,
+    pending_operation: Option<&'a str>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     match state {
@@ -89,7 +89,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
             reconciliation,
             watch_warning,
             last_checked_age_seconds,
-            mutation_pending,
+            pending_operation,
             map,
         ))
         .width(Length::Fill)
@@ -104,18 +104,25 @@ fn zone_details<'a, Message: 'static + Clone>(
     reconciliation: &'a ZoneReconciliationState,
     watch_warning: Option<&'a str>,
     last_checked_age_seconds: Option<u64>,
-    mutation_pending: bool,
+    pending_operation: Option<&'a str>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
+    let mutation_pending = pending_operation.is_some();
     let spacing = cosmic::theme::spacing();
     let space_s = spacing.space_s;
     let space_m = spacing.space_m;
     let space_l = spacing.space_l;
 
-    let header = widget::column::with_capacity(2)
+    let mut header = widget::column::with_capacity(3)
         .push(widget::text::title1(details.name.as_str()))
         .push(zone_description(details))
         .spacing(space_s);
+    if let Some(operation) = pending_operation {
+        header = header.push(widget::text::caption(fl!(
+            "operation-pending-target",
+            operation = operation
+        )));
+    }
     let reconciliation_presentation =
         ReconciliationPresentation::from_state(reconciliation, mutation_pending);
     let reconciliation_section = reconciliation_banner(

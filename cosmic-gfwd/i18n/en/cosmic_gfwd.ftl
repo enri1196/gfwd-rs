@@ -102,6 +102,7 @@ confirm-delete-zone-title = Delete zone?
 confirm-delete-zone-body = Permanently delete the “{ $zone }” zone? This cannot be undone.
 confirm-delete = Delete
 operation-pending = { $operation }…
+operation-pending-target = Working on { $operation }…
 operation-succeeded = { $operation } succeeded
 operation-failed = { $operation } failed: { $error }
 operation-change = Configuration change

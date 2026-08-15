@@ -478,6 +478,10 @@ impl AppModel {
                             fl!("operation-save-runtime")
                         }
                     };
+                    let operation = selected_zone
+                        .as_deref()
+                        .map(|zone| format!("{operation} — {zone}"))
+                        .unwrap_or(operation);
                     let _ = self.begin_mutation(operation);
                 }
                 reconciliation::Request::FinishMutation(result) => {
@@ -687,6 +691,12 @@ impl AppModel {
                         zones::Mutation::StartFirewalld => fl!("operation-start-firewalld"),
                         zones::Mutation::StopFirewalld => fl!("operation-stop-firewalld"),
                     };
+                    let operation = self
+                        .ipsets
+                        .selected
+                        .as_deref()
+                        .map(|ipset| format!("{operation} — {ipset}"))
+                        .unwrap_or(operation);
                     let _ = self.begin_mutation(operation);
                 }
                 zones::Request::FinishMutation(result) => {

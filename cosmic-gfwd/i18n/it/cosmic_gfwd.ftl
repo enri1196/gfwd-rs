@@ -102,6 +102,7 @@ confirm-delete-zone-title = Eliminare la zona?
 confirm-delete-zone-body = Eliminare definitivamente la zona “{ $zone }”? Questa operazione non può essere annullata.
 confirm-delete = Elimina
 operation-pending = { $operation }…
+operation-pending-target = Operazione in corso: { $operation }…
 operation-succeeded = { $operation } completata
 operation-failed = { $operation } non riuscita: { $error }
 operation-change = Modifica della configurazione

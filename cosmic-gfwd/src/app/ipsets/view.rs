@@ -38,9 +38,20 @@ pub enum IpSetViewAction {
 pub fn view_ipset_content<'a, Message: 'static + Clone>(
     state: &'a IpSetViewState,
     mutation_pending: bool,
+    pending_operation: Option<&'a str>,
     map: impl Fn(IpSetViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let mut sections = Vec::new();
+    if let Some(operation) = pending_operation {
+        sections.push(
+            settings::section()
+                .add(widget::text::caption(fl!(
+                    "operation-pending-target",
+                    operation = operation
+                )))
+                .into(),
+        );
+    }
 
     let mut list_section = settings::section().title(fl!("ipset-section-list"));
     if state.list_loading {

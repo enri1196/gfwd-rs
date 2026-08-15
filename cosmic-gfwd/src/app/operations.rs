@@ -30,6 +30,10 @@ impl<Message: Clone + Send + 'static, Confirmation> State<Message, Confirmation>
         self.pending.is_some()
     }
 
+    pub(crate) fn pending_label(&self) -> Option<&str> {
+        self.pending.as_deref()
+    }
+
     /// Begin a mutation if no other slice owns the global mutation slot.
     pub(crate) fn begin(&mut self, operation: String) -> bool {
         if self.mutation_pending() {
