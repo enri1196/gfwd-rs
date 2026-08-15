@@ -76,7 +76,18 @@ pub(crate) fn header_start(app: &AppModel) -> Vec<Element<'_, Message>> {
         ),
     ]);
 
-    vec![menu_bar.into()]
+    let mut start = vec![menu_bar.into()];
+    if app.navigation.should_show_filter() {
+        start.push(
+            widget::text_input::text_input(
+                fl!("sidebar-filter-placeholder"),
+                app.navigation.filter(),
+            )
+            .on_input(|value| Message::Navigation(super::navigation::Message::FilterChanged(value)))
+            .into(),
+        );
+    }
+    start
 }
 
 /// Render the context menu for the currently selected navigation item.

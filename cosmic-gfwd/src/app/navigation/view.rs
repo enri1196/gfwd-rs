@@ -74,6 +74,7 @@ pub struct Sidebar {
     #[cfg(test)]
     zone_ids: HashMap<String, nav_bar::Id>,
     zones: Vec<String>,
+    filter: String,
     default_zone: Option<String>,
     active_zones: HashSet<String>,
     status: SidebarStatus,
@@ -87,6 +88,7 @@ impl Sidebar {
             #[cfg(test)]
             zone_ids: HashMap::new(),
             zones: Vec::new(),
+            filter: String::new(),
             default_zone: None,
             active_zones: HashSet::new(),
             status: SidebarStatus::Loading,
@@ -142,6 +144,23 @@ impl Sidebar {
             self.status = SidebarStatus::Ready;
         }
         self.rebuild_items();
+    }
+
+    pub(crate) fn filter(&self) -> &str {
+        &self.filter
+    }
+
+    pub(crate) fn should_show_filter(&self) -> bool {
+        self.zones.len() >= 8
+    }
+
+    pub(crate) fn set_filter(&mut self, filter: String) {
+        self.filter = filter;
+        self.rebuild_items();
+    }
+
+    pub(crate) fn zone_exists(&self, name: &str) -> bool {
+        self.zones.iter().any(|zone| zone == name)
     }
 
     /// Preserve selection across an externally initiated zone rename.
@@ -214,6 +233,12 @@ impl Sidebar {
 
         self.zones
             .iter()
+            .filter(|name| {
+                self.filter.trim().is_empty()
+                    || name
+                        .to_lowercase()
+                        .contains(&self.filter.trim().to_lowercase())
+            })
             .map(|name| SidebarItem::Zone {
                 name: name.clone(),
                 is_default: self.default_zone.as_deref() == Some(name.as_str()),

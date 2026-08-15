@@ -323,6 +323,7 @@ pub(crate) fn update(
 ) -> Outcome<Effect, Request> {
     match message {
         Message::View(action) => match action {
+            ZoneViewAction::RetryList => update(state, Message::LoadList, context),
             ZoneViewAction::RetryLoad(zone) => update(state, Message::LoadDetails(zone), context),
             ZoneViewAction::SetMasquerade(enabled) => {
                 update(state, Message::SetMasquerade(enabled), context)
@@ -515,7 +516,9 @@ fn update_view(action: ZoneViewAction, context: Context<'_>) -> Outcome<Effect, 
         ZoneViewAction::Reconciliation(action) => {
             Outcome::request(Request::ReconciliationAction(action))
         }
-        ZoneViewAction::RetryLoad(_) => unreachable!("retry commands are normalized first"),
+        ZoneViewAction::RetryList | ZoneViewAction::RetryLoad(_) => {
+            unreachable!("retry commands are normalized first")
+        }
         ZoneViewAction::AddService => {
             Outcome::request(Request::OpenContextPage(ContextPage::AddService))
         }

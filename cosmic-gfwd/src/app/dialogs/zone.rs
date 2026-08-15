@@ -35,6 +35,15 @@ impl ZoneFormState {
         self.name = zone.clone();
         self.rename_from = Some(zone);
     }
+
+    pub fn has_valid_name(&self) -> bool {
+        let name = self.name.trim();
+        !name.is_empty()
+            && name.len() <= 31
+            && name.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+            })
+    }
 }
 
 pub(super) fn update(state: &mut ZoneFormState, message: Message) {
@@ -48,6 +57,25 @@ pub(super) fn update(state: &mut ZoneFormState, message: Message) {
 pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, Message> {
     let target_labels = target_labels();
     let target_selected = Some(target_index(&state.target));
+
+    if state.rename_from.is_some() {
+        return settings::view_column(vec![
+            settings::section()
+                .title(fl!("dialog-zone-section-basic"))
+                .add(
+                    settings::item::builder(fl!("dialog-zone-name-label")).control(
+                        widget::text_input::text_input(
+                            fl!("dialog-zone-name-placeholder"),
+                            &state.name,
+                        )
+                        .on_input(Message::NameChanged)
+                        .width(Length::Fill),
+                    ),
+                )
+                .into(),
+        ])
+        .into();
+    }
 
     let content = settings::view_column(vec![
         settings::section()
@@ -133,5 +161,8 @@ mod tests {
         assert_eq!(state.name, "work");
         assert_eq!(state.description, "Office network");
         assert_eq!(state.target, ZoneTarget::Drop);
+        assert!(state.has_valid_name());
+        state.name = "invalid zone".into();
+        assert!(!state.has_valid_name());
     }
 }

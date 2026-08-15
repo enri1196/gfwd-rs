@@ -236,8 +236,8 @@ fn submit_form(
     match kind {
         DialogKind::Zone => {
             let name = state.zone.name.trim().to_string();
-            if name.is_empty() {
-                state.operation_error = Some(fl!("error-required-field"));
+            if !state.zone.has_valid_name() {
+                state.operation_error = Some(fl!("validation-zone-name"));
                 return Outcome::default();
             }
             submit(Submission::Zone {

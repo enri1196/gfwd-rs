@@ -834,18 +834,24 @@ impl AppModel {
                         description,
                         target,
                     } => {
-                        tasks.push(if let Some(old_name) = rename_from {
-                            self.update_zones(zones::Message::Rename {
-                                old_name,
-                                new_name: name,
-                            })
+                        if rename_from.as_deref() != Some(name.as_str())
+                            && self.navigation.zone_exists(&name)
+                        {
+                            self.dialogs.operation_error = Some(fl!("validation-zone-duplicate"));
                         } else {
-                            self.update_zones(zones::Message::Create {
-                                name,
-                                description,
-                                target,
-                            })
-                        });
+                            tasks.push(if let Some(old_name) = rename_from {
+                                self.update_zones(zones::Message::Rename {
+                                    old_name,
+                                    new_name: name,
+                                })
+                            } else {
+                                self.update_zones(zones::Message::Create {
+                                    name,
+                                    description,
+                                    target,
+                                })
+                            });
+                        }
                     }
                     dialogs::Submission::Service { zone, service } => {
                         tasks.push(self.update_zones(zones::Message::AddService { zone, service }));

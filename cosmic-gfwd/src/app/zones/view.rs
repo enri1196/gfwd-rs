@@ -25,6 +25,7 @@ pub enum ZoneViewState {
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewAction {
+    RetryList,
     RetryLoad(String),
     /// Permanently enables or disables masquerading.
     SetMasquerade(bool),
@@ -555,8 +556,11 @@ fn error_message<'a, Message: 'static + Clone>(
         .push(widget::text::title2(fl!("zone-load-error", zone = zone)))
         .push(widget::text::body(message.to_string()))
         .push(
-            button::standard(fl!("action-retry"))
-                .on_press(map(ZoneViewAction::RetryLoad(zone.to_string()))),
+            button::standard(fl!("action-retry")).on_press(map(if zone == "zones" {
+                ZoneViewAction::RetryList
+            } else {
+                ZoneViewAction::RetryLoad(zone.to_string())
+            })),
         )
         .spacing(spacing.space_s);
 

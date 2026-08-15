@@ -21,6 +21,7 @@ pub(crate) enum Message {
     ToggleContextPage(ContextPage),
     /// Apply a context-menu action to a sidebar entry.
     MenuAction(MenuAction),
+    FilterChanged(String),
     /// Record a successful permanent-zone list load.
     ZonesLoaded(Result<Vec<String>, String>),
     /// Record the permanent default-zone projection.
@@ -93,6 +94,10 @@ pub(crate) fn update(state: &mut State, message: Message, _context: Context) -> 
         Message::Select(id) => select(state, id),
         Message::ToggleContextPage(page) => Outcome::request(Request::ToggleContextPage(page)),
         Message::MenuAction(action) => menu_action(state, action),
+        Message::FilterChanged(filter) => {
+            state.set_filter(filter);
+            Outcome::default()
+        }
         Message::ZonesLoaded(result) => zones_loaded(state, result),
         Message::DefaultZoneLoaded(result) => {
             state.set_default_zone(result.ok());
@@ -279,6 +284,11 @@ mod tests {
         assert!(matches!(state.active_item(), Some(SidebarItem::IpSets)));
         assert_eq!(state.zone_indicators("public"), Some((false, true)));
         assert_eq!(state.zone_indicators("home"), Some((true, false)));
+
+        state.set_filter("pub".into());
+        assert!(state.zone_exists("home"));
+        assert_eq!(state.zone_indicators("public"), Some((false, true)));
+        assert_eq!(state.zone_indicators("home"), None);
 
         let _ = zones_loaded(&mut state, Err("offline".to_string()));
         assert_eq!(state.error_message(), Some("offline"));
