@@ -33,15 +33,26 @@ pub(crate) fn header_start(app: &AppModel) -> Vec<Element<'_, Message>> {
             ),
         ),
         menu::Tree::with_children(
-            menu::root(fl!("menu-rules")).apply(Element::from),
+            menu::root(fl!("menu-add-selected-zone")).apply(Element::from),
             menu::items(
                 &app.key_binds,
                 vec![
+                    menu::Item::Button(fl!("action-add-service"), None, MenuAction::AddService),
                     menu::Item::Button(fl!("action-add-port"), None, MenuAction::AddPort),
-                    menu::Item::Button(fl!("action-add-rich-rule"), None, MenuAction::AddRichRule),
-                    menu::Item::Button(fl!("action-add-icmp"), None, MenuAction::AddIcmp),
-                    menu::Item::Button(fl!("action-add-source"), None, MenuAction::AddSource),
+                    menu::Item::Button(
+                        fl!("action-add-forward-port"),
+                        None,
+                        MenuAction::AddForwardPort,
+                    ),
+                    menu::Item::Button(
+                        fl!("action-add-source-port"),
+                        None,
+                        MenuAction::AddSourcePort,
+                    ),
                     menu::Item::Button(fl!("action-add-interface"), None, MenuAction::AddInterface),
+                    menu::Item::Button(fl!("action-add-source"), None, MenuAction::AddSource),
+                    menu::Item::Button(fl!("action-add-icmp"), None, MenuAction::AddIcmp),
+                    menu::Item::Button(fl!("action-add-rich-rule"), None, MenuAction::AddRichRule),
                 ],
             ),
         ),

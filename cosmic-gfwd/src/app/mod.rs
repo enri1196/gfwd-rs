@@ -1097,7 +1097,10 @@ impl ContextPage {
 pub enum MenuAction {
     About,
     AddZone,
+    AddService,
     AddPort,
+    AddForwardPort,
+    AddSourcePort,
     AddInterface,
     AddSource,
     AddIcmp,
@@ -1116,8 +1119,23 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::AddZone => {
                 Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::AddZone))
             }
+            MenuAction::AddService => {
+                Message::Zone(zones::Message::View(zones::ZoneViewAction::AddService))
+            }
             MenuAction::AddPort => {
-                Message::Navigation(navigation::Message::ToggleContextPage(ContextPage::AddPort))
+                Message::Zone(zones::Message::View(zones::ZoneViewAction::AddPort {
+                    kind: dialogs::PortKind::Destination,
+                }))
+            }
+            MenuAction::AddForwardPort => {
+                Message::Zone(zones::Message::View(zones::ZoneViewAction::AddPort {
+                    kind: dialogs::PortKind::Forward,
+                }))
+            }
+            MenuAction::AddSourcePort => {
+                Message::Zone(zones::Message::View(zones::ZoneViewAction::AddPort {
+                    kind: dialogs::PortKind::Source,
+                }))
             }
             MenuAction::AddInterface => Message::Navigation(
                 navigation::Message::ToggleContextPage(ContextPage::AddInterface),
