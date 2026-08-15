@@ -1,33 +1,33 @@
 //! Dialog state, validation, and context-drawer views.
 
-use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, button, dropdown, settings};
+use cosmic::iced::Alignment;
+use cosmic::widget::{self, button};
 
-use crate::core::{
-    IPSET_TYPES, RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily, RichRuleSpec,
-    ValidationError, validate_forward_address, validate_interface_name, validate_ipset_entry,
-    validate_ipset_name, validate_ipset_type, validate_port_protocol, validate_port_spec,
-    validate_source,
-};
+use crate::core::ValidationError;
 use crate::fl;
-use crate::models::IcmpTypeInfo;
 use crate::models::ZoneTarget;
 
 use super::outcome::Outcome;
 
-const PORT_PROTOCOLS: [&str; 4] = ["tcp", "udp", "sctp", "dccp"];
+mod icmp;
+mod interface;
+mod ipset;
+mod port;
+mod rich_rule;
+mod service;
+mod source;
+mod zone;
 
-/// Semantic kind of permanent port rule being created.
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub enum PortKind {
-    /// A destination port accepted by the zone.
-    #[default]
-    Destination,
-    /// A source port accepted by the zone.
-    Source,
-    /// A destination port forwarded to another address or port.
-    Forward,
-}
+pub use icmp::{IcmpFormState, icmp_drawer};
+pub use interface::{InterfaceFormState, interface_drawer};
+#[allow(unused_imports)]
+pub use ipset::{IpSetFormState, ipset_drawer, ipset_from_index, ipset_index};
+pub use port::{PortFormState, PortKind, port_drawer, protocol_from_index, protocol_index};
+pub use rich_rule::{RichRuleFormState, rich_rule_drawer};
+pub use service::{ServiceFormState, service_drawer};
+pub use source::{SourceFormState, source_drawer};
+#[allow(unused_imports)]
+pub use zone::{ZoneFormState, target_from_index, target_index, zone_drawer};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DialogKind {
@@ -199,10 +199,14 @@ pub(crate) fn update(
         return Outcome::default();
     }
     match message {
-        DialogMessage::ZoneNameChanged(value) => state.zone.name = value,
-        DialogMessage::ZoneDescriptionChanged(value) => state.zone.description = value,
-        DialogMessage::ZoneTargetSelected(index) => state.zone.target = target_from_index(index),
-        DialogMessage::ServiceSearchChanged(value) => state.service.search = value,
+        DialogMessage::ZoneNameChanged(value) => zone::name_changed(&mut state.zone, value),
+        DialogMessage::ZoneDescriptionChanged(value) => {
+            zone::description_changed(&mut state.zone, value);
+        }
+        DialogMessage::ZoneTargetSelected(index) => zone::target_selected(&mut state.zone, index),
+        DialogMessage::ServiceSearchChanged(value) => {
+            service::search_changed(&mut state.service, value);
+        }
         DialogMessage::ServiceSelected(service) => {
             let Some(zone) = selected_zone(state, context.selected_zone) else {
                 return Outcome::default();
@@ -213,39 +217,26 @@ pub(crate) fn update(
             }
             return submit(Submission::Service { zone, service });
         }
-        DialogMessage::PortNumberChanged(value) => {
-            state.port.port = value;
-            state.port.port_touched = true;
-        }
+        DialogMessage::PortNumberChanged(value) => port::number_changed(&mut state.port, value),
         DialogMessage::PortProtocolSelected(index) => {
-            state.port.protocol = protocol_from_index(index);
+            port::protocol_selected(&mut state.port, index);
         }
         DialogMessage::PortForwardDestIpChanged(value) => {
-            state.port.dest_ip = value;
-            state.port.dest_ip_touched = true;
+            port::destination_address_changed(&mut state.port, value);
         }
         DialogMessage::PortForwardDestPortChanged(value) => {
-            state.port.dest_port = value;
-            state.port.dest_port_touched = true;
+            port::destination_port_changed(&mut state.port, value);
         }
         DialogMessage::InterfaceSelected(index) => {
-            if index == 0 {
-                state.interface.interface.clear();
-                state.interface.error = None;
-            } else if let Some(interface) = context.interfaces.get(index - 1) {
-                state.interface.interface = interface.clone();
-                validate_interface(state);
-            }
+            interface::selected(&mut state.interface, index, context.interfaces);
         }
         DialogMessage::InterfaceNameChanged(value) => {
-            state.interface.interface = value;
-            validate_interface(state);
+            interface::name_changed(&mut state.interface, value);
         }
         DialogMessage::SourceAddressChanged(value) => {
-            state.source.source = value;
-            state.source.touched = true;
+            source::address_changed(&mut state.source, value);
         }
-        DialogMessage::IcmpSearchChanged(value) => state.icmp.search = value,
+        DialogMessage::IcmpSearchChanged(value) => icmp::search_changed(&mut state.icmp, value),
         DialogMessage::IcmpSelected(icmp) => {
             let Some(zone) = selected_zone(state, context.selected_zone) else {
                 return Outcome::default();
@@ -256,38 +247,51 @@ pub(crate) fn update(
             }
             return submit(Submission::Icmp { zone, icmp });
         }
-        DialogMessage::RichRuleRawModeToggled(value) => state.rich_rule.raw_mode = value,
-        DialogMessage::RichRuleRawChanged(value) => state.rich_rule.raw_rule = value,
-        DialogMessage::RichRuleFamilySelected(value) => state.rich_rule.family = value,
-        DialogMessage::RichRuleSourceChanged(value) => state.rich_rule.source = value,
-        DialogMessage::RichRuleSourceInvertToggled(value) => state.rich_rule.source_invert = value,
-        DialogMessage::RichRuleDestinationChanged(value) => state.rich_rule.destination = value,
+        DialogMessage::RichRuleRawModeToggled(value) => {
+            rich_rule::raw_mode_toggled(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleRawChanged(value) => {
+            rich_rule::raw_changed(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleFamilySelected(value) => {
+            rich_rule::family_selected(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleSourceChanged(value) => {
+            rich_rule::source_changed(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleSourceInvertToggled(value) => {
+            rich_rule::source_invert_toggled(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleDestinationChanged(value) => {
+            rich_rule::destination_changed(&mut state.rich_rule, value);
+        }
         DialogMessage::RichRuleDestinationInvertToggled(value) => {
-            state.rich_rule.destination_invert = value;
+            rich_rule::destination_invert_toggled(&mut state.rich_rule, value);
         }
         DialogMessage::RichRuleElementSelected(value) => {
-            state.rich_rule.element = value;
-            state.rich_rule.element_value.clear();
+            rich_rule::element_selected(&mut state.rich_rule, value);
         }
         DialogMessage::RichRuleElementValueChanged(value) => {
-            state.rich_rule.element_value = value;
+            rich_rule::element_value_changed(&mut state.rich_rule, value);
         }
         DialogMessage::RichRulePortProtocolSelected(value) => {
-            state.rich_rule.port_protocol = protocol_from_index(value);
+            rich_rule::port_protocol_selected(&mut state.rich_rule, value);
         }
-        DialogMessage::RichRuleActionSelected(value) => state.rich_rule.action = value,
-        DialogMessage::RichRuleRejectTypeChanged(value) => state.rich_rule.reject_type = value,
-        DialogMessage::RichRuleMarkChanged(value) => state.rich_rule.mark = value,
-        DialogMessage::IpSetNameChanged(value) => {
-            state.ipset.name = value;
-            state.ipset.name_touched = true;
+        DialogMessage::RichRuleActionSelected(value) => {
+            rich_rule::action_selected(&mut state.rich_rule, value);
         }
+        DialogMessage::RichRuleRejectTypeChanged(value) => {
+            rich_rule::reject_type_changed(&mut state.rich_rule, value);
+        }
+        DialogMessage::RichRuleMarkChanged(value) => {
+            rich_rule::mark_changed(&mut state.rich_rule, value);
+        }
+        DialogMessage::IpSetNameChanged(value) => ipset::name_changed(&mut state.ipset, value),
         DialogMessage::IpSetTypeSelected(index) => {
-            state.ipset.ipset_type = ipset_from_index(index);
+            ipset::type_selected(&mut state.ipset, index);
         }
         DialogMessage::IpSetEntriesChanged(value) => {
-            state.ipset.entries = value;
-            state.ipset.entries_touched = true;
+            ipset::entries_changed(&mut state.ipset, value);
         }
         DialogMessage::Submit(kind) => return submit_form(state, kind, context.selected_zone),
         DialogMessage::Cancel(kind) => {
@@ -318,11 +322,7 @@ fn submit_form(
         }
         DialogKind::Service | DialogKind::Icmp => Outcome::default(),
         DialogKind::Port => {
-            state.port.port_touched = true;
-            if state.port.kind == PortKind::Forward {
-                state.port.dest_ip_touched = true;
-                state.port.dest_port_touched = true;
-            }
+            port::touch_submission_fields(&mut state.port);
             if !state.port.is_valid() {
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
@@ -330,30 +330,10 @@ fn submit_form(
             let Some(zone) = selected_zone(state, selected) else {
                 return Outcome::default();
             };
-            let port = state.port.port.trim().to_string();
-            let protocol = state.port.protocol.trim().to_string();
-            match state.port.kind {
-                PortKind::Destination => submit(Submission::Port {
-                    zone,
-                    port,
-                    protocol,
-                }),
-                PortKind::Source => submit(Submission::SourcePort {
-                    zone,
-                    port,
-                    protocol,
-                }),
-                PortKind::Forward => submit(Submission::ForwardPort {
-                    zone,
-                    port,
-                    protocol,
-                    to_port: state.port.dest_port.trim().to_string(),
-                    to_addr: state.port.dest_ip.trim().to_string(),
-                }),
-            }
+            submit(port::submission(&state.port, zone))
         }
         DialogKind::Interface => {
-            if !validate_interface(state) {
+            if !interface::validate(&mut state.interface) {
                 return Outcome::default();
             }
             let Some(zone) = selected_zone(state, selected) else {
@@ -365,7 +345,7 @@ fn submit_form(
             })
         }
         DialogKind::Source => {
-            state.source.touched = true;
+            source::touch(&mut state.source);
             if !state.source.is_valid() {
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
@@ -389,8 +369,7 @@ fn submit_form(
             submit(Submission::RichRule { zone, rule })
         }
         DialogKind::IpSet => {
-            state.ipset.name_touched = true;
-            state.ipset.entries_touched = true;
+            ipset::touch_submission_fields(&mut state.ipset);
             if !state.ipset.is_valid() {
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
@@ -398,7 +377,7 @@ fn submit_form(
             submit(Submission::IpSet {
                 name: state.ipset.name.trim().to_string(),
                 ipset_type: state.ipset.ipset_type.trim().to_string(),
-                entries: split_ipset_entries(&state.ipset.entries),
+                entries: ipset::split_entries(&state.ipset.entries),
             })
         }
     }
@@ -411,28 +390,6 @@ fn selected_zone(state: &mut State, selected: Option<&str>) -> Option<String> {
     })
 }
 
-fn validate_interface(state: &mut State) -> bool {
-    match validate_interface_name(state.interface.interface.trim()) {
-        Ok(()) => {
-            state.interface.error = None;
-            true
-        }
-        Err(error) => {
-            state.interface.error = Some(localized_validation_error(error));
-            false
-        }
-    }
-}
-
-fn split_ipset_entries(entries: &str) -> Vec<String> {
-    entries
-        .lines()
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
 fn submit(submission: Submission) -> Outcome<Effect, Request> {
     Outcome::request(Request::Submit(submission))
 }
@@ -440,13 +397,6 @@ fn submit(submission: Submission) -> Outcome<Effect, Request> {
 /// Exhaustively run a dialog effect. Dialogs currently emit no effects.
 pub(crate) fn effects(effect: Effect) -> cosmic::Task<DialogMessage> {
     match effect {}
-}
-
-/// Search state for the configured-service picker.
-#[derive(Debug, Clone, Default)]
-pub struct ServiceFormState {
-    /// Case-insensitive service-name filter.
-    pub search: String,
 }
 
 /// Adds a submission error above a drawer without introducing another scrollable.
@@ -459,397 +409,6 @@ pub fn drawer_with_error<'a>(
         column = column.push(widget::text::caption(error));
     }
     column.push(content).into()
-}
-
-#[derive(Debug, Clone)]
-pub struct ZoneFormState {
-    pub name: String,
-    pub description: String,
-    pub target: ZoneTarget,
-}
-
-impl Default for ZoneFormState {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            description: String::new(),
-            target: ZoneTarget::Default,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PortFormState {
-    /// Port number or inclusive port range.
-    pub port: String,
-    /// Transport protocol for the port rule.
-    pub protocol: String,
-    /// Semantic kind of port rule being created.
-    pub kind: PortKind,
-    /// Optional forwarding destination address.
-    pub dest_ip: String,
-    /// Required forwarding destination port.
-    pub dest_port: String,
-    /// Whether the source port field has been edited.
-    pub port_touched: bool,
-    /// Whether the destination address field has been edited.
-    pub dest_ip_touched: bool,
-    /// Whether the destination port field has been edited.
-    pub dest_port_touched: bool,
-}
-
-impl Default for PortFormState {
-    fn default() -> Self {
-        Self {
-            port: String::new(),
-            protocol: PORT_PROTOCOLS[0].to_string(),
-            kind: PortKind::default(),
-            dest_ip: String::new(),
-            dest_port: String::new(),
-            port_touched: false,
-            dest_ip_touched: false,
-            dest_port_touched: false,
-        }
-    }
-}
-
-impl PortFormState {
-    /// Returns whether all currently visible port fields are valid.
-    pub fn is_valid(&self) -> bool {
-        validate_port_spec(&self.port).is_ok()
-            && validate_port_protocol(&self.protocol).is_ok()
-            && (self.kind != PortKind::Forward
-                || (validate_port_spec(&self.dest_port).is_ok()
-                    && validate_forward_address(&self.dest_ip).is_ok()))
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct InterfaceFormState {
-    pub interface: String,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct SourceFormState {
-    pub source: String,
-    /// Whether the source field has been edited.
-    pub touched: bool,
-}
-
-impl SourceFormState {
-    /// Returns whether the source is a valid IP address or CIDR network.
-    pub fn is_valid(&self) -> bool {
-        validate_source(&self.source).is_ok()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct IcmpFormState {
-    /// Case-insensitive name and description filter.
-    pub search: String,
-}
-
-/// State for structured generation and advanced raw rich-rule entry.
-#[derive(Debug, Clone)]
-pub struct RichRuleFormState {
-    /// Whether advanced raw mode is active.
-    pub raw_mode: bool,
-    /// Lossless raw rule text.
-    pub raw_rule: String,
-    /// Family dropdown index: any, IPv4, or IPv6.
-    pub family: usize,
-    /// Optional source address/network.
-    pub source: String,
-    /// Whether the source match is inverted.
-    pub source_invert: bool,
-    /// Optional destination address/network.
-    pub destination: String,
-    /// Whether the destination match is inverted.
-    pub destination_invert: bool,
-    /// Element dropdown index: service, port, or protocol.
-    pub element: usize,
-    /// Service, port, or protocol value for the selected element.
-    pub element_value: String,
-    /// Protocol used by a port element.
-    pub port_protocol: String,
-    /// Action dropdown index: accept, reject, drop, or mark.
-    pub action: usize,
-    /// Optional reject type.
-    pub reject_type: String,
-    /// Mark value for the mark action.
-    pub mark: String,
-}
-
-impl Default for RichRuleFormState {
-    fn default() -> Self {
-        Self {
-            raw_mode: false,
-            raw_rule: String::new(),
-            family: 0,
-            source: String::new(),
-            source_invert: false,
-            destination: String::new(),
-            destination_invert: false,
-            element: 0,
-            element_value: String::new(),
-            port_protocol: PORT_PROTOCOLS[0].to_string(),
-            action: 0,
-            reject_type: String::new(),
-            mark: String::new(),
-        }
-    }
-}
-
-impl RichRuleFormState {
-    /// Returns validated raw text or generated XML for submission.
-    pub fn generated_rule(&self) -> Result<String, RichRuleError> {
-        if self.raw_mode {
-            return if self.raw_rule.trim().is_empty() {
-                Err(RichRuleError::MissingElement)
-            } else {
-                Ok(self.raw_rule.trim().to_string())
-            };
-        }
-        let optional_address = |value: &str, invert| {
-            (!value.trim().is_empty()).then(|| (value.trim().to_string(), invert))
-        };
-        RichRuleSpec {
-            family: match self.family {
-                1 => Some(RichRuleFamily::Ipv4),
-                2 => Some(RichRuleFamily::Ipv6),
-                _ => None,
-            },
-            source: optional_address(&self.source, self.source_invert),
-            destination: optional_address(&self.destination, self.destination_invert),
-            element: match self.element {
-                1 => RichRuleElement::Port {
-                    port: self.element_value.trim().to_string(),
-                    protocol: self.port_protocol.clone(),
-                },
-                2 => RichRuleElement::Protocol(self.element_value.trim().to_string()),
-                _ => RichRuleElement::Service(self.element_value.trim().to_string()),
-            },
-            action: match self.action {
-                1 => RichRuleAction::Reject(
-                    (!self.reject_type.trim().is_empty())
-                        .then(|| self.reject_type.trim().to_string()),
-                ),
-                2 => RichRuleAction::Drop,
-                3 => RichRuleAction::Mark(self.mark.trim().to_string()),
-                _ => RichRuleAction::Accept,
-            },
-        }
-        .to_xml()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct IpSetFormState {
-    pub name: String,
-    pub ipset_type: String,
-    pub entries: String,
-    /// Whether the name field has been edited.
-    pub name_touched: bool,
-    /// Whether the initial-entry field has been edited.
-    pub entries_touched: bool,
-}
-
-impl Default for IpSetFormState {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            ipset_type: IPSET_TYPES[0].to_string(),
-            entries: String::new(),
-            name_touched: false,
-            entries_touched: false,
-        }
-    }
-}
-
-impl IpSetFormState {
-    /// Returns whether the name, type, and every newline-separated entry are valid.
-    pub fn is_valid(&self) -> bool {
-        validate_ipset_name(&self.name).is_ok()
-            && validate_ipset_type(&self.ipset_type).is_ok()
-            && self
-                .entries
-                .lines()
-                .map(str::trim)
-                .filter(|entry| !entry.is_empty())
-                .all(|entry| validate_ipset_entry(entry, &self.ipset_type).is_ok())
-    }
-}
-
-pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMessage> {
-    let target_labels = target_labels();
-    let target_selected = Some(target_index(&state.target));
-
-    let content = settings::view_column(vec![
-        settings::section()
-            .title(fl!("dialog-zone-section-basic"))
-            .add(
-                settings::item::builder(fl!("dialog-zone-name-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-zone-name-placeholder"),
-                        &state.name,
-                    )
-                    .on_input(DialogMessage::ZoneNameChanged)
-                    .width(Length::Fill),
-                ),
-            )
-            .add(
-                settings::item::builder(fl!("dialog-zone-description-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-zone-description-placeholder"),
-                        &state.description,
-                    )
-                    .on_input(DialogMessage::ZoneDescriptionChanged)
-                    .width(Length::Fill),
-                ),
-            )
-            .into(),
-        settings::section()
-            .title(fl!("dialog-zone-section-target"))
-            .add(
-                settings::item::builder(fl!("dialog-zone-target-label")).control(
-                    dropdown(
-                        target_labels,
-                        target_selected,
-                        DialogMessage::ZoneTargetSelected,
-                    )
-                    .width(Length::Fill),
-                ),
-            )
-            .into(),
-    ]);
-
-    content.into()
-}
-
-/// Builds the searchable configured-service picker.
-pub fn service_drawer<'a>(
-    state: &'a ServiceFormState,
-    services: &'a [String],
-    enabled: &'a [String],
-    loading: bool,
-    error: Option<&'a str>,
-) -> cosmic::Element<'a, DialogMessage> {
-    let filter = state.search.trim().to_lowercase();
-    let mut section = settings::section()
-        .title(fl!("dialog-service-section"))
-        .add(
-            widget::text_input::text_input(fl!("dialog-service-search-placeholder"), &state.search)
-                .on_input(DialogMessage::ServiceSearchChanged)
-                .width(Length::Fill),
-        );
-
-    if loading {
-        section = section.add(widget::text::caption(fl!("dialog-service-loading")));
-    } else if let Some(error) = error {
-        section = section.add(widget::text::caption(error));
-    } else {
-        let mut visible = 0;
-        for service in services
-            .iter()
-            .filter(|service| filter.is_empty() || service.to_lowercase().contains(&filter))
-        {
-            visible += 1;
-            let is_enabled = enabled.iter().any(|item| item == service);
-            let label = if is_enabled {
-                fl!("dialog-service-enabled", service = service)
-            } else {
-                service.clone()
-            };
-            let message = (!is_enabled).then(|| DialogMessage::ServiceSelected(service.clone()));
-            section = section.add(
-                button::standard(label)
-                    .width(Length::Fill)
-                    .on_press_maybe(message),
-            );
-        }
-        if visible == 0 {
-            section = section.add(widget::text::caption(fl!("dialog-service-empty")));
-        }
-    }
-
-    settings::view_column(vec![section.into()]).into()
-}
-
-pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMessage> {
-    let protocol_selected = protocol_index(&state.protocol);
-
-    let mut sections = Vec::new();
-    let mut port_section = settings::section()
-        .title(fl!("dialog-port-section"))
-        .add(
-            settings::item::builder(fl!("dialog-port-label")).control(
-                widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)
-                    .on_input(DialogMessage::PortNumberChanged)
-                    .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("dialog-port-protocol-label")).control(
-                dropdown(
-                    &PORT_PROTOCOLS,
-                    protocol_selected,
-                    DialogMessage::PortProtocolSelected,
-                )
-                .width(Length::Fill),
-            ),
-        );
-    if state.port_touched
-        && let Err(error) = validate_port_spec(&state.port)
-    {
-        port_section = port_section.add(widget::text::caption(localized_validation_error(error)));
-    }
-    if let Err(error) = validate_port_protocol(&state.protocol) {
-        port_section = port_section.add(widget::text::caption(localized_validation_error(error)));
-    }
-    sections.push(port_section.into());
-
-    if state.kind == PortKind::Forward {
-        let mut destination_section = settings::section()
-            .title(fl!("dialog-port-forward-destination-section"))
-            .add(
-                settings::item::builder(fl!("dialog-port-dest-ip-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-port-dest-ip-placeholder"),
-                        &state.dest_ip,
-                    )
-                    .on_input(DialogMessage::PortForwardDestIpChanged)
-                    .width(Length::Fill),
-                ),
-            )
-            .add(
-                settings::item::builder(fl!("dialog-port-dest-port-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-port-dest-port-placeholder"),
-                        &state.dest_port,
-                    )
-                    .on_input(DialogMessage::PortForwardDestPortChanged)
-                    .width(Length::Fill),
-                ),
-            );
-        if state.dest_ip_touched
-            && let Err(error) = validate_forward_address(&state.dest_ip)
-        {
-            destination_section =
-                destination_section.add(widget::text::caption(localized_validation_error(error)));
-        }
-        if state.dest_port_touched
-            && let Err(error) = validate_port_spec(&state.dest_port)
-        {
-            destination_section =
-                destination_section.add(widget::text::caption(localized_validation_error(error)));
-        }
-        sections.push(destination_section.into());
-    }
-
-    let content = settings::view_column(sections);
-
-    content.into()
 }
 
 /// Converts a typed validation failure into localized user-facing text.
@@ -871,390 +430,6 @@ pub fn localized_validation_error(error: ValidationError) -> String {
         ValidationError::InvalidIpSetEntry => fl!("validation-ipset-entry"),
         ValidationError::InvalidMacAddress => fl!("validation-mac-address"),
     }
-}
-
-pub fn interface_drawer<'a>(
-    state: &'a InterfaceFormState,
-    interfaces: &'a [String],
-    loading: bool,
-    error: Option<&'a str>,
-) -> cosmic::Element<'a, DialogMessage> {
-    let mut section = settings::section().title(fl!("dialog-interface-section"));
-    let show_manual_entry = interfaces.is_empty() && !loading;
-
-    if loading {
-        section = section.add(widget::text::caption(fl!("dialog-interface-loading")));
-    } else if interfaces.is_empty() {
-        section = section.add(widget::text::caption(fl!("dialog-interface-empty")));
-    } else {
-        section = section.add(widget::text::caption(fl!(
-            "dialog-interface-count",
-            count = interfaces.len()
-        )));
-    }
-
-    if show_manual_entry {
-        section = section.add(widget::text::caption(fl!("dialog-interface-manual-info")));
-    }
-
-    if let Some(error) = error {
-        section = section.add(widget::text::caption(error));
-    }
-
-    let mut options = Vec::with_capacity(interfaces.len() + 1);
-    let placeholder = if loading {
-        fl!("dialog-interface-loading")
-    } else if interfaces.is_empty() {
-        fl!("dialog-interface-empty")
-    } else {
-        fl!("dialog-interface-select-placeholder")
-    };
-    options.push(placeholder.to_string());
-    options.extend(interfaces.iter().cloned());
-
-    let selected = if state.interface.is_empty() {
-        Some(0)
-    } else {
-        interfaces
-            .iter()
-            .position(|iface| iface == &state.interface)
-            .map(|index| index + 1)
-            .or(Some(0))
-    };
-
-    section = section.add(
-        settings::item::builder(fl!("dialog-interface-name-label")).control(
-            dropdown(options, selected, DialogMessage::InterfaceSelected).width(Length::Fill),
-        ),
-    );
-
-    if show_manual_entry {
-        section = section.add(
-            settings::item::builder(fl!("dialog-interface-manual-label")).control(
-                widget::text_input::text_input(
-                    fl!("dialog-interface-name-placeholder"),
-                    &state.interface,
-                )
-                .on_input(DialogMessage::InterfaceNameChanged)
-                .width(Length::Fill),
-            ),
-        );
-    }
-
-    let content = settings::view_column(vec![section.into()]);
-
-    content.into()
-}
-
-pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, DialogMessage> {
-    let mut section = settings::section().title(fl!("dialog-source-section")).add(
-        settings::item::builder(fl!("dialog-source-label")).control(
-            widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
-                .on_input(DialogMessage::SourceAddressChanged)
-                .width(Length::Fill),
-        ),
-    );
-    if state.touched
-        && let Err(error) = validate_source(&state.source)
-    {
-        section = section.add(widget::text::caption(localized_validation_error(error)));
-    }
-    let content = settings::view_column(vec![section.into()]);
-
-    content.into()
-}
-
-pub fn icmp_drawer<'a>(
-    state: &'a IcmpFormState,
-    types: &'a [IcmpTypeInfo],
-    blocked: &'a [String],
-    loading: bool,
-    error: Option<&'a str>,
-) -> cosmic::Element<'a, DialogMessage> {
-    let filter = state.search.trim().to_lowercase();
-    let mut section = settings::section().title(fl!("dialog-icmp-section")).add(
-        widget::text_input::text_input(fl!("dialog-icmp-search-placeholder"), &state.search)
-            .on_input(DialogMessage::IcmpSearchChanged)
-            .width(Length::Fill),
-    );
-
-    if loading {
-        section = section.add(widget::text::caption(fl!("dialog-icmp-loading")));
-    } else if let Some(error) = error {
-        section = section.add(widget::text::caption(error));
-    } else {
-        let mut visible = 0;
-        for icmp in types.iter().filter(|icmp| {
-            filter.is_empty()
-                || icmp.name.to_lowercase().contains(&filter)
-                || icmp.description.to_lowercase().contains(&filter)
-        }) {
-            visible += 1;
-            let is_blocked = blocked.contains(&icmp.name);
-            let label = if is_blocked {
-                fl!("dialog-icmp-blocked", name = icmp.name.as_str())
-            } else {
-                fl!("dialog-icmp-add", name = icmp.name.as_str())
-            };
-            section = section.add(
-                settings::item::builder(icmp.name.as_str())
-                    .description(icmp.description.as_str())
-                    .control(button::standard(label).on_press_maybe(
-                        (!is_blocked).then(|| DialogMessage::IcmpSelected(icmp.name.clone())),
-                    )),
-            );
-        }
-        if visible == 0 {
-            section = section.add(widget::text::caption(fl!("dialog-icmp-empty")));
-        }
-    }
-
-    settings::view_column(vec![section.into()]).into()
-}
-
-pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a, DialogMessage> {
-    let mode = settings::section()
-        .title(fl!("dialog-rich-rule-mode-section"))
-        .add(
-            settings::item::builder(fl!("dialog-rich-rule-raw-mode"))
-                .description(fl!("dialog-rich-rule-raw-description"))
-                .control(
-                    widget::toggler(state.raw_mode)
-                        .on_toggle(DialogMessage::RichRuleRawModeToggled),
-                ),
-        );
-
-    if state.raw_mode {
-        let mut raw = settings::section()
-            .title(fl!("dialog-rich-rule-raw-section"))
-            .add(
-                settings::item::builder(fl!("dialog-rich-rule-label")).control(
-                    widget::text_input::text_input(
-                        fl!("dialog-rich-rule-placeholder"),
-                        &state.raw_rule,
-                    )
-                    .on_input(DialogMessage::RichRuleRawChanged)
-                    .width(Length::Fill),
-                ),
-            );
-        if state.raw_rule.trim().is_empty() {
-            raw = raw.add(widget::text::caption(fl!("validation-rich-rule-raw")));
-        }
-        return settings::view_column(vec![mode.into(), raw.into()]).into();
-    }
-
-    let family_labels = vec![
-        fl!("rich-rule-family-any"),
-        fl!("rich-rule-family-ipv4"),
-        fl!("rich-rule-family-ipv6"),
-    ];
-    let element_labels = vec![
-        fl!("rich-rule-element-service"),
-        fl!("rich-rule-element-port"),
-        fl!("rich-rule-element-protocol"),
-    ];
-    let action_labels = vec![
-        fl!("rich-rule-action-accept"),
-        fl!("rich-rule-action-reject"),
-        fl!("rich-rule-action-drop"),
-        fl!("rich-rule-action-mark"),
-    ];
-    let addresses = settings::section()
-        .title(fl!("rich-rule-addresses-section"))
-        .add(
-            settings::item::builder(fl!("rich-rule-family")).control(
-                dropdown(
-                    family_labels,
-                    Some(state.family),
-                    DialogMessage::RichRuleFamilySelected,
-                )
-                .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("rich-rule-source")).control(
-                widget::text_input::text_input(fl!("rich-rule-address-placeholder"), &state.source)
-                    .on_input(DialogMessage::RichRuleSourceChanged)
-                    .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("rich-rule-source-invert")).control(
-                widget::toggler(state.source_invert)
-                    .on_toggle(DialogMessage::RichRuleSourceInvertToggled),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("rich-rule-destination")).control(
-                widget::text_input::text_input(
-                    fl!("rich-rule-address-placeholder"),
-                    &state.destination,
-                )
-                .on_input(DialogMessage::RichRuleDestinationChanged)
-                .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("rich-rule-destination-invert")).control(
-                widget::toggler(state.destination_invert)
-                    .on_toggle(DialogMessage::RichRuleDestinationInvertToggled),
-            ),
-        );
-
-    let value_label = match state.element {
-        1 => fl!("rich-rule-port"),
-        2 => fl!("rich-rule-protocol"),
-        _ => fl!("rich-rule-service"),
-    };
-    let mut element = settings::section()
-        .title(fl!("rich-rule-element-section"))
-        .add(
-            settings::item::builder(fl!("rich-rule-element")).control(
-                dropdown(
-                    element_labels,
-                    Some(state.element),
-                    DialogMessage::RichRuleElementSelected,
-                )
-                .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(value_label).control(
-                widget::text_input::text_input(
-                    fl!("rich-rule-element-placeholder"),
-                    &state.element_value,
-                )
-                .on_input(DialogMessage::RichRuleElementValueChanged)
-                .width(Length::Fill),
-            ),
-        );
-    if state.element == 1 {
-        element = element.add(
-            settings::item::builder(fl!("dialog-port-protocol-label")).control(
-                dropdown(
-                    &PORT_PROTOCOLS,
-                    protocol_index(&state.port_protocol),
-                    DialogMessage::RichRulePortProtocolSelected,
-                )
-                .width(Length::Fill),
-            ),
-        );
-    }
-
-    let mut action = settings::section()
-        .title(fl!("rich-rule-action-section"))
-        .add(
-            settings::item::builder(fl!("rich-rule-action")).control(
-                dropdown(
-                    action_labels,
-                    Some(state.action),
-                    DialogMessage::RichRuleActionSelected,
-                )
-                .width(Length::Fill),
-            ),
-        );
-    if state.action == 1 {
-        action = action.add(
-            settings::item::builder(fl!("rich-rule-reject-type")).control(
-                widget::text_input::text_input(
-                    fl!("rich-rule-reject-type-placeholder"),
-                    &state.reject_type,
-                )
-                .on_input(DialogMessage::RichRuleRejectTypeChanged)
-                .width(Length::Fill),
-            ),
-        );
-    } else if state.action == 3 {
-        action = action.add(
-            settings::item::builder(fl!("rich-rule-mark")).control(
-                widget::text_input::text_input(fl!("rich-rule-mark-placeholder"), &state.mark)
-                    .on_input(DialogMessage::RichRuleMarkChanged)
-                    .width(Length::Fill),
-            ),
-        );
-    }
-
-    let preview = match state.generated_rule() {
-        Ok(rule) => settings::section()
-            .title(fl!("rich-rule-preview-section"))
-            .add(widget::text::body(rule)),
-        Err(error) => settings::section()
-            .title(fl!("rich-rule-preview-section"))
-            .add(widget::text::caption(localized_rich_rule_error(error))),
-    };
-
-    settings::view_column(vec![
-        mode.into(),
-        addresses.into(),
-        element.into(),
-        action.into(),
-        preview.into(),
-    ])
-    .into()
-}
-
-fn localized_rich_rule_error(error: RichRuleError) -> String {
-    match error {
-        RichRuleError::MissingElement => fl!("validation-rich-rule-element"),
-        RichRuleError::InvalidAddress => fl!("validation-rich-rule-address"),
-        RichRuleError::InvalidPort => fl!("validation-port"),
-        RichRuleError::InvalidPortProtocol => fl!("validation-protocol"),
-        RichRuleError::InvalidProtocol => fl!("validation-rich-rule-protocol"),
-        RichRuleError::InvalidIdentifier => fl!("validation-rich-rule-identifier"),
-        RichRuleError::InvalidMark => fl!("validation-rich-rule-mark"),
-    }
-}
-
-pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, DialogMessage> {
-    let type_selected = ipset_index(&state.ipset_type);
-
-    let mut section = settings::section()
-        .title(fl!("dialog-ipset-section"))
-        .add(
-            settings::item::builder(fl!("dialog-ipset-name-label")).control(
-                widget::text_input::text_input(fl!("dialog-ipset-name-placeholder"), &state.name)
-                    .on_input(DialogMessage::IpSetNameChanged)
-                    .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("dialog-ipset-type-label")).control(
-                dropdown(
-                    &IPSET_TYPES,
-                    type_selected,
-                    DialogMessage::IpSetTypeSelected,
-                )
-                .width(Length::Fill),
-            ),
-        )
-        .add(
-            settings::item::builder(fl!("dialog-ipset-entries-label")).control(
-                widget::text_input::text_input(
-                    fl!("dialog-ipset-entries-placeholder"),
-                    &state.entries,
-                )
-                .on_input(DialogMessage::IpSetEntriesChanged)
-                .width(Length::Fill),
-            ),
-        );
-    if state.name_touched
-        && let Err(error) = validate_ipset_name(&state.name)
-    {
-        section = section.add(widget::text::caption(localized_validation_error(error)));
-    }
-    if state.entries_touched
-        && let Some(error) = state
-            .entries
-            .lines()
-            .map(str::trim)
-            .filter(|entry| !entry.is_empty())
-            .find_map(|entry| validate_ipset_entry(entry, &state.ipset_type).err())
-    {
-        section = section.add(widget::text::caption(localized_validation_error(error)));
-    }
-    let content = settings::view_column(vec![section.into()]);
-
-    content.into()
 }
 
 pub fn drawer_footer_with_submit(
@@ -1282,47 +457,6 @@ pub fn drawer_cancel_footer(kind: DialogKind) -> cosmic::Element<'static, Dialog
         .into()
 }
 
-pub fn target_from_index(index: usize) -> ZoneTarget {
-    match index {
-        1 => ZoneTarget::Accept,
-        2 => ZoneTarget::Drop,
-        3 => ZoneTarget::Reject,
-        _ => ZoneTarget::Default,
-    }
-}
-
-pub fn target_index(target: &ZoneTarget) -> usize {
-    match target {
-        ZoneTarget::Default => 0,
-        ZoneTarget::Accept => 1,
-        ZoneTarget::Drop => 2,
-        ZoneTarget::Reject => 3,
-        ZoneTarget::Other(_) => 0,
-    }
-}
-
-pub fn protocol_from_index(index: usize) -> String {
-    PORT_PROTOCOLS
-        .get(index)
-        .unwrap_or(&PORT_PROTOCOLS[0])
-        .to_string()
-}
-
-pub fn protocol_index(protocol: &str) -> Option<usize> {
-    PORT_PROTOCOLS.iter().position(|value| *value == protocol)
-}
-
-pub fn ipset_from_index(index: usize) -> String {
-    IPSET_TYPES
-        .get(index)
-        .unwrap_or(&IPSET_TYPES[0])
-        .to_string()
-}
-
-pub fn ipset_index(ipset_type: &str) -> Option<usize> {
-    IPSET_TYPES.iter().position(|value| *value == ipset_type)
-}
-
 fn submit_label(kind: DialogKind) -> String {
     match kind {
         DialogKind::Zone => fl!("dialog-submit-add-zone"),
@@ -1336,18 +470,19 @@ fn submit_label(kind: DialogKind) -> String {
     }
 }
 
-fn target_labels() -> Vec<String> {
-    vec![
-        fl!("dialog-target-default"),
-        fl!("dialog-target-accept"),
-        fl!("dialog-target-drop"),
-        fl!("dialog-target-reject"),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn context() -> Context<'static> {
+        Context {
+            selected_zone: Some("public"),
+            interfaces: &[],
+            enabled_services: &[],
+            blocked_icmp: &[],
+            mutation_pending: false,
+        }
+    }
 
     #[test]
     fn resetting_one_drawer_preserves_other_form_state() {
@@ -1363,70 +498,6 @@ mod tests {
         assert!(!dialogs.rich_rule.raw_mode);
         assert!(dialogs.rich_rule.raw_rule.is_empty());
         assert!(dialogs.operation_error.is_none());
-    }
-
-    #[test]
-    fn every_port_kind_shares_port_and_protocol_validation() {
-        for kind in [PortKind::Destination, PortKind::Source, PortKind::Forward] {
-            let valid = PortFormState {
-                kind,
-                port: "1000-2000".into(),
-                protocol: "sctp".into(),
-                dest_port: "8443".into(),
-                ..PortFormState::default()
-            };
-            assert!(valid.is_valid(), "{kind:?} should accept shared fields");
-
-            let invalid_port = PortFormState {
-                port: "70000".into(),
-                ..valid.clone()
-            };
-            assert!(
-                !invalid_port.is_valid(),
-                "{kind:?} should reject an invalid port"
-            );
-
-            let invalid_protocol = PortFormState {
-                protocol: "icmp".into(),
-                ..valid
-            };
-            assert!(
-                !invalid_protocol.is_valid(),
-                "{kind:?} should reject an invalid protocol"
-            );
-        }
-    }
-
-    #[test]
-    fn only_forward_ports_validate_destination_fields() {
-        for kind in [PortKind::Destination, PortKind::Source] {
-            let state = PortFormState {
-                kind,
-                port: "443".into(),
-                protocol: "tcp".into(),
-                dest_ip: "not an address".into(),
-                dest_port: "not a port".into(),
-                ..PortFormState::default()
-            };
-            assert!(
-                state.is_valid(),
-                "{kind:?} should ignore forwarding-only fields"
-            );
-        }
-
-        let missing_destination_port = PortFormState {
-            kind: PortKind::Forward,
-            port: "443".into(),
-            protocol: "tcp".into(),
-            ..PortFormState::default()
-        };
-        assert!(!missing_destination_port.is_valid());
-
-        let optional_destination_address = PortFormState {
-            dest_port: "8443".into(),
-            ..missing_destination_port
-        };
-        assert!(optional_destination_address.is_valid());
     }
 
     #[test]
@@ -1451,31 +522,6 @@ mod tests {
             assert!(!dialogs.port.port_touched);
             assert!(dialogs.operation_error.is_none());
         }
-    }
-
-    #[test]
-    fn switching_rich_rule_modes_preserves_raw_input() {
-        let mut state = RichRuleFormState {
-            raw_mode: true,
-            raw_rule: "  <rule><drop/></rule>  ".to_string(),
-            ..RichRuleFormState::default()
-        };
-        assert_eq!(
-            state.generated_rule().unwrap(),
-            "<rule><drop/></rule>".to_string()
-        );
-
-        state.raw_mode = false;
-        state.element_value = "https".to_string();
-        assert!(
-            state
-                .generated_rule()
-                .unwrap()
-                .contains("<service name=\"https\"/>")
-        );
-
-        state.raw_mode = true;
-        assert_eq!(state.raw_rule, "  <rule><drop/></rule>  ");
     }
 
     #[test]
@@ -1522,26 +568,12 @@ mod tests {
             let outcome = update(
                 &mut state,
                 DialogMessage::Submit(DialogKind::Port),
-                Context {
-                    selected_zone: Some("public"),
-                    interfaces: &[],
-                    enabled_services: &[],
-                    blocked_icmp: &[],
-                    mutation_pending: false,
-                },
+                context(),
             );
             assert!(matches!(
                 outcome.requests.as_slice(),
                 [Request::Submit(actual)] if actual == &expected
             ));
         }
-    }
-
-    #[test]
-    fn ipset_submission_preserves_composite_tuple_commas() {
-        assert_eq!(
-            split_ipset_entries("192.0.2.1,443,198.51.100.2\n\n  2001:db8::1,53  \n"),
-            ["192.0.2.1,443,198.51.100.2", "2001:db8::1,53"]
-        );
     }
 }
