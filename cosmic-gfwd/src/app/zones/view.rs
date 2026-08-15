@@ -1,7 +1,7 @@
 //! Zone and firewalld status view.
 
 use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, button, icon, settings};
+use cosmic::widget::{self, button, settings};
 
 use crate::core::{FirewalldStatus, ZoneReconciliationState};
 use crate::fl;
@@ -14,9 +14,6 @@ use crate::app::reconciliation::{
 
 const MAX_LIST_ITEMS: usize = 5;
 const LIST_ITEM_HEIGHT: f32 = 28.0;
-const ADD_ICON: &str = "list-add-symbolic";
-const REMOVE_ICON: &str = "user-trash-symbolic";
-const REFRESH_ICON: &str = "view-refresh-symbolic";
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewState {
@@ -373,9 +370,7 @@ fn reconciliation_banner<'a, Message: 'static + Clone>(
             )))
             .into()
     } else {
-        button::icon(icon::from_name(REFRESH_ICON))
-            .tooltip(fl!("reconciliation-refresh"))
-            .extra_small()
+        button::standard(fl!("reconciliation-refresh"))
             .on_press_maybe(presentation.actions.can_refresh.then_some(map(
                 ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
             )))
@@ -486,10 +481,7 @@ fn section_header<'a, Message: 'static + Clone>(
     tooltip: String,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
-    let add = button::icon(icon::from_name(ADD_ICON))
-        .tooltip(tooltip)
-        .extra_small()
-        .on_press(map(action));
+    let add = button::text(tooltip).on_press(map(action));
 
     widget::row::with_capacity(2)
         .push(widget::text::heading(title).width(Length::Fill))
@@ -504,10 +496,7 @@ fn list_item_row<'a, Message: 'static + Clone>(
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let remove = button::icon(icon::from_name(REMOVE_ICON))
-        .tooltip(fl!("action-remove"))
-        .extra_small()
-        .on_press(map(action));
+    let remove = button::text(fl!("action-remove")).on_press(map(action));
 
     widget::row::with_capacity(2)
         .push(widget::text::body(label).width(Length::Fill))
