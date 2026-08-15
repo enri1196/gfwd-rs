@@ -90,45 +90,58 @@ pub(crate) fn header_start(app: &AppModel) -> Vec<Element<'_, Message>> {
     start
 }
 
-/// Render the context menu for the currently selected navigation item.
+/// Render one context-menu tree per navigation item, in model order.
 pub(crate) fn nav_context_menu(app: &AppModel) -> Option<Vec<menu::Tree<cosmic::Action<Message>>>> {
-    let context_id = app.navigation.nav_model().active();
+    Some(nav_context_menu_trees(app.navigation.context_targets()).0)
+}
 
-    let Some(item) = app.navigation.item_for_id(context_id) else {
-        return Some(Vec::new());
-    };
+fn nav_context_menu_trees(
+    context_targets: &[Option<cosmic::widget::nav_bar::Id>],
+) -> (Vec<menu::Tree<cosmic::Action<Message>>>, usize) {
+    let key_binds = HashMap::new();
+    let context_menus = context_targets
+        .iter()
+        .map(|target| {
+            let children = target.map_or_else(Vec::new, |context_id| {
+                menu::items(
+                    &key_binds,
+                    vec![
+                        menu::Item::Button(
+                            fl!("context-assign-interface"),
+                            None,
+                            NavMenuAction::AssignInterface(context_id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-set-default-zone"),
+                            None,
+                            NavMenuAction::SetDefault(context_id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-rename-zone"),
+                            None,
+                            NavMenuAction::Rename(context_id),
+                        ),
+                        menu::Item::Button(
+                            fl!("context-delete-zone"),
+                            None,
+                            NavMenuAction::Delete(context_id),
+                        ),
+                    ],
+                )
+            });
+            menu::Tree::with_children(menu::root("").apply(Element::from), children)
+        })
+        .collect::<Vec<_>>();
+    let context_menu_count = context_menus.len();
+    debug_assert_eq!(context_menu_count, context_targets.len());
 
-    match item {
-        SidebarItem::Zone { .. } => {
-            let key_binds = HashMap::new();
-            Some(menu::items(
-                &key_binds,
-                vec![
-                    menu::Item::Button(
-                        fl!("context-assign-interface"),
-                        None,
-                        NavMenuAction::AssignInterface(context_id),
-                    ),
-                    menu::Item::Button(
-                        fl!("context-set-default-zone"),
-                        None,
-                        NavMenuAction::SetDefault(context_id),
-                    ),
-                    menu::Item::Button(
-                        fl!("context-rename-zone"),
-                        None,
-                        NavMenuAction::Rename(context_id),
-                    ),
-                    menu::Item::Button(
-                        fl!("context-delete-zone"),
-                        None,
-                        NavMenuAction::Delete(context_id),
-                    ),
-                ],
-            ))
-        }
-        _ => Some(Vec::new()),
-    }
+    (
+        vec![menu::Tree::with_children(
+            menu::root("").apply(Element::from),
+            context_menus,
+        )],
+        context_menu_count,
+    )
 }
 
 /// Render the active context drawer.
@@ -415,4 +428,21 @@ fn context_page_title(
         return fl!("drawer-title-selected-zone", title = title, zone = zone);
     }
     title
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn navigation_context_menu_has_one_child_per_model_item() {
+        let mut navigation = crate::app::navigation::State::new();
+        navigation.set_zones(vec!["public".into(), "work".into()]);
+
+        let (trees, context_menu_count) = nav_context_menu_trees(navigation.context_targets());
+
+        assert_eq!(trees.len(), 1);
+        assert_eq!(context_menu_count, 3);
+        assert_eq!(context_menu_count, navigation.context_targets().len());
+    }
 }

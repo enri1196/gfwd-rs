@@ -71,6 +71,7 @@ enum SidebarStatus {
 
 pub struct Sidebar {
     nav: nav_bar::Model,
+    context_targets: Vec<Option<nav_bar::Id>>,
     #[cfg(test)]
     zone_ids: HashMap<String, nav_bar::Id>,
     zones: Vec<String>,
@@ -85,6 +86,7 @@ impl Sidebar {
     pub fn new() -> Self {
         let mut sidebar = Self {
             nav: nav_bar::Model::default(),
+            context_targets: Vec::new(),
             #[cfg(test)]
             zone_ids: HashMap::new(),
             zones: Vec::new(),
@@ -100,6 +102,10 @@ impl Sidebar {
 
     pub fn nav_model(&self) -> &nav_bar::Model {
         &self.nav
+    }
+
+    pub(crate) fn context_targets(&self) -> &[Option<nav_bar::Id>] {
+        &self.context_targets
     }
 
     pub fn activate(&mut self, id: nav_bar::Id) {
@@ -269,6 +275,7 @@ impl Sidebar {
             .map(ActiveSidebarItem::Zone)
             .or_else(|| self.active_key());
         self.nav.clear();
+        self.context_targets.clear();
         #[cfg(test)]
         self.zone_ids.clear();
 
@@ -298,6 +305,8 @@ impl Sidebar {
             }
 
             let id = entry.id();
+            self.context_targets
+                .push(matches!(&item, SidebarItem::Zone { .. }).then_some(id));
 
             #[cfg(test)]
             if let SidebarItem::Zone { name, .. } = item {

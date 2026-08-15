@@ -285,6 +285,18 @@ mod tests {
         assert_eq!(state.zone_indicators("public"), Some((false, true)));
         assert_eq!(state.zone_indicators("home"), Some((true, false)));
 
+        let targets = state.context_targets();
+        assert_eq!(targets.len(), 3);
+        assert!(targets[0].is_none());
+        assert_eq!(
+            state.zone_name_for_id(targets[1].expect("public zone target")),
+            Some("public".to_string())
+        );
+        assert_eq!(
+            state.zone_name_for_id(targets[2].expect("home zone target")),
+            Some("home".to_string())
+        );
+
         state.set_filter("pub".into());
         assert!(state.zone_exists("home"));
         assert_eq!(state.zone_indicators("public"), Some((false, true)));
