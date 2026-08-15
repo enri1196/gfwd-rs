@@ -3,7 +3,7 @@ name = "gfwd-bus"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "A libcosmic GUI for Firewalld made in Rust"
+description = "A firewalld dbus api crate"
 repository = "https://github.com/enri1196/gfwd-rs"
 
 [dependencies]
