@@ -87,6 +87,169 @@ enum RootRequest {
     DismissToast(ToastId),
 }
 
+/// Explicit root execution plan for one validated dialog request.
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum DialogRoute {
+    CreateZone {
+        name: String,
+        description: String,
+        target: crate::models::ZoneTarget,
+    },
+    AddService {
+        zone: String,
+        service: String,
+    },
+    AddPort {
+        zone: String,
+        port: String,
+        protocol: String,
+    },
+    AddSourcePort {
+        zone: String,
+        port: String,
+        protocol: String,
+    },
+    AddForwardPort {
+        zone: String,
+        port: String,
+        protocol: String,
+        to_port: String,
+        to_addr: String,
+    },
+    AddInterface {
+        zone: String,
+        interface: String,
+    },
+    AddSource {
+        zone: String,
+        source: String,
+    },
+    AddIcmp {
+        zone: String,
+        icmp: String,
+    },
+    AddRichRule {
+        zone: String,
+        rule: String,
+    },
+    CreateIpSet {
+        name: String,
+        ipset_type: String,
+        entries: Vec<String>,
+    },
+    CloseDrawer,
+}
+
+fn plan_dialog_request(request: dialogs::Request) -> DialogRoute {
+    match request {
+        dialogs::Request::Submit(submission) => match submission {
+            dialogs::Submission::Zone {
+                name,
+                description,
+                target,
+            } => DialogRoute::CreateZone {
+                name,
+                description,
+                target,
+            },
+            dialogs::Submission::Service { zone, service } => {
+                DialogRoute::AddService { zone, service }
+            }
+            dialogs::Submission::Port {
+                zone,
+                port,
+                protocol,
+            } => DialogRoute::AddPort {
+                zone,
+                port,
+                protocol,
+            },
+            dialogs::Submission::SourcePort {
+                zone,
+                port,
+                protocol,
+            } => DialogRoute::AddSourcePort {
+                zone,
+                port,
+                protocol,
+            },
+            dialogs::Submission::ForwardPort {
+                zone,
+                port,
+                protocol,
+                to_port,
+                to_addr,
+            } => DialogRoute::AddForwardPort {
+                zone,
+                port,
+                protocol,
+                to_port,
+                to_addr,
+            },
+            dialogs::Submission::Interface { zone, interface } => {
+                DialogRoute::AddInterface { zone, interface }
+            }
+            dialogs::Submission::Source { zone, source } => DialogRoute::AddSource { zone, source },
+            dialogs::Submission::Icmp { zone, icmp } => DialogRoute::AddIcmp { zone, icmp },
+            dialogs::Submission::RichRule { zone, rule } => DialogRoute::AddRichRule { zone, rule },
+            dialogs::Submission::IpSet {
+                name,
+                ipset_type,
+                entries,
+            } => DialogRoute::CreateIpSet {
+                name,
+                ipset_type,
+                entries,
+            },
+        },
+        dialogs::Request::CloseDrawer => DialogRoute::CloseDrawer,
+    }
+}
+
+/// Explicit root execution plan for reconciliation coordination.
+#[derive(Debug)]
+enum ReconciliationRoute {
+    OpenReview,
+    ConfirmApplyPermanent,
+    ConfirmPersistRuntime,
+    BeginMutation(reconciliation::Mutation),
+    FinishMutation(Result<(), BrokerError>),
+    ClearRuntimeDirty,
+    ConfigurationRefresh(ConfigurationEvent),
+    RefreshFirewalldStatus,
+    RefreshZones,
+    RefreshIpSets,
+    RefreshCatalogs,
+}
+
+fn plan_reconciliation_request(request: reconciliation::Request) -> ReconciliationRoute {
+    match request {
+        reconciliation::Request::OpenReview => ReconciliationRoute::OpenReview,
+        reconciliation::Request::ConfirmApplyPermanent => {
+            ReconciliationRoute::ConfirmApplyPermanent
+        }
+        reconciliation::Request::ConfirmPersistRuntime => {
+            ReconciliationRoute::ConfirmPersistRuntime
+        }
+        reconciliation::Request::BeginMutation(mutation) => {
+            ReconciliationRoute::BeginMutation(mutation)
+        }
+        reconciliation::Request::FinishMutation(result) => {
+            ReconciliationRoute::FinishMutation(result)
+        }
+        reconciliation::Request::ClearRuntimeDirty => ReconciliationRoute::ClearRuntimeDirty,
+        reconciliation::Request::ConfigurationRefresh(event) => {
+            ReconciliationRoute::ConfigurationRefresh(event)
+        }
+        reconciliation::Request::RefreshFirewalldStatus => {
+            ReconciliationRoute::RefreshFirewalldStatus
+        }
+        reconciliation::Request::RefreshZones => ReconciliationRoute::RefreshZones,
+        reconciliation::Request::RefreshIpSets => ReconciliationRoute::RefreshIpSets,
+        reconciliation::Request::RefreshCatalogs => ReconciliationRoute::RefreshCatalogs,
+    }
+}
+
 /// Create a COSMIC application from the app model
 impl cosmic::Application for AppModel {
     /// The async executor that will be used to run your application's commands.
@@ -546,17 +709,17 @@ impl AppModel {
         let mut tasks = Vec::new();
         let mut router = router::Router::new(outcome);
         while let Some(request) = router.pop_request() {
-            match request {
-                reconciliation::Request::OpenReview => {
+            match plan_reconciliation_request(request) {
+                ReconciliationRoute::OpenReview => {
                     self.open_context_page(ContextPage::ReviewReconciliation);
                 }
-                reconciliation::Request::ConfirmApplyPermanent => {
+                ReconciliationRoute::ConfirmApplyPermanent => {
                     self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
                 }
-                reconciliation::Request::ConfirmPersistRuntime => {
+                ReconciliationRoute::ConfirmPersistRuntime => {
                     self.operations.confirmation = Some(Confirmation::SaveRuntimeConfiguration);
                 }
-                reconciliation::Request::BeginMutation(mutation) => {
+                ReconciliationRoute::BeginMutation(mutation) => {
                     let operation = match mutation {
                         reconciliation::Mutation::ApplyPermanent => {
                             fl!("operation-apply-permanent")
@@ -567,25 +730,25 @@ impl AppModel {
                     };
                     let _ = self.begin_mutation(operation);
                 }
-                reconciliation::Request::FinishMutation(result) => {
+                ReconciliationRoute::FinishMutation(result) => {
                     tasks.push(self.finish_mutation(&result));
                 }
-                reconciliation::Request::ClearRuntimeDirty => {
+                ReconciliationRoute::ClearRuntimeDirty => {
                     self.operations.runtime_reload_needed = false;
                 }
-                reconciliation::Request::ConfigurationRefresh(event) => {
+                ReconciliationRoute::ConfigurationRefresh(event) => {
                     tasks.push(self.start_configuration_refresh(event));
                 }
-                reconciliation::Request::RefreshFirewalldStatus => {
+                ReconciliationRoute::RefreshFirewalldStatus => {
                     tasks.push(zones::effects::start_firewalld_status_load(self));
                 }
-                reconciliation::Request::RefreshZones => {
+                ReconciliationRoute::RefreshZones => {
                     tasks.push(zones::effects::start_zones_load(self));
                 }
-                reconciliation::Request::RefreshIpSets => {
+                ReconciliationRoute::RefreshIpSets => {
                     tasks.push(self.update_ipsets(ipsets::Message::LoadList));
                 }
-                reconciliation::Request::RefreshCatalogs => {
+                ReconciliationRoute::RefreshCatalogs => {
                     tasks.extend([
                         self.update_catalogs(catalogs::Message::LoadServices),
                         self.update_catalogs(catalogs::Message::LoadIcmpTypes),
@@ -866,57 +1029,69 @@ impl AppModel {
         let mut tasks = Vec::new();
         let mut router = router::Router::new(outcome);
         while let Some(request) = router.pop_request() {
-            match request {
-                dialogs::Request::Submit(submission) => {
-                    let task = match submission {
-                        dialogs::Submission::Zone {
-                            name,
-                            description,
-                            target,
-                        } => zones::effects::start_zone_create(self, name, description, target),
-                        dialogs::Submission::Service { zone, service } => {
-                            zones::effects::start_service_add(self, zone, service)
-                        }
-                        dialogs::Submission::Port {
-                            zone,
-                            port,
-                            protocol,
-                        } => zones::effects::start_port_add(self, zone, port, protocol),
-                        dialogs::Submission::SourcePort {
-                            zone,
-                            port,
-                            protocol,
-                        } => zones::effects::start_source_port_add(self, zone, port, protocol),
-                        dialogs::Submission::ForwardPort {
-                            zone,
-                            port,
-                            protocol,
-                            to_port,
-                            to_addr,
-                        } => zones::effects::start_forward_port_add(
-                            self, zone, port, protocol, to_port, to_addr,
-                        ),
-                        dialogs::Submission::Interface { zone, interface } => {
-                            zones::effects::start_interface_add(self, zone, interface)
-                        }
-                        dialogs::Submission::Source { zone, source } => {
-                            zones::effects::start_source_add(self, zone, source)
-                        }
-                        dialogs::Submission::Icmp { zone, icmp } => {
-                            zones::effects::start_icmp_add(self, zone, icmp)
-                        }
-                        dialogs::Submission::RichRule { zone, rule } => {
-                            zones::effects::start_rich_rule_add(self, zone, rule)
-                        }
-                        dialogs::Submission::IpSet {
-                            name,
-                            ipset_type,
-                            entries,
-                        } => self.start_ipset_create(name, ipset_type, entries),
-                    };
-                    tasks.push(task);
+            match plan_dialog_request(request) {
+                DialogRoute::CreateZone {
+                    name,
+                    description,
+                    target,
+                } => {
+                    tasks.push(zones::effects::start_zone_create(
+                        self,
+                        name,
+                        description,
+                        target,
+                    ));
                 }
-                dialogs::Request::CloseDrawer => self.close_context_drawer(),
+                DialogRoute::AddService { zone, service } => {
+                    tasks.push(zones::effects::start_service_add(self, zone, service));
+                }
+                DialogRoute::AddPort {
+                    zone,
+                    port,
+                    protocol,
+                } => {
+                    tasks.push(zones::effects::start_port_add(self, zone, port, protocol));
+                }
+                DialogRoute::AddSourcePort {
+                    zone,
+                    port,
+                    protocol,
+                } => {
+                    tasks.push(zones::effects::start_source_port_add(
+                        self, zone, port, protocol,
+                    ));
+                }
+                DialogRoute::AddForwardPort {
+                    zone,
+                    port,
+                    protocol,
+                    to_port,
+                    to_addr,
+                } => {
+                    tasks.push(zones::effects::start_forward_port_add(
+                        self, zone, port, protocol, to_port, to_addr,
+                    ));
+                }
+                DialogRoute::AddInterface { zone, interface } => {
+                    tasks.push(zones::effects::start_interface_add(self, zone, interface));
+                }
+                DialogRoute::AddSource { zone, source } => {
+                    tasks.push(zones::effects::start_source_add(self, zone, source));
+                }
+                DialogRoute::AddIcmp { zone, icmp } => {
+                    tasks.push(zones::effects::start_icmp_add(self, zone, icmp));
+                }
+                DialogRoute::AddRichRule { zone, rule } => {
+                    tasks.push(zones::effects::start_rich_rule_add(self, zone, rule));
+                }
+                DialogRoute::CreateIpSet {
+                    name,
+                    ipset_type,
+                    entries,
+                } => {
+                    tasks.push(self.start_ipset_create(name, ipset_type, entries));
+                }
+                DialogRoute::CloseDrawer => self.close_context_drawer(),
             }
         }
         tasks.extend(router.into_effects().into_iter().map(|effect| {
@@ -1073,5 +1248,159 @@ impl menu::action::MenuAction for MenuAction {
                 ContextPage::AddIpSet,
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::RefreshRequest;
+
+    fn dialog_context(mutation_pending: bool) -> dialogs::Context<'static> {
+        dialogs::Context {
+            selected_zone: Some("public"),
+            interfaces: &[],
+            enabled_services: &[],
+            blocked_icmp: &[],
+            mutation_pending,
+        }
+    }
+
+    #[test]
+    fn dialog_submissions_plan_the_matching_domain_effects() {
+        let routes = [
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Zone {
+                name: "work".into(),
+                description: "Work".into(),
+                target: crate::models::ZoneTarget::Drop,
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Service {
+                zone: "public".into(),
+                service: "ssh".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Port {
+                zone: "public".into(),
+                port: "443".into(),
+                protocol: "tcp".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::SourcePort {
+                zone: "public".into(),
+                port: "5353".into(),
+                protocol: "udp".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::ForwardPort {
+                zone: "public".into(),
+                port: "443".into(),
+                protocol: "tcp".into(),
+                to_port: "8443".into(),
+                to_addr: "192.0.2.2".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Interface {
+                zone: "public".into(),
+                interface: "eth0".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Source {
+                zone: "public".into(),
+                source: "192.0.2.0/24".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::Icmp {
+                zone: "public".into(),
+                icmp: "echo-request".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::RichRule {
+                zone: "public".into(),
+                rule: "<rule><accept/></rule>".into(),
+            })),
+            plan_dialog_request(dialogs::Request::Submit(dialogs::Submission::IpSet {
+                name: "trusted".into(),
+                ipset_type: "hash:ip".into(),
+                entries: vec!["192.0.2.1".into()],
+            })),
+        ];
+
+        assert!(matches!(routes[0], DialogRoute::CreateZone { .. }));
+        assert!(matches!(routes[1], DialogRoute::AddService { .. }));
+        assert!(matches!(routes[2], DialogRoute::AddPort { .. }));
+        assert!(matches!(routes[3], DialogRoute::AddSourcePort { .. }));
+        assert!(matches!(routes[4], DialogRoute::AddForwardPort { .. }));
+        assert!(matches!(routes[5], DialogRoute::AddInterface { .. }));
+        assert!(matches!(routes[6], DialogRoute::AddSource { .. }));
+        assert!(matches!(routes[7], DialogRoute::AddIcmp { .. }));
+        assert!(matches!(routes[8], DialogRoute::AddRichRule { .. }));
+        assert!(matches!(routes[9], DialogRoute::CreateIpSet { .. }));
+    }
+
+    #[test]
+    fn dialog_cancellation_and_pending_mutations_are_routed_safely() {
+        assert_eq!(
+            plan_dialog_request(dialogs::Request::CloseDrawer),
+            DialogRoute::CloseDrawer
+        );
+
+        let mut state = DialogState::default();
+        state.zone.name = "work".into();
+        let outcome = dialogs::update(
+            &mut state,
+            DialogMessage::Submit(DialogKind::Zone),
+            dialog_context(true),
+        );
+        assert!(outcome.requests.is_empty());
+    }
+
+    #[test]
+    fn reconciliation_root_routes_keep_confirmations_and_refreshes_distinct() {
+        assert!(matches!(
+            plan_reconciliation_request(reconciliation::Request::OpenReview),
+            ReconciliationRoute::OpenReview
+        ));
+        assert!(matches!(
+            plan_reconciliation_request(reconciliation::Request::ConfirmApplyPermanent),
+            ReconciliationRoute::ConfirmApplyPermanent
+        ));
+        assert!(matches!(
+            plan_reconciliation_request(reconciliation::Request::ConfirmPersistRuntime),
+            ReconciliationRoute::ConfirmPersistRuntime
+        ));
+
+        let mut router = router::Router::new(outcome::Outcome::<(), _> {
+            effects: Vec::new(),
+            requests: vec![
+                reconciliation::Request::RefreshFirewalldStatus,
+                reconciliation::Request::RefreshZones,
+                reconciliation::Request::RefreshIpSets,
+                reconciliation::Request::RefreshCatalogs,
+            ],
+        });
+        assert!(matches!(
+            plan_reconciliation_request(router.pop_request().expect("status refresh")),
+            ReconciliationRoute::RefreshFirewalldStatus
+        ));
+        assert!(matches!(
+            plan_reconciliation_request(router.pop_request().expect("zone refresh")),
+            ReconciliationRoute::RefreshZones
+        ));
+        assert!(matches!(
+            plan_reconciliation_request(router.pop_request().expect("IP-set refresh")),
+            ReconciliationRoute::RefreshIpSets
+        ));
+        assert!(matches!(
+            plan_reconciliation_request(router.pop_request().expect("catalog refresh")),
+            ReconciliationRoute::RefreshCatalogs
+        ));
+        assert!(router.pop_request().is_none());
+        assert!(router.into_effects().is_empty());
+    }
+
+    #[test]
+    fn deferred_configuration_refresh_is_released_after_mutation_work() {
+        let mut state = reconciliation::State::default();
+        state.selection_changed(Some("public".into()));
+
+        assert_eq!(
+            state.handle_configuration_event(true),
+            RefreshRequest::Coalesced
+        );
+        assert!(state.take_deferred_refresh());
+        assert!(!state.take_deferred_refresh());
     }
 }

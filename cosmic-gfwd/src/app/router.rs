@@ -34,7 +34,7 @@ impl<Effect, Request> Router<Effect, Request> {
 #[cfg(test)]
 mod tests {
     use super::Router;
-    use crate::app::outcome::Outcome;
+    use crate::app::{navigation, outcome::Outcome};
 
     #[test]
     fn requests_are_processed_fifo_before_effects_are_taken() {
@@ -46,5 +46,49 @@ mod tests {
         assert_eq!(router.pop_request(), Some("request two"));
         assert_eq!(router.pop_request(), None);
         assert_eq!(router.into_effects(), ["effect one"]);
+    }
+
+    #[test]
+    fn navigation_selection_work_reaches_root_in_causal_order() {
+        let mut navigation = navigation::State::new();
+        navigation.set_zones(vec!["public".to_string()]);
+        let zone_id = navigation.zone_id("public").expect("zone is materialized");
+        let outcome = navigation::update(
+            &mut navigation,
+            navigation::Message::Select(zone_id),
+            navigation::Context,
+        );
+        let mut router = Router::new(outcome);
+
+        assert_eq!(
+            router.pop_request(),
+            Some(navigation::Request::LoadZone("public".into()))
+        );
+        assert_eq!(
+            router.pop_request(),
+            Some(navigation::Request::RefreshTitle)
+        );
+        assert!(router.pop_request().is_none());
+        assert!(router.into_effects().is_empty());
+    }
+
+    #[test]
+    fn ipset_selection_reaches_root_before_title_refresh() {
+        let mut navigation = navigation::State::new();
+        let ipset_id = navigation.nav_model().active();
+        let outcome = navigation::update(
+            &mut navigation,
+            navigation::Message::Select(ipset_id),
+            navigation::Context,
+        );
+        let mut router = Router::new(outcome);
+
+        assert_eq!(router.pop_request(), Some(navigation::Request::LoadIpSets));
+        assert_eq!(
+            router.pop_request(),
+            Some(navigation::Request::RefreshTitle)
+        );
+        assert!(router.pop_request().is_none());
+        assert!(router.into_effects().is_empty());
     }
 }
