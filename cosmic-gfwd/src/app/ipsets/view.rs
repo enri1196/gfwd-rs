@@ -24,6 +24,9 @@ pub struct IpSetViewState {
 
 #[derive(Debug, Clone)]
 pub enum IpSetViewAction {
+    RetryList,
+    RetryDetails,
+    Create,
     Select(String),
     EntryInputChanged(String),
     AddEntry,
@@ -43,7 +46,9 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
     if state.list_loading {
         list_section = list_section.add(widget::text::caption(fl!("ipset-loading")));
     } else if state.ipsets.is_empty() {
-        list_section = list_section.add(widget::text::caption(fl!("ipset-empty")));
+        list_section = list_section
+            .add(widget::text::caption(fl!("ipset-empty")))
+            .add(button::suggested(fl!("action-add-ipset")).on_press(map(IpSetViewAction::Create)));
     } else {
         let spacing = cosmic::theme::spacing().space_xxs;
         let mut list = widget::column::with_capacity(state.ipsets.len())
@@ -68,6 +73,21 @@ pub fn view_ipset_content<'a, Message: 'static + Clone>(
     }
 
     sections.push(list_section.into());
+
+    if let Some(error) = &state.entry_error {
+        let retry = if state.selected.is_some() {
+            IpSetViewAction::RetryDetails
+        } else {
+            IpSetViewAction::RetryList
+        };
+        sections.push(
+            settings::section()
+                .title(fl!("error-summary"))
+                .add(widget::text::caption(error.as_str()))
+                .add(button::standard(fl!("action-retry")).on_press(map(retry)))
+                .into(),
+        );
+    }
 
     if state.details_loading {
         sections.push(

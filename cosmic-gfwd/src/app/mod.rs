@@ -926,6 +926,9 @@ impl AppModel {
         let mut router = router::Router::new(outcome);
         while let Some(request) = router.pop_request() {
             match request {
+                ipsets::Request::OpenCreate => {
+                    tasks.push(self.open_context_page(ContextPage::AddIpSet));
+                }
                 ipsets::Request::BeginMutation(mutation) => {
                     let operation = match mutation {
                         ipsets::Mutation::AddEntry => fl!("operation-add-ipset-entry"),

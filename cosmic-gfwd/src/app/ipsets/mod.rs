@@ -47,6 +47,7 @@ pub(crate) enum Effect {
 /// Root coordination requested by the IP-set reducer.
 #[derive(Debug)]
 pub(crate) enum Request {
+    OpenCreate,
     /// Reserve the global mutation slot before scheduling the effect.
     BeginMutation(Mutation),
     /// Open the destructive confirmation for this IP set.
@@ -176,6 +177,14 @@ fn update_view(
     }
 
     match action {
+        IpSetViewAction::RetryList => Outcome::effect(Effect::List),
+        IpSetViewAction::RetryDetails => state
+            .selected
+            .clone()
+            .map(Effect::Details)
+            .map(Outcome::effect)
+            .unwrap_or_else(|| Outcome::effect(Effect::List)),
+        IpSetViewAction::Create => Outcome::request(Request::OpenCreate),
         IpSetViewAction::Select(name) => {
             state.selected = Some(name.clone());
             state.details = None;

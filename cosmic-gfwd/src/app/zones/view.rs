@@ -28,6 +28,7 @@ pub enum ZoneViewState {
 
 #[derive(Debug, Clone)]
 pub enum ZoneViewAction {
+    RetryLoad(String),
     /// Permanently enables or disables masquerading.
     SetMasquerade(bool),
     /// Permanently enables or disables ICMP block inversion.
@@ -80,7 +81,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     match state {
         ZoneViewState::Empty => centered_message(fl!("zone-select-prompt")),
         ZoneViewState::Loading { zone } => centered_message(fl!("zone-loading", zone = zone)),
-        ZoneViewState::Error { zone, message } => error_message(zone, message),
+        ZoneViewState::Error { zone, message } => error_message(zone, message, map),
         ZoneViewState::Ready(details) => widget::scrollable::scrollable(zone_details(
             details,
             firewalld_status,
@@ -542,11 +543,19 @@ fn centered_message<'a, Message: 'static>(
         .into()
 }
 
-fn error_message<'a, Message: 'static>(zone: &str, message: &str) -> cosmic::Element<'a, Message> {
+fn error_message<'a, Message: 'static + Clone>(
+    zone: &str,
+    message: &str,
+    map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
+) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let content = widget::column::with_capacity(2)
+    let content = widget::column::with_capacity(3)
         .push(widget::text::title2(fl!("zone-load-error", zone = zone)))
         .push(widget::text::body(message.to_string()))
+        .push(
+            button::standard(fl!("action-retry"))
+                .on_press(map(ZoneViewAction::RetryLoad(zone.to_string()))),
+        )
         .spacing(spacing.space_s);
 
     widget::container(content)
