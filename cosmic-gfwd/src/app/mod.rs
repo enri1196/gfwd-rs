@@ -623,7 +623,7 @@ impl AppModel {
         while let Some(request) = router.pop_request() {
             match plan_reconciliation_request(request) {
                 ReconciliationRoute::OpenReview => {
-                    self.open_context_page(ContextPage::ReviewReconciliation);
+                    tasks.push(self.open_context_page(ContextPage::ReviewReconciliation));
                 }
                 ReconciliationRoute::ConfirmApplyPermanent => {
                     self.operations.confirmation = Some(Confirmation::ApplyPermanentConfiguration);
@@ -731,15 +731,29 @@ impl AppModel {
         Task::batch(tasks)
     }
 
-    fn open_context_page(&mut self, context_page: ContextPage) {
+    fn open_context_page(&mut self, context_page: ContextPage) -> Task<cosmic::Action<Message>> {
         self.context_page = context_page;
         self.core.window.show_context = true;
         self.reset_dialog_for_context(context_page);
+        self.load_context_catalog(context_page)
     }
 
     fn reset_dialog_for_context(&mut self, context_page: ContextPage) {
-        if let Some(kind) = dialog_kind_for_page(context_page) {
+        if let Some(kind) = context_page.descriptor().dialog {
             self.dialogs.reset(kind);
+        }
+    }
+
+    fn load_context_catalog(&mut self, context_page: ContextPage) -> Task<cosmic::Action<Message>> {
+        match context_page.descriptor().catalog {
+            Some(ContextCatalog::Services) => self.update_catalogs(catalogs::Message::LoadServices),
+            Some(ContextCatalog::Interfaces) => {
+                self.update_catalogs(catalogs::Message::LoadInterfaces)
+            }
+            Some(ContextCatalog::IcmpTypes) => {
+                self.update_catalogs(catalogs::Message::LoadIcmpTypes)
+            }
+            None => Task::none(),
         }
     }
 
@@ -758,7 +772,7 @@ impl AppModel {
             _ => None,
         };
         let open_dialog = if self.core.window.show_context {
-            dialog_kind_for_page(self.context_page)
+            self.context_page.descriptor().dialog
         } else {
             None
         };
@@ -784,18 +798,11 @@ impl AppModel {
                     .push(self.update_navigation(navigation::Message::DefaultZoneLoaded(result))),
                 zones::Request::NavigationActiveLoaded(result) => tasks
                     .push(self.update_navigation(navigation::Message::ActiveZonesLoaded(result))),
-                zones::Request::OpenContextPage(page) => self.open_context_page(page),
+                zones::Request::OpenContextPage(page) => {
+                    tasks.push(self.open_context_page(page));
+                }
                 zones::Request::SetPortKind(kind) => self.dialogs.port.kind = kind,
                 zones::Request::ResetDialog(kind) => self.dialogs.reset(kind),
-                zones::Request::LoadServices => {
-                    tasks.push(self.update_catalogs(catalogs::Message::LoadServices));
-                }
-                zones::Request::LoadInterfaces => {
-                    tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
-                }
-                zones::Request::LoadIcmpTypes => {
-                    tasks.push(self.update_catalogs(catalogs::Message::LoadIcmpTypes));
-                }
                 zones::Request::ReconciliationSelectionChanged(zone) => {
                     self.reconciliation.selection_changed(zone);
                 }
@@ -880,18 +887,10 @@ impl AppModel {
                     tasks.push(self.update_ipsets(ipsets::Message::LoadList));
                 }
                 navigation::Request::OpenContextPage(context_page) => {
-                    self.open_context_page(context_page);
+                    tasks.push(self.open_context_page(context_page));
                 }
                 navigation::Request::ToggleContextPage(context_page) => {
-                    let requires_zone = matches!(
-                        context_page,
-                        ContextPage::AddService
-                            | ContextPage::AddPort
-                            | ContextPage::AddInterface
-                            | ContextPage::AddSource
-                            | ContextPage::AddIcmp
-                            | ContextPage::AddRichRule
-                    );
+                    let descriptor = context_page.descriptor();
                     if self.context_page == context_page {
                         self.core.window.show_context = !self.core.window.show_context;
                     } else {
@@ -900,25 +899,11 @@ impl AppModel {
                     }
                     if self.core.window.show_context {
                         self.reset_dialog_for_context(context_page);
-                        if requires_zone && self.current_zone_name().is_none() {
+                        if descriptor.requires_zone && self.current_zone_name().is_none() {
                             self.dialogs.operation_error = Some(fl!("error-select-zone-first"));
                         }
-                        match context_page {
-                            ContextPage::AddInterface => {
-                                tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
-                            }
-                            ContextPage::AddService => {
-                                tasks.push(self.update_catalogs(catalogs::Message::LoadServices));
-                            }
-                            ContextPage::AddIcmp => {
-                                tasks.push(self.update_catalogs(catalogs::Message::LoadIcmpTypes));
-                            }
-                            _ => {}
-                        }
+                        tasks.push(self.load_context_catalog(context_page));
                     }
-                }
-                navigation::Request::LoadInterfaceCatalog => {
-                    tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
                 }
                 navigation::Request::SetDefaultZone(zone_name) => {
                     tasks.push(self.update_zones(zones::Message::SetDefault(zone_name)));
@@ -1156,17 +1141,122 @@ pub enum ContextPage {
     ReviewReconciliation,
 }
 
-fn dialog_kind_for_page(page: ContextPage) -> Option<DialogKind> {
-    match page {
-        ContextPage::AddZone => Some(DialogKind::Zone),
-        ContextPage::AddService => Some(DialogKind::Service),
-        ContextPage::AddPort => Some(DialogKind::Port),
-        ContextPage::AddInterface => Some(DialogKind::Interface),
-        ContextPage::AddSource => Some(DialogKind::Source),
-        ContextPage::AddIcmp => Some(DialogKind::Icmp),
-        ContextPage::AddRichRule => Some(DialogKind::RichRule),
-        ContextPage::AddIpSet => Some(DialogKind::IpSet),
-        ContextPage::About | ContextPage::ReviewReconciliation => None,
+/// Static root and presentation policy for one context page.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ContextPageDescriptor {
+    pub(crate) dialog: Option<DialogKind>,
+    pub(crate) catalog: Option<ContextCatalog>,
+    pub(crate) requires_zone: bool,
+    pub(crate) title: ContextTitle,
+    pub(crate) footer: ContextFooter,
+}
+
+/// Catalog projection loaded whenever a context page opens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ContextCatalog {
+    Services,
+    Interfaces,
+    IcmpTypes,
+}
+
+/// Localized title policy applied by the drawer renderer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ContextTitle {
+    None,
+    Reconciliation,
+    Zone,
+    Service,
+    Port,
+    Interface,
+    Source,
+    Icmp,
+    RichRule,
+    IpSet,
+}
+
+/// Footer behavior applied by the drawer renderer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ContextFooter {
+    None,
+    Submit,
+    Cancel,
+}
+
+impl ContextPage {
+    /// Return the single descriptor shared by root routing and drawer rendering.
+    pub(crate) const fn descriptor(self) -> ContextPageDescriptor {
+        match self {
+            Self::About => ContextPageDescriptor {
+                dialog: None,
+                catalog: None,
+                requires_zone: false,
+                title: ContextTitle::None,
+                footer: ContextFooter::None,
+            },
+            Self::ReviewReconciliation => ContextPageDescriptor {
+                dialog: None,
+                catalog: None,
+                requires_zone: false,
+                title: ContextTitle::Reconciliation,
+                footer: ContextFooter::None,
+            },
+            Self::AddZone => ContextPageDescriptor {
+                dialog: Some(DialogKind::Zone),
+                catalog: None,
+                requires_zone: false,
+                title: ContextTitle::Zone,
+                footer: ContextFooter::Submit,
+            },
+            Self::AddService => ContextPageDescriptor {
+                dialog: Some(DialogKind::Service),
+                catalog: Some(ContextCatalog::Services),
+                requires_zone: true,
+                title: ContextTitle::Service,
+                footer: ContextFooter::Cancel,
+            },
+            Self::AddPort => ContextPageDescriptor {
+                dialog: Some(DialogKind::Port),
+                catalog: None,
+                requires_zone: true,
+                title: ContextTitle::Port,
+                footer: ContextFooter::Submit,
+            },
+            Self::AddInterface => ContextPageDescriptor {
+                dialog: Some(DialogKind::Interface),
+                catalog: Some(ContextCatalog::Interfaces),
+                requires_zone: true,
+                title: ContextTitle::Interface,
+                footer: ContextFooter::Submit,
+            },
+            Self::AddSource => ContextPageDescriptor {
+                dialog: Some(DialogKind::Source),
+                catalog: None,
+                requires_zone: true,
+                title: ContextTitle::Source,
+                footer: ContextFooter::Submit,
+            },
+            Self::AddIcmp => ContextPageDescriptor {
+                dialog: Some(DialogKind::Icmp),
+                catalog: Some(ContextCatalog::IcmpTypes),
+                requires_zone: true,
+                title: ContextTitle::Icmp,
+                footer: ContextFooter::Cancel,
+            },
+            Self::AddRichRule => ContextPageDescriptor {
+                dialog: Some(DialogKind::RichRule),
+                catalog: None,
+                requires_zone: true,
+                title: ContextTitle::RichRule,
+                footer: ContextFooter::Submit,
+            },
+            Self::AddIpSet => ContextPageDescriptor {
+                dialog: Some(DialogKind::IpSet),
+                catalog: None,
+                requires_zone: false,
+                title: ContextTitle::IpSet,
+                footer: ContextFooter::Submit,
+            },
+        }
     }
 }
 
@@ -1227,6 +1317,105 @@ mod tests {
             enabled_services: &[],
             blocked_icmp: &[],
             mutation_pending,
+        }
+    }
+
+    #[test]
+    fn context_page_descriptors_centralize_dialog_catalog_and_presentation_policy() {
+        let cases = [
+            (
+                ContextPage::About,
+                None,
+                None,
+                false,
+                ContextTitle::None,
+                ContextFooter::None,
+            ),
+            (
+                ContextPage::ReviewReconciliation,
+                None,
+                None,
+                false,
+                ContextTitle::Reconciliation,
+                ContextFooter::None,
+            ),
+            (
+                ContextPage::AddZone,
+                Some(DialogKind::Zone),
+                None,
+                false,
+                ContextTitle::Zone,
+                ContextFooter::Submit,
+            ),
+            (
+                ContextPage::AddService,
+                Some(DialogKind::Service),
+                Some(ContextCatalog::Services),
+                true,
+                ContextTitle::Service,
+                ContextFooter::Cancel,
+            ),
+            (
+                ContextPage::AddPort,
+                Some(DialogKind::Port),
+                None,
+                true,
+                ContextTitle::Port,
+                ContextFooter::Submit,
+            ),
+            (
+                ContextPage::AddInterface,
+                Some(DialogKind::Interface),
+                Some(ContextCatalog::Interfaces),
+                true,
+                ContextTitle::Interface,
+                ContextFooter::Submit,
+            ),
+            (
+                ContextPage::AddSource,
+                Some(DialogKind::Source),
+                None,
+                true,
+                ContextTitle::Source,
+                ContextFooter::Submit,
+            ),
+            (
+                ContextPage::AddIcmp,
+                Some(DialogKind::Icmp),
+                Some(ContextCatalog::IcmpTypes),
+                true,
+                ContextTitle::Icmp,
+                ContextFooter::Cancel,
+            ),
+            (
+                ContextPage::AddRichRule,
+                Some(DialogKind::RichRule),
+                None,
+                true,
+                ContextTitle::RichRule,
+                ContextFooter::Submit,
+            ),
+            (
+                ContextPage::AddIpSet,
+                Some(DialogKind::IpSet),
+                None,
+                false,
+                ContextTitle::IpSet,
+                ContextFooter::Submit,
+            ),
+        ];
+
+        for (page, dialog, catalog, requires_zone, title, footer) in cases {
+            assert_eq!(
+                page.descriptor(),
+                ContextPageDescriptor {
+                    dialog,
+                    catalog,
+                    requires_zone,
+                    title,
+                    footer,
+                }
+            );
         }
     }
 

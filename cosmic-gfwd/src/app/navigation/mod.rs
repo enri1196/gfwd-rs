@@ -62,7 +62,6 @@ pub(crate) enum Request {
     /// Toggle a root-owned context page and preserve its existing dialog behavior.
     ToggleContextPage(ContextPage),
     /// Load the interface catalog needed by the add-interface context page.
-    LoadInterfaceCatalog,
     /// Start the serialized default-zone mutation through the zones slice.
     SetDefaultZone(String),
     /// Present the root-owned destructive confirmation for a zone.
@@ -142,7 +141,6 @@ fn menu_action(state: &mut State, action: MenuAction) -> Outcome {
             outcome.append(Outcome::request(Request::OpenContextPage(
                 ContextPage::AddInterface,
             )));
-            outcome.append(Outcome::request(Request::LoadInterfaceCatalog));
             debug_assert!(matches!(
                 state.active_item(),
                 Some(SidebarItem::Zone { name, .. }) if name == &zone_name
@@ -257,7 +255,6 @@ mod tests {
                 Request::LoadZone("public".to_string()),
                 Request::RefreshTitle,
                 Request::OpenContextPage(ContextPage::AddInterface),
-                Request::LoadInterfaceCatalog,
             ]
         );
         assert_eq!(

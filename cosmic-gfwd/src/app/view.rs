@@ -137,8 +137,9 @@ pub(crate) fn context_drawer(
         .ready_detail()
         .map(|details| details.icmp_blocks.as_slice())
         .unwrap_or(&[]);
+    let descriptor = app.context_page.descriptor();
 
-    Some(match app.context_page {
+    let drawer = match app.context_page {
         ContextPage::About => cosmic_context_drawer::about(
             &app.about,
             |url| Message::Navigation(super::navigation::Message::LaunchUrl(url.to_string())),
@@ -157,17 +158,11 @@ pub(crate) fn context_drawer(
             Message::Navigation(super::navigation::Message::ToggleContextPage(
                 ContextPage::ReviewReconciliation,
             )),
-        )
-        .title(fl!("reconciliation-review-title")),
+        ),
         ContextPage::AddZone => cosmic_context_drawer::context_drawer(
             drawer_with_error(zone_drawer(&app.dialogs.zone), error).map(DialogMessage::Zone),
             DialogMessage::Cancel(DialogKind::Zone),
         )
-        .title(fl!("drawer-title-zone"))
-        .footer(drawer_footer_with_submit(
-            DialogKind::Zone,
-            can_submit && !app.dialogs.zone.name.trim().is_empty(),
-        ))
         .map(Message::Dialog),
         ContextPage::AddService => cosmic_context_drawer::context_drawer(
             drawer_with_error(
@@ -183,18 +178,11 @@ pub(crate) fn context_drawer(
             .map(DialogMessage::Service),
             DialogMessage::Cancel(DialogKind::Service),
         )
-        .title(fl!("dialog-service-title"))
-        .footer(drawer_cancel_footer(DialogKind::Service))
         .map(Message::Dialog),
         ContextPage::AddPort => cosmic_context_drawer::context_drawer(
             drawer_with_error(port_drawer(&app.dialogs.port), error).map(DialogMessage::Port),
             DialogMessage::Cancel(DialogKind::Port),
         )
-        .title(port_drawer_title(app.dialogs.port.kind))
-        .footer(drawer_footer_with_submit(
-            DialogKind::Port,
-            can_submit && app.dialogs.port.is_valid(),
-        ))
         .map(Message::Dialog),
         ContextPage::AddInterface => cosmic_context_drawer::context_drawer(
             drawer_with_error(
@@ -209,21 +197,11 @@ pub(crate) fn context_drawer(
             .map(DialogMessage::Interface),
             DialogMessage::Cancel(DialogKind::Interface),
         )
-        .title(fl!("drawer-title-interface"))
-        .footer(drawer_footer_with_submit(
-            DialogKind::Interface,
-            can_submit && can_submit_interface,
-        ))
         .map(Message::Dialog),
         ContextPage::AddSource => cosmic_context_drawer::context_drawer(
             drawer_with_error(source_drawer(&app.dialogs.source), error).map(DialogMessage::Source),
             DialogMessage::Cancel(DialogKind::Source),
         )
-        .title(fl!("drawer-title-source"))
-        .footer(drawer_footer_with_submit(
-            DialogKind::Source,
-            can_submit && app.dialogs.source.is_valid(),
-        ))
         .map(Message::Dialog),
         ContextPage::AddIcmp => cosmic_context_drawer::context_drawer(
             drawer_with_error(
@@ -239,31 +217,52 @@ pub(crate) fn context_drawer(
             .map(DialogMessage::Icmp),
             DialogMessage::Cancel(DialogKind::Icmp),
         )
-        .title(fl!("drawer-title-icmp"))
-        .footer(drawer_cancel_footer(DialogKind::Icmp))
         .map(Message::Dialog),
         ContextPage::AddRichRule => cosmic_context_drawer::context_drawer(
             drawer_with_error(rich_rule_drawer(&app.dialogs.rich_rule), error)
                 .map(DialogMessage::RichRule),
             DialogMessage::Cancel(DialogKind::RichRule),
         )
-        .title(fl!("drawer-title-rich-rule"))
-        .footer(drawer_footer_with_submit(
-            DialogKind::RichRule,
-            can_submit && app.dialogs.rich_rule.generated_rule().is_ok(),
-        ))
         .map(Message::Dialog),
         ContextPage::AddIpSet => cosmic_context_drawer::context_drawer(
             drawer_with_error(ipset_drawer(&app.dialogs.ipset), error).map(DialogMessage::IpSet),
             DialogMessage::Cancel(DialogKind::IpSet),
         )
-        .title(fl!("drawer-title-ipset"))
-        .footer(drawer_footer_with_submit(
-            DialogKind::IpSet,
-            can_submit && app.dialogs.ipset.is_valid(),
-        ))
         .map(Message::Dialog),
-    })
+    };
+
+    let drawer = match descriptor.title {
+        super::ContextTitle::None => drawer,
+        title => drawer.title(context_page_title(title, app.dialogs.port.kind)),
+    };
+    let drawer = match descriptor.footer {
+        super::ContextFooter::None => drawer,
+        super::ContextFooter::Cancel => drawer.footer(
+            drawer_cancel_footer(
+                descriptor
+                    .dialog
+                    .expect("a context page with a footer has a dialog"),
+            )
+            .map(Message::Dialog),
+        ),
+        super::ContextFooter::Submit => {
+            let kind = descriptor
+                .dialog
+                .expect("a context page with a footer has a dialog");
+            let valid = match kind {
+                DialogKind::Zone => !app.dialogs.zone.name.trim().is_empty(),
+                DialogKind::Port => app.dialogs.port.is_valid(),
+                DialogKind::Interface => can_submit_interface,
+                DialogKind::Source => app.dialogs.source.is_valid(),
+                DialogKind::RichRule => app.dialogs.rich_rule.generated_rule().is_ok(),
+                DialogKind::IpSet => app.dialogs.ipset.is_valid(),
+                DialogKind::Service | DialogKind::Icmp => false,
+            };
+            drawer.footer(drawer_footer_with_submit(kind, can_submit && valid).map(Message::Dialog))
+        }
+    };
+
+    Some(drawer)
 }
 
 /// Render the destructive-operation confirmation dialog.
@@ -354,11 +353,22 @@ pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
     )
 }
 
-/// Return the localized drawer title for the active port operation.
-fn port_drawer_title(kind: super::dialogs::PortKind) -> String {
-    match kind {
-        super::dialogs::PortKind::Destination => fl!("drawer-title-destination-port"),
-        super::dialogs::PortKind::Source => fl!("drawer-title-source-port"),
-        super::dialogs::PortKind::Forward => fl!("drawer-title-forward-port"),
+/// Resolve the localized title selected by the shared context-page descriptor.
+fn context_page_title(title: super::ContextTitle, port_kind: super::dialogs::PortKind) -> String {
+    match title {
+        super::ContextTitle::None => unreachable!("title-less pages skip title resolution"),
+        super::ContextTitle::Reconciliation => fl!("reconciliation-review-title"),
+        super::ContextTitle::Zone => fl!("drawer-title-zone"),
+        super::ContextTitle::Service => fl!("dialog-service-title"),
+        super::ContextTitle::Port => match port_kind {
+            super::dialogs::PortKind::Destination => fl!("drawer-title-destination-port"),
+            super::dialogs::PortKind::Source => fl!("drawer-title-source-port"),
+            super::dialogs::PortKind::Forward => fl!("drawer-title-forward-port"),
+        },
+        super::ContextTitle::Interface => fl!("drawer-title-interface"),
+        super::ContextTitle::Source => fl!("drawer-title-source"),
+        super::ContextTitle::Icmp => fl!("drawer-title-icmp"),
+        super::ContextTitle::RichRule => fl!("drawer-title-rich-rule"),
+        super::ContextTitle::IpSet => fl!("drawer-title-ipset"),
     }
 }

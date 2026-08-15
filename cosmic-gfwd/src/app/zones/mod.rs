@@ -283,9 +283,6 @@ pub(crate) enum Request {
     OpenContextPage(ContextPage),
     SetPortKind(PortKind),
     ResetDialog(DialogKind),
-    LoadServices,
-    LoadInterfaces,
-    LoadIcmpTypes,
     ReconciliationSelectionChanged(Option<String>),
     LoadReconciliation(String),
     ReconciliationUnavailable(Option<String>),
@@ -492,20 +489,12 @@ fn update_view(action: ZoneViewAction, context: Context<'_>) -> Outcome<Effect, 
         ZoneViewAction::Reconciliation(action) => {
             Outcome::request(Request::ReconciliationAction(action))
         }
-        ZoneViewAction::AddService => Outcome {
-            effects: Vec::new(),
-            requests: vec![
-                Request::OpenContextPage(ContextPage::AddService),
-                Request::LoadServices,
-            ],
-        },
-        ZoneViewAction::AddInterface => Outcome {
-            effects: Vec::new(),
-            requests: vec![
-                Request::OpenContextPage(ContextPage::AddInterface),
-                Request::LoadInterfaces,
-            ],
-        },
+        ZoneViewAction::AddService => {
+            Outcome::request(Request::OpenContextPage(ContextPage::AddService))
+        }
+        ZoneViewAction::AddInterface => {
+            Outcome::request(Request::OpenContextPage(ContextPage::AddInterface))
+        }
         ZoneViewAction::AddPort { kind } => Outcome {
             effects: Vec::new(),
             requests: vec![
@@ -516,13 +505,9 @@ fn update_view(action: ZoneViewAction, context: Context<'_>) -> Outcome<Effect, 
         ZoneViewAction::AddSource => {
             Outcome::request(Request::OpenContextPage(ContextPage::AddSource))
         }
-        ZoneViewAction::AddIcmpBlock => Outcome {
-            effects: Vec::new(),
-            requests: vec![
-                Request::OpenContextPage(ContextPage::AddIcmp),
-                Request::LoadIcmpTypes,
-            ],
-        },
+        ZoneViewAction::AddIcmpBlock => {
+            Outcome::request(Request::OpenContextPage(ContextPage::AddIcmp))
+        }
         ZoneViewAction::AddRichRule => {
             Outcome::request(Request::OpenContextPage(ContextPage::AddRichRule))
         }
@@ -955,7 +940,7 @@ mod tests {
     }
 
     #[test]
-    fn view_add_actions_emit_open_before_catalog_or_dialog_requests() {
+    fn view_add_actions_emit_context_pages_and_dialog_configuration() {
         let mut state = State::default();
         let service = update(
             &mut state,
@@ -964,10 +949,7 @@ mod tests {
         );
         assert!(matches!(
             service.requests.as_slice(),
-            [
-                Request::OpenContextPage(ContextPage::AddService),
-                Request::LoadServices,
-            ]
+            [Request::OpenContextPage(ContextPage::AddService)]
         ));
 
         let port = update(
