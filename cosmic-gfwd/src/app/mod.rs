@@ -10,7 +10,6 @@ use cosmic::widget::{self, Toast, ToastId, about::About, menu, nav_bar};
 use dialogs::{DialogKind, DialogMessage, DialogState, localized_validation_error};
 use navigation::{MenuAction as NavMenuAction, SidebarItem};
 use std::collections::HashMap;
-use zones::{ZoneViewAction, ZoneViewState};
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -50,7 +49,6 @@ pub struct AppModel {
     /// Globally serialized mutations, confirmations, reload state, and notifications.
     operations: operations::State<Message, Confirmation>,
     /// Current activation state of the firewalld systemd unit.
-    firewalld_status: FirewalldStatus,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
@@ -356,13 +354,12 @@ impl cosmic::Application for AppModel {
             context_page: ContextPage::default(),
             about,
             navigation,
-            zones: zones::State::Empty,
+            zones: zones::State::default(),
             reconciliation: reconciliation::State::default(),
             ipsets: ipsets::State::default(),
             dialogs: DialogState::default(),
             catalogs: catalogs::State::default(),
             operations: operations::State::new(Message::DismissToast),
-            firewalld_status: FirewalldStatus::Loading,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -380,11 +377,11 @@ impl cosmic::Application for AppModel {
         };
 
         let mut outcome = outcome::Outcome::effect(app.update_title());
-        outcome.append(outcome::Outcome::effect(zones::effects::start_zones_load(
-            &mut app,
-        )));
         outcome.append(outcome::Outcome::effect(
-            zones::effects::start_firewalld_status_load(&mut app),
+            app.update_zones(zones::Message::LoadList),
+        ));
+        outcome.append(outcome::Outcome::effect(
+            app.update_zones(zones::Message::LoadStatus),
         ));
         let command = app.route(outcome);
 
@@ -473,9 +470,7 @@ impl cosmic::Application for AppModel {
                 return self.handle_dialog_message(dialog_message);
             }
 
-            Message::Zone(zones::Message::View(action)) => {
-                return self.handle_zone_action(action);
-            }
+            Message::Zone(message) => return self.update_zones(message),
 
             Message::IpSet(message) => {
                 return self.update_ipsets(message);
@@ -492,13 +487,13 @@ impl cosmic::Application for AppModel {
                 };
                 return match confirmation {
                     Confirmation::DeleteZone(zone_name) => {
-                        zones::effects::start_zone_delete(self, zone_name)
+                        self.update_zones(zones::Message::Delete(zone_name))
                     }
                     Confirmation::DeleteIpSet(ipset_name) => {
                         self.update_ipsets(ipsets::Message::Delete(ipset_name))
                     }
                     Confirmation::StopFirewalld => {
-                        zones::effects::start_firewalld_control(self, false)
+                        self.update_zones(zones::Message::ControlFirewalld(false))
                     }
                     Confirmation::ApplyPermanentConfiguration => {
                         self.handle_reconciliation_message(reconciliation::Message::ApplyPermanent)
@@ -511,152 +506,9 @@ impl cosmic::Application for AppModel {
             Message::Reconciliation(message) => {
                 return self.handle_reconciliation_message(message);
             }
-            Message::Zone(zones::Message::FirewalldStatusLoaded(result)) => {
-                self.firewalld_status = match result {
-                    Ok(status) => status,
-                    Err(error) => FirewalldStatus::Error(error.to_string()),
-                };
-                if self.firewalld_status == FirewalldStatus::Active
-                    && !self.reconciliation.is_refreshing()
-                {
-                    if let ZoneViewState::Ready(details) = &self.zones {
-                        return self.handle_reconciliation_message(reconciliation::Message::Load(
-                            details.name.clone(),
-                        ));
-                    }
-                } else {
-                    self.reconciliation
-                        .set_unavailable(self.current_zone_name());
-                }
-            }
-            Message::Zone(zones::Message::DaemonControlFinished(result)) => {
-                return Task::batch(vec![
-                    self.finish_mutation(&result),
-                    zones::effects::start_firewalld_status_load(self),
-                ]);
-            }
-
-            Message::Zone(zones::Message::ListLoaded(result)) => {
-                return self.update_navigation(navigation::Message::ZonesLoaded(
-                    result.map_err(|error| error.to_string()),
-                ));
-            }
-            Message::Zone(zones::Message::DetailsLoaded { zone_name, result }) => {
-                let is_active = matches!(
-                    self.navigation.active_item(),
-                    Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                );
-                if !is_active {
-                    return Task::none();
-                }
-
-                match *result {
-                    Ok(details) => {
-                        self.zones = ZoneViewState::Ready(Box::new(details));
-                        if self.firewalld_status == FirewalldStatus::Active {
-                            return self.handle_reconciliation_message(
-                                reconciliation::Message::Load(zone_name),
-                            );
-                        }
-                        self.reconciliation.set_unavailable(Some(zone_name));
-                        return self.finish_configuration_refresh();
-                    }
-                    Err(error) => {
-                        self.zones = ZoneViewState::Error {
-                            zone: zone_name.clone(),
-                            message: error.to_string(),
-                        };
-                        self.reconciliation.set_unavailable(Some(zone_name));
-                        return self.finish_configuration_refresh();
-                    }
-                }
-            }
-            Message::Zone(zones::Message::DefaultLoaded(result)) => {
-                return self.update_navigation(navigation::Message::DefaultZoneLoaded(
-                    result.map_err(|error| error.to_string()),
-                ));
-            }
-            Message::Zone(zones::Message::ActiveLoaded(result)) => {
-                return self.update_navigation(navigation::Message::ActiveZonesLoaded(
-                    result.map_err(|error| error.to_string()),
-                ));
-            }
             Message::Catalog(message) => {
                 return self.update_catalogs(message);
             }
-            Message::Zone(zones::Message::DefaultSet(result)) => match result {
-                Ok(()) => {
-                    return Task::batch(vec![
-                        self.finish_mutation(&result),
-                        zones::effects::start_default_zone_load(self),
-                    ]);
-                }
-                Err(error) => {
-                    return self.finish_mutation(&Err(error));
-                }
-            },
-            Message::Zone(zones::Message::Created { zone_name, result }) => match result {
-                Ok(()) => {
-                    self.operations.runtime_reload_needed = true;
-                    self.dialogs.reset(DialogKind::Zone);
-                    self.close_context_drawer();
-                    return Task::batch(vec![
-                        self.finish_mutation(&result),
-                        zones::effects::start_zones_load(self),
-                    ]);
-                }
-                Err(error) => {
-                    let _ = zone_name;
-                    return self.finish_mutation(&Err(error));
-                }
-            },
-            Message::Zone(zones::Message::Deleted { zone_name, result }) => match result {
-                Ok(()) => {
-                    self.operations.runtime_reload_needed = true;
-                    if matches!(
-                        self.navigation.active_item(),
-                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    ) {
-                        self.zones = ZoneViewState::Empty;
-                        self.reconciliation.set_unavailable(None);
-                    }
-                    return Task::batch(vec![
-                        self.finish_mutation(&result),
-                        zones::effects::start_zones_load(self),
-                    ]);
-                }
-                Err(error) => {
-                    let _ = zone_name;
-                    return self.finish_mutation(&Err(error));
-                }
-            },
-            Message::Zone(zones::Message::ItemAdded { zone_name, result })
-            | Message::Zone(zones::Message::ItemRemoved { zone_name, result }) => match result {
-                Ok(()) => {
-                    self.operations.runtime_reload_needed = true;
-                    if self.core.window.show_context
-                        && let Some(kind) = dialog_kind_for_page(self.context_page)
-                    {
-                        self.dialogs.reset(kind);
-                        self.close_context_drawer();
-                    }
-                    let is_active = matches!(
-                        self.navigation.active_item(),
-                        Some(SidebarItem::Zone { name, .. }) if name == &zone_name
-                    );
-                    if is_active {
-                        return Task::batch(vec![
-                            self.finish_mutation(&result),
-                            zones::effects::start_zone_load(self, zone_name),
-                        ]);
-                    }
-                    return self.finish_mutation(&result);
-                }
-                Err(error) => {
-                    let _ = zone_name;
-                    return self.finish_mutation(&Err(error));
-                }
-            },
         }
         Task::none()
     }
@@ -755,17 +607,14 @@ impl AppModel {
         message: reconciliation::Message,
     ) -> Task<cosmic::Action<Message>> {
         let selected_zone = self.current_zone_name();
-        let ready_zone = match &self.zones {
-            ZoneViewState::Ready(details) => Some(details.name.clone()),
-            _ => None,
-        };
+        let ready_zone = self.zones.current_zone_name().map(str::to_string);
         let outcome = reconciliation::update(
             &mut self.reconciliation,
             message,
             reconciliation::Context {
                 selected_zone: selected_zone.as_deref(),
                 ready_zone: ready_zone.as_deref(),
-                firewalld_active: self.firewalld_status == FirewalldStatus::Active,
+                firewalld_active: self.zones.firewalld_status() == &FirewalldStatus::Active,
                 mutation_pending: self.operations.mutation_pending(),
             },
         );
@@ -803,10 +652,10 @@ impl AppModel {
                     tasks.push(self.start_configuration_refresh(event));
                 }
                 ReconciliationRoute::RefreshFirewalldStatus => {
-                    tasks.push(zones::effects::start_firewalld_status_load(self));
+                    tasks.push(self.update_zones(zones::Message::LoadStatus));
                 }
                 ReconciliationRoute::RefreshZones => {
-                    tasks.push(zones::effects::start_zones_load(self));
+                    tasks.push(self.update_zones(zones::Message::LoadList));
                 }
                 ReconciliationRoute::RefreshIpSets => {
                     tasks.push(self.update_ipsets(ipsets::Message::LoadList));
@@ -843,12 +692,12 @@ impl AppModel {
                 self.handle_reconciliation_message(reconciliation::Message::Load(zone))
             }
             ConfigurationRefreshPlan::ReloadCurrentZone { zone } => {
-                zones::effects::start_zone_load(self, zone)
+                self.update_zones(zones::Message::LoadDetails(zone))
             }
-            ConfigurationRefreshPlan::ReloadZones => zones::effects::start_zones_load(self),
+            ConfigurationRefreshPlan::ReloadZones => self.update_zones(zones::Message::LoadList),
             ConfigurationRefreshPlan::PreserveRenameAndReloadZones { old_zone, new_zone } => {
                 self.navigation.preserve_zone_rename(&old_zone, &new_zone);
-                zones::effects::start_zones_load(self)
+                self.update_zones(zones::Message::LoadList)
             }
             ConfigurationRefreshPlan::FinishWithoutReload => self.finish_configuration_refresh(),
         }
@@ -856,10 +705,8 @@ impl AppModel {
 
     fn reload_everything(&mut self) -> Task<cosmic::Action<Message>> {
         Task::batch(RELOAD_EVERYTHING_STEPS.map(|step| match step {
-            ReloadEverythingStep::FirewalldStatus => {
-                zones::effects::start_firewalld_status_load(self)
-            }
-            ReloadEverythingStep::Zones => zones::effects::start_zones_load(self),
+            ReloadEverythingStep::FirewalldStatus => self.update_zones(zones::Message::LoadStatus),
+            ReloadEverythingStep::Zones => self.update_zones(zones::Message::LoadList),
             ReloadEverythingStep::IpSets => self.update_ipsets(ipsets::Message::LoadList),
             ReloadEverythingStep::Services => self.update_catalogs(catalogs::Message::LoadServices),
             ReloadEverythingStep::IcmpTypes => {
@@ -901,10 +748,122 @@ impl AppModel {
     }
 
     fn current_zone_name(&self) -> Option<String> {
-        match &self.zones {
-            ZoneViewState::Ready(details) => Some(details.name.clone()),
+        self.zones.current_zone_name().map(str::to_string)
+    }
+
+    /// Reduce zone state, apply root requests FIFO, then schedule zone effects.
+    fn update_zones(&mut self, message: zones::Message) -> Task<cosmic::Action<Message>> {
+        let selected_zone = match self.navigation.active_item() {
+            Some(SidebarItem::Zone { name, .. }) => Some(name.clone()),
             _ => None,
+        };
+        let open_dialog = if self.core.window.show_context {
+            dialog_kind_for_page(self.context_page)
+        } else {
+            None
+        };
+        let outcome = zones::update(
+            &mut self.zones,
+            message,
+            zones::Context {
+                mutation_pending: self.operations.mutation_pending(),
+                selected_zone: selected_zone.as_deref(),
+                reconciliation_refreshing: self.reconciliation.is_refreshing(),
+                open_dialog,
+            },
+        );
+        let mut tasks = Vec::new();
+        let mut router = router::Router::new(outcome);
+        while let Some(request) = router.pop_request() {
+            match request {
+                zones::Request::NavigationLoading => self.navigation.set_loading(),
+                zones::Request::NavigationZonesLoaded(result) => {
+                    tasks.push(self.update_navigation(navigation::Message::ZonesLoaded(result)));
+                }
+                zones::Request::NavigationDefaultLoaded(result) => tasks
+                    .push(self.update_navigation(navigation::Message::DefaultZoneLoaded(result))),
+                zones::Request::NavigationActiveLoaded(result) => tasks
+                    .push(self.update_navigation(navigation::Message::ActiveZonesLoaded(result))),
+                zones::Request::OpenContextPage(page) => self.open_context_page(page),
+                zones::Request::SetPortKind(kind) => self.dialogs.port.kind = kind,
+                zones::Request::ResetDialog(kind) => self.dialogs.reset(kind),
+                zones::Request::LoadServices => {
+                    tasks.push(self.update_catalogs(catalogs::Message::LoadServices));
+                }
+                zones::Request::LoadInterfaces => {
+                    tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
+                }
+                zones::Request::LoadIcmpTypes => {
+                    tasks.push(self.update_catalogs(catalogs::Message::LoadIcmpTypes));
+                }
+                zones::Request::ReconciliationSelectionChanged(zone) => {
+                    self.reconciliation.selection_changed(zone);
+                }
+                zones::Request::LoadReconciliation(zone) => tasks
+                    .push(self.handle_reconciliation_message(reconciliation::Message::Load(zone))),
+                zones::Request::ReconciliationUnavailable(zone) => {
+                    self.reconciliation.set_unavailable(zone);
+                }
+                zones::Request::ReconciliationAction(action) => {
+                    tasks.push(self.handle_reconciliation_action(action));
+                }
+                zones::Request::FinishConfigurationRefresh => {
+                    tasks.push(self.finish_configuration_refresh());
+                }
+                zones::Request::ConfirmDeleteZone(zone) => {
+                    self.operations.confirmation = Some(Confirmation::DeleteZone(zone));
+                }
+                zones::Request::ConfirmStopFirewalld => {
+                    self.operations.confirmation = Some(Confirmation::StopFirewalld);
+                }
+                zones::Request::BeginMutation(mutation) => {
+                    let operation = match mutation {
+                        zones::Mutation::CreateZone => fl!("operation-create-zone"),
+                        zones::Mutation::DeleteZone => fl!("operation-delete-zone"),
+                        zones::Mutation::AddService => fl!("operation-add-service"),
+                        zones::Mutation::AddPort => fl!("operation-add-port"),
+                        zones::Mutation::AddSourcePort => fl!("operation-add-source-port"),
+                        zones::Mutation::AddForwardPort => fl!("operation-add-forward-port"),
+                        zones::Mutation::AddInterface => fl!("operation-add-interface"),
+                        zones::Mutation::AddSource => fl!("operation-add-source"),
+                        zones::Mutation::AddIcmp => fl!("operation-add-icmp"),
+                        zones::Mutation::AddRichRule => fl!("operation-add-rich-rule"),
+                        zones::Mutation::RemoveItem => fl!("operation-remove-zone-item"),
+                        zones::Mutation::SetMasquerade => fl!("operation-set-masquerading"),
+                        zones::Mutation::SetIcmpBlockInversion => {
+                            fl!("operation-set-icmp-inversion")
+                        }
+                        zones::Mutation::SetDefaultZone => fl!("operation-set-default-zone"),
+                        zones::Mutation::StartFirewalld => fl!("operation-start-firewalld"),
+                        zones::Mutation::StopFirewalld => fl!("operation-stop-firewalld"),
+                    };
+                    let _ = self.begin_mutation(operation);
+                }
+                zones::Request::FinishMutation(result) => {
+                    tasks.push(self.finish_mutation(&result));
+                }
+                zones::Request::MarkRuntimeDirty => {
+                    self.operations.runtime_reload_needed = true;
+                }
+                zones::Request::CloseDrawer => self.close_context_drawer(),
+                zones::Request::RefreshZones => {
+                    tasks.push(self.update_zones(zones::Message::LoadList));
+                }
+                zones::Request::RefreshDefault => {
+                    tasks.push(self.update_zones(zones::Message::LoadDefault));
+                }
+                zones::Request::RefreshStatus => {
+                    tasks.push(self.update_zones(zones::Message::LoadStatus));
+                }
+                zones::Request::RefreshCurrentZone(zone) => {
+                    tasks.push(self.update_zones(zones::Message::LoadDetails(zone)));
+                }
+            }
         }
+        tasks.extend(router.into_effects().into_iter().map(|effect| {
+            zones::effects(effect).map(|message| cosmic::Action::from(Message::Zone(message)))
+        }));
+        Task::batch(tasks)
     }
 
     /// Reduce navigation state and execute its root-owned requests in FIFO order.
@@ -915,7 +874,7 @@ impl AppModel {
         while let Some(request) = router.pop_request() {
             match request {
                 navigation::Request::LoadZone(zone_name) => {
-                    tasks.push(zones::effects::start_zone_load(self, zone_name));
+                    tasks.push(self.update_zones(zones::Message::LoadDetails(zone_name)));
                 }
                 navigation::Request::LoadIpSets => {
                     tasks.push(self.update_ipsets(ipsets::Message::LoadList));
@@ -962,30 +921,27 @@ impl AppModel {
                     tasks.push(self.update_catalogs(catalogs::Message::LoadInterfaces));
                 }
                 navigation::Request::SetDefaultZone(zone_name) => {
-                    tasks.push(zones::effects::start_default_zone_set(self, zone_name));
+                    tasks.push(self.update_zones(zones::Message::SetDefault(zone_name)));
                 }
                 navigation::Request::ConfirmDeleteZone(zone_name) => {
-                    self.operations.confirmation = Some(Confirmation::DeleteZone(zone_name));
+                    tasks.push(self.update_zones(zones::Message::ConfirmDelete(zone_name)));
                 }
                 navigation::Request::RefreshTitle => tasks.push(self.update_title()),
                 navigation::Request::ClearSelectedZone => {
-                    self.zones = ZoneViewState::Empty;
+                    tasks.push(self.update_zones(zones::Message::ClearSelection));
                     self.reconciliation.set_unavailable(None);
                 }
                 navigation::Request::LoadDefaultZone => {
-                    tasks.push(zones::effects::start_default_zone_load(self));
+                    tasks.push(self.update_zones(zones::Message::LoadDefault));
                 }
                 navigation::Request::LoadActiveZones => {
-                    tasks.push(zones::effects::start_active_zones_load(self));
+                    tasks.push(self.update_zones(zones::Message::LoadActive));
                 }
                 navigation::Request::FinishConfigurationRefresh => {
                     tasks.push(self.finish_configuration_refresh());
                 }
                 navigation::Request::ShowZoneListError(message) => {
-                    self.zones = ZoneViewState::Error {
-                        zone: "zones".to_string(),
-                        message,
-                    };
+                    tasks.push(self.update_zones(zones::Message::ShowListError(message)));
                 }
                 navigation::Request::UpdateConfig(config) => self.config = config,
                 navigation::Request::LaunchUrl(url) => {
@@ -999,76 +955,6 @@ impl AppModel {
         Task::batch(tasks)
     }
 
-    fn handle_zone_action(&mut self, action: ZoneViewAction) -> Task<cosmic::Action<Message>> {
-        if self.mutation_pending() {
-            return Task::none();
-        }
-        match &action {
-            ZoneViewAction::Reconciliation(action) => {
-                return self.handle_reconciliation_action(*action);
-            }
-            ZoneViewAction::AddService => {
-                self.open_context_page(ContextPage::AddService);
-                return self.update_catalogs(catalogs::Message::LoadServices);
-            }
-            ZoneViewAction::SetMasquerade(enabled) => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    return Task::none();
-                };
-                return zones::effects::start_masquerade_set(self, zone_name, *enabled);
-            }
-            ZoneViewAction::SetIcmpBlockInversion(enabled) => {
-                let Some(zone_name) = self.current_zone_name() else {
-                    return Task::none();
-                };
-                return zones::effects::start_icmp_inversion_set(self, zone_name, *enabled);
-            }
-            ZoneViewAction::StartFirewalld => {
-                return zones::effects::start_firewalld_control(self, true);
-            }
-            ZoneViewAction::StopFirewalld => {
-                self.operations.confirmation = Some(Confirmation::StopFirewalld);
-                return Task::none();
-            }
-            ZoneViewAction::AddInterface => {
-                self.open_context_page(ContextPage::AddInterface);
-                return self.update_catalogs(catalogs::Message::LoadInterfaces);
-            }
-            ZoneViewAction::AddPort { kind } => {
-                self.open_context_page(ContextPage::AddPort);
-                self.dialogs.port.kind = *kind;
-                return Task::none();
-            }
-            ZoneViewAction::AddSource => {
-                self.open_context_page(ContextPage::AddSource);
-                return Task::none();
-            }
-            ZoneViewAction::AddIcmpBlock => {
-                self.open_context_page(ContextPage::AddIcmp);
-                return self.update_catalogs(catalogs::Message::LoadIcmpTypes);
-            }
-            ZoneViewAction::AddRichRule => {
-                self.open_context_page(ContextPage::AddRichRule);
-                return Task::none();
-            }
-            ZoneViewAction::RemoveService(_)
-            | ZoneViewAction::RemoveInterface(_)
-            | ZoneViewAction::RemoveSource(_)
-            | ZoneViewAction::RemovePort { .. }
-            | ZoneViewAction::RemoveForwardPort { .. }
-            | ZoneViewAction::RemoveSourcePort { .. }
-            | ZoneViewAction::RemoveIcmpBlock(_)
-            | ZoneViewAction::RemoveRichRule(_) => {}
-        }
-
-        let zone_name = match &self.zones {
-            ZoneViewState::Ready(details) => details.name.clone(),
-            _ => return Task::none(),
-        };
-
-        zones::effects::start_zone_item_remove(self, zone_name, action)
-    }
-
     /// Route actions shared by the reconciliation banner and review drawer.
     fn handle_reconciliation_action(
         &mut self,
@@ -1079,12 +965,11 @@ impl AppModel {
 
     fn handle_dialog_message(&mut self, message: DialogMessage) -> Task<cosmic::Action<Message>> {
         let selected_zone = self.current_zone_name();
-        let (enabled_services, blocked_icmp) = match &self.zones {
-            ZoneViewState::Ready(details) => {
-                (details.services.as_slice(), details.icmp_blocks.as_slice())
-            }
-            _ => (&[][..], &[][..]),
-        };
+        let (enabled_services, blocked_icmp) = self
+            .zones
+            .ready_detail()
+            .map(|details| (details.services.as_slice(), details.icmp_blocks.as_slice()))
+            .unwrap_or((&[][..], &[][..]));
         let outcome = dialogs::update(
             &mut self.dialogs,
             message,
@@ -1105,31 +990,36 @@ impl AppModel {
                     description,
                     target,
                 } => {
-                    tasks.push(zones::effects::start_zone_create(
-                        self,
+                    tasks.push(self.update_zones(zones::Message::Create {
                         name,
                         description,
                         target,
-                    ));
+                    }));
                 }
                 DialogRoute::AddService { zone, service } => {
-                    tasks.push(zones::effects::start_service_add(self, zone, service));
+                    tasks.push(self.update_zones(zones::Message::AddService { zone, service }));
                 }
                 DialogRoute::AddPort {
                     zone,
                     port,
                     protocol,
                 } => {
-                    tasks.push(zones::effects::start_port_add(self, zone, port, protocol));
+                    tasks.push(self.update_zones(zones::Message::AddPort {
+                        zone,
+                        port,
+                        protocol,
+                    }));
                 }
                 DialogRoute::AddSourcePort {
                     zone,
                     port,
                     protocol,
                 } => {
-                    tasks.push(zones::effects::start_source_port_add(
-                        self, zone, port, protocol,
-                    ));
+                    tasks.push(self.update_zones(zones::Message::AddSourcePort {
+                        zone,
+                        port,
+                        protocol,
+                    }));
                 }
                 DialogRoute::AddForwardPort {
                     zone,
@@ -1138,21 +1028,25 @@ impl AppModel {
                     to_port,
                     to_addr,
                 } => {
-                    tasks.push(zones::effects::start_forward_port_add(
-                        self, zone, port, protocol, to_port, to_addr,
-                    ));
+                    tasks.push(self.update_zones(zones::Message::AddForwardPort {
+                        zone,
+                        port,
+                        protocol,
+                        to_port,
+                        to_addr,
+                    }));
                 }
                 DialogRoute::AddInterface { zone, interface } => {
-                    tasks.push(zones::effects::start_interface_add(self, zone, interface));
+                    tasks.push(self.update_zones(zones::Message::AddInterface { zone, interface }));
                 }
                 DialogRoute::AddSource { zone, source } => {
-                    tasks.push(zones::effects::start_source_add(self, zone, source));
+                    tasks.push(self.update_zones(zones::Message::AddSource { zone, source }));
                 }
                 DialogRoute::AddIcmp { zone, icmp } => {
-                    tasks.push(zones::effects::start_icmp_add(self, zone, icmp));
+                    tasks.push(self.update_zones(zones::Message::AddIcmp { zone, icmp }));
                 }
                 DialogRoute::AddRichRule { zone, rule } => {
-                    tasks.push(zones::effects::start_rich_rule_add(self, zone, rule));
+                    tasks.push(self.update_zones(zones::Message::AddRichRule { zone, rule }));
                 }
                 DialogRoute::CreateIpSet {
                     name,

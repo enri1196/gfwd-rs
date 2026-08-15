@@ -8,7 +8,7 @@ use super::dialogs::{
 use super::ipsets::view_ipset_content;
 use super::navigation::SidebarItem;
 use super::reconciliation::reconciliation_drawer;
-use super::zones::{ZoneViewState, view_zone_content};
+use super::zones::view_zone_content;
 use super::{AppModel, Confirmation, ContextPage, MenuAction, Message, NavMenuAction};
 use crate::fl;
 use cosmic::app::context_drawer as cosmic_context_drawer;
@@ -127,14 +127,16 @@ pub(crate) fn context_drawer(
         app.dialogs.interface.error.is_none() && !app.dialogs.interface.interface.trim().is_empty();
     let can_submit = !app.mutation_pending();
     let error = app.dialogs.operation_error.as_deref();
-    let enabled_services = match &app.zones {
-        ZoneViewState::Ready(details) => details.services.as_slice(),
-        _ => &[],
-    };
-    let blocked_icmp = match &app.zones {
-        ZoneViewState::Ready(details) => details.icmp_blocks.as_slice(),
-        _ => &[],
-    };
+    let enabled_services = app
+        .zones
+        .ready_detail()
+        .map(|details| details.services.as_slice())
+        .unwrap_or(&[]);
+    let blocked_icmp = app
+        .zones
+        .ready_detail()
+        .map(|details| details.icmp_blocks.as_slice())
+        .unwrap_or(&[]);
 
     Some(match app.context_page {
         ContextPage::About => cosmic_context_drawer::about(
@@ -332,8 +334,8 @@ pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
             })
         }
         _ => view_zone_content(
-            &app.zones,
-            &app.firewalld_status,
+            app.zones.detail(),
+            app.zones.firewalld_status(),
             app.reconciliation.state(),
             app.reconciliation.watch_warning(),
             app.mutation_pending(),

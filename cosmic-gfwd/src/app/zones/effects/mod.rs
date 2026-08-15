@@ -1,30 +1,163 @@
-//! Zone and firewalld asynchronous effects organized by responsibility.
+//! Broker-backed asynchronous work for the zone feature.
+
+use cosmic::Task;
+
+use super::{Effect, Message};
 
 mod daemon;
 mod loading;
 mod rules;
 mod zone;
 
-#[allow(unused_imports)]
-pub(crate) use daemon::{control_firewalld, start_firewalld_control};
-#[allow(unused_imports)]
-pub(crate) use loading::{
-    load_active_zones, load_default_zone, load_firewalld_status, load_zone_details, load_zones,
-    start_active_zones_load, start_default_zone_load, start_firewalld_status_load, start_zone_load,
-    start_zones_load,
-};
-#[allow(unused_imports)]
-pub(crate) use rules::{
-    add_forward_port, add_icmp_block, add_interface, add_port, add_rich_rule, add_service,
-    add_source, add_source_port, remove_forward_port, remove_icmp_block, remove_interface,
-    remove_port, remove_rich_rule, remove_service, remove_source, remove_source_port,
-    start_forward_port_add, start_icmp_add, start_interface_add, start_port_add,
-    start_rich_rule_add, start_service_add, start_source_add, start_source_port_add,
-    start_zone_item_remove,
-};
-#[allow(unused_imports)]
-pub(crate) use zone::{
-    add_zone, remove_zone, set_default_zone, set_icmp_block_inversion, set_masquerade,
-    start_default_zone_set, start_icmp_inversion_set, start_masquerade_set, start_zone_create,
-    start_zone_delete,
-};
+/// Build the asynchronous task for one zone effect.
+pub(crate) fn effects(effect: Effect) -> Task<Message> {
+    match effect {
+        Effect::LoadZones => Task::perform(loading::load_zones(), Message::ListLoaded),
+        Effect::LoadDetails(zone_name) => {
+            let zone_name_for_task = zone_name.clone();
+            Task::perform(loading::load_zone_details(zone_name), move |result| {
+                Message::DetailsLoaded {
+                    zone_name: zone_name_for_task.clone(),
+                    result: Box::new(result),
+                }
+            })
+        }
+        Effect::LoadDefault => Task::perform(loading::load_default_zone(), Message::DefaultLoaded),
+        Effect::LoadActive => Task::perform(loading::load_active_zones(), Message::ActiveLoaded),
+        Effect::LoadStatus => Task::perform(
+            loading::load_firewalld_status(),
+            Message::FirewalldStatusLoaded,
+        ),
+        Effect::SetDefault(zone_name) => {
+            Task::perform(zone::set_default_zone(zone_name), Message::DefaultSet)
+        }
+        Effect::CreateZone {
+            name,
+            description,
+            target,
+        } => {
+            let zone_name = name.clone();
+            Task::perform(zone::add_zone(name, description, target), move |result| {
+                Message::Created {
+                    zone_name: zone_name.clone(),
+                    result,
+                }
+            })
+        }
+        Effect::DeleteZone(zone_name) => {
+            let completed_zone = zone_name.clone();
+            Task::perform(zone::remove_zone(zone_name), move |result| {
+                Message::Deleted {
+                    zone_name: completed_zone.clone(),
+                    result,
+                }
+            })
+        }
+        Effect::AddService { zone, service } => {
+            item_added(zone, move |zone| rules::add_service(zone, service))
+        }
+        Effect::AddPort {
+            zone,
+            port,
+            protocol,
+        } => item_added(zone, move |zone| rules::add_port(zone, port, protocol)),
+        Effect::AddSourcePort {
+            zone,
+            port,
+            protocol,
+        } => item_added(zone, move |zone| {
+            rules::add_source_port(zone, port, protocol)
+        }),
+        Effect::AddForwardPort {
+            zone,
+            port,
+            protocol,
+            to_port,
+            to_addr,
+        } => item_added(zone, move |zone| {
+            rules::add_forward_port(zone, port, protocol, to_port, to_addr)
+        }),
+        Effect::AddInterface { zone, interface } => {
+            item_added(zone, move |zone| rules::add_interface(zone, interface))
+        }
+        Effect::AddSource { zone, source } => {
+            item_added(zone, move |zone| rules::add_source(zone, source))
+        }
+        Effect::AddIcmp { zone, icmp } => {
+            item_added(zone, move |zone| rules::add_icmp_block(zone, icmp))
+        }
+        Effect::AddRichRule { zone, rule } => {
+            item_added(zone, move |zone| rules::add_rich_rule(zone, rule))
+        }
+        Effect::RemoveService { zone, service } => {
+            item_removed(zone, move |zone| rules::remove_service(zone, service))
+        }
+        Effect::RemoveInterface { zone, interface } => {
+            item_removed(zone, move |zone| rules::remove_interface(zone, interface))
+        }
+        Effect::RemoveSource { zone, source } => {
+            item_removed(zone, move |zone| rules::remove_source(zone, source))
+        }
+        Effect::RemovePort {
+            zone,
+            port,
+            protocol,
+        } => item_removed(zone, move |zone| rules::remove_port(zone, port, protocol)),
+        Effect::RemoveForwardPort {
+            zone,
+            port,
+            protocol,
+            to_port,
+            to_addr,
+        } => item_removed(zone, move |zone| {
+            rules::remove_forward_port(zone, port, protocol, to_port, to_addr)
+        }),
+        Effect::RemoveSourcePort {
+            zone,
+            port,
+            protocol,
+        } => item_removed(zone, move |zone| {
+            rules::remove_source_port(zone, port, protocol)
+        }),
+        Effect::RemoveIcmp { zone, icmp } => {
+            item_removed(zone, move |zone| rules::remove_icmp_block(zone, icmp))
+        }
+        Effect::RemoveRichRule { zone, rule } => {
+            item_removed(zone, move |zone| rules::remove_rich_rule(zone, rule))
+        }
+        Effect::SetMasquerade { zone, enabled } => {
+            item_added(zone, move |zone| zone::set_masquerade(zone, enabled))
+        }
+        Effect::SetIcmpBlockInversion { zone, enabled } => item_added(zone, move |zone| {
+            zone::set_icmp_block_inversion(zone, enabled)
+        }),
+        Effect::ControlFirewalld(start) => Task::perform(
+            daemon::control_firewalld(start),
+            Message::DaemonControlFinished,
+        ),
+    }
+}
+
+fn item_added<F, Fut>(zone: String, operation: F) -> Task<Message>
+where
+    F: FnOnce(String) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), crate::core::BrokerError>> + Send + 'static,
+{
+    let completed_zone = zone.clone();
+    Task::perform(operation(zone), move |result| Message::ItemAdded {
+        zone_name: completed_zone.clone(),
+        result,
+    })
+}
+
+fn item_removed<F, Fut>(zone: String, operation: F) -> Task<Message>
+where
+    F: FnOnce(String) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), crate::core::BrokerError>> + Send + 'static,
+{
+    let completed_zone = zone.clone();
+    Task::perform(operation(zone), move |result| Message::ItemRemoved {
+        zone_name: completed_zone.clone(),
+        result,
+    })
+}
