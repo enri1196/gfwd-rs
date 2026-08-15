@@ -4,7 +4,12 @@ use cosmic::widget::{self, settings};
 use crate::core::validate_source;
 use crate::fl;
 
-use super::{DialogMessage, localized_validation_error};
+use super::localized_validation_error;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    AddressChanged(String),
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct SourceFormState {
@@ -20,20 +25,24 @@ impl SourceFormState {
     }
 }
 
-pub(super) fn address_changed(state: &mut SourceFormState, value: String) {
-    state.source = value;
-    state.touched = true;
+pub(super) fn update(state: &mut SourceFormState, message: Message) {
+    match message {
+        Message::AddressChanged(value) => {
+            state.source = value;
+            state.touched = true;
+        }
+    }
 }
 
 pub(super) fn touch(state: &mut SourceFormState) {
     state.touched = true;
 }
 
-pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, DialogMessage> {
+pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Message> {
     let mut section = settings::section().title(fl!("dialog-source-section")).add(
         settings::item::builder(fl!("dialog-source-label")).control(
             widget::text_input::text_input(fl!("dialog-source-placeholder"), &state.source)
-                .on_input(DialogMessage::SourceAddressChanged)
+                .on_input(Message::AddressChanged)
                 .width(Length::Fill),
         ),
     );
@@ -45,4 +54,22 @@ pub fn source_drawer<'a>(state: &'a SourceFormState) -> cosmic::Element<'a, Dial
     let content = settings::view_column(vec![section.into()]);
 
     content.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edits_touch_the_field_and_recompute_validity() {
+        let mut state = SourceFormState::default();
+
+        update(&mut state, Message::AddressChanged("not-a-source".into()));
+        assert!(state.touched);
+        assert!(!state.is_valid());
+
+        update(&mut state, Message::AddressChanged("192.0.2.0/24".into()));
+        assert!(state.touched);
+        assert!(state.is_valid());
+    }
 }

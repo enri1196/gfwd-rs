@@ -4,7 +4,14 @@ use cosmic::widget::{self, dropdown, settings};
 use crate::core::{IPSET_TYPES, validate_ipset_entry, validate_ipset_name, validate_ipset_type};
 use crate::fl;
 
-use super::{DialogMessage, localized_validation_error};
+use super::localized_validation_error;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    NameChanged(String),
+    TypeSelected(usize),
+    EntriesChanged(String),
+}
 
 #[derive(Debug, Clone)]
 pub struct IpSetFormState {
@@ -43,18 +50,18 @@ impl IpSetFormState {
     }
 }
 
-pub(super) fn name_changed(state: &mut IpSetFormState, value: String) {
-    state.name = value;
-    state.name_touched = true;
-}
-
-pub(super) fn type_selected(state: &mut IpSetFormState, index: usize) {
-    state.ipset_type = ipset_from_index(index);
-}
-
-pub(super) fn entries_changed(state: &mut IpSetFormState, value: String) {
-    state.entries = value;
-    state.entries_touched = true;
+pub(super) fn update(state: &mut IpSetFormState, message: Message) {
+    match message {
+        Message::NameChanged(value) => {
+            state.name = value;
+            state.name_touched = true;
+        }
+        Message::TypeSelected(index) => state.ipset_type = ipset_from_index(index),
+        Message::EntriesChanged(value) => {
+            state.entries = value;
+            state.entries_touched = true;
+        }
+    }
 }
 
 pub(super) fn touch_submission_fields(state: &mut IpSetFormState) {
@@ -71,7 +78,7 @@ pub(super) fn split_entries(entries: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, DialogMessage> {
+pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Message> {
     let type_selected = ipset_index(&state.ipset_type);
 
     let mut section = settings::section()
@@ -79,18 +86,13 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
         .add(
             settings::item::builder(fl!("dialog-ipset-name-label")).control(
                 widget::text_input::text_input(fl!("dialog-ipset-name-placeholder"), &state.name)
-                    .on_input(DialogMessage::IpSetNameChanged)
+                    .on_input(Message::NameChanged)
                     .width(Length::Fill),
             ),
         )
         .add(
             settings::item::builder(fl!("dialog-ipset-type-label")).control(
-                dropdown(
-                    &IPSET_TYPES,
-                    type_selected,
-                    DialogMessage::IpSetTypeSelected,
-                )
-                .width(Length::Fill),
+                dropdown(&IPSET_TYPES, type_selected, Message::TypeSelected).width(Length::Fill),
             ),
         )
         .add(
@@ -99,7 +101,7 @@ pub fn ipset_drawer<'a>(state: &'a IpSetFormState) -> cosmic::Element<'a, Dialog
                     fl!("dialog-ipset-entries-placeholder"),
                     &state.entries,
                 )
-                .on_input(DialogMessage::IpSetEntriesChanged)
+                .on_input(Message::EntriesChanged)
                 .width(Length::Fill),
             ),
         );
@@ -137,6 +139,23 @@ pub fn ipset_index(ipset_type: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn messages_preserve_validation_and_entry_handling() {
+        let mut state = IpSetFormState::default();
+
+        update(&mut state, Message::NameChanged("blocked-hosts".into()));
+        update(&mut state, Message::TypeSelected(0));
+        update(
+            &mut state,
+            Message::EntriesChanged("192.0.2.1\n\n  198.51.100.2  ".into()),
+        );
+
+        assert!(state.name_touched);
+        assert!(state.entries_touched);
+        assert!(state.is_valid());
+        assert_eq!(split_entries(&state.entries), ["192.0.2.1", "198.51.100.2"]);
+    }
 
     #[test]
     fn submission_entries_preserve_composite_tuple_commas() {

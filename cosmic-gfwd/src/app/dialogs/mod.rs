@@ -9,14 +9,14 @@ use crate::models::ZoneTarget;
 
 use super::outcome::Outcome;
 
-mod icmp;
-mod interface;
-mod ipset;
-mod port;
-mod rich_rule;
-mod service;
-mod source;
-mod zone;
+pub mod icmp;
+pub mod interface;
+pub mod ipset;
+pub mod port;
+pub mod rich_rule;
+pub mod service;
+pub mod source;
+pub mod zone;
 
 pub use icmp::{IcmpFormState, icmp_drawer};
 pub use interface::{InterfaceFormState, interface_drawer};
@@ -43,36 +43,14 @@ pub enum DialogKind {
 
 #[derive(Debug, Clone)]
 pub enum DialogMessage {
-    ZoneNameChanged(String),
-    ZoneDescriptionChanged(String),
-    ZoneTargetSelected(usize),
-    ServiceSearchChanged(String),
-    ServiceSelected(String),
-    PortNumberChanged(String),
-    PortProtocolSelected(usize),
-    PortForwardDestIpChanged(String),
-    PortForwardDestPortChanged(String),
-    InterfaceSelected(usize),
-    InterfaceNameChanged(String),
-    SourceAddressChanged(String),
-    IcmpSearchChanged(String),
-    IcmpSelected(String),
-    RichRuleRawModeToggled(bool),
-    RichRuleRawChanged(String),
-    RichRuleFamilySelected(usize),
-    RichRuleSourceChanged(String),
-    RichRuleSourceInvertToggled(bool),
-    RichRuleDestinationChanged(String),
-    RichRuleDestinationInvertToggled(bool),
-    RichRuleElementSelected(usize),
-    RichRuleElementValueChanged(String),
-    RichRulePortProtocolSelected(usize),
-    RichRuleActionSelected(usize),
-    RichRuleRejectTypeChanged(String),
-    RichRuleMarkChanged(String),
-    IpSetNameChanged(String),
-    IpSetTypeSelected(usize),
-    IpSetEntriesChanged(String),
+    Zone(zone::Message),
+    Service(service::Message),
+    Port(port::Message),
+    Interface(interface::Message),
+    Source(source::Message),
+    Icmp(icmp::Message),
+    RichRule(rich_rule::Message),
+    IpSet(ipset::Message),
     Submit(DialogKind),
     Cancel(DialogKind),
 }
@@ -199,107 +177,54 @@ pub(crate) fn update(
         return Outcome::default();
     }
     match message {
-        DialogMessage::ZoneNameChanged(value) => zone::name_changed(&mut state.zone, value),
-        DialogMessage::ZoneDescriptionChanged(value) => {
-            zone::description_changed(&mut state.zone, value);
+        DialogMessage::Zone(message) => {
+            zone::update(&mut state.zone, message);
+            Outcome::default()
         }
-        DialogMessage::ZoneTargetSelected(index) => zone::target_selected(&mut state.zone, index),
-        DialogMessage::ServiceSearchChanged(value) => {
-            service::search_changed(&mut state.service, value);
+        DialogMessage::Service(message) => service::update(
+            &mut state.service,
+            message,
+            service::Context {
+                selected_zone: context.selected_zone,
+                enabled_services: context.enabled_services,
+                operation_error: &mut state.operation_error,
+            },
+        ),
+        DialogMessage::Port(message) => {
+            port::update(&mut state.port, message);
+            Outcome::default()
         }
-        DialogMessage::ServiceSelected(service) => {
-            let Some(zone) = selected_zone(state, context.selected_zone) else {
-                return Outcome::default();
-            };
-            if context.enabled_services.contains(&service) {
-                state.operation_error = Some(fl!("error-service-already-enabled"));
-                return Outcome::default();
-            }
-            return submit(Submission::Service { zone, service });
+        DialogMessage::Interface(message) => {
+            interface::update(&mut state.interface, message, context.interfaces);
+            Outcome::default()
         }
-        DialogMessage::PortNumberChanged(value) => port::number_changed(&mut state.port, value),
-        DialogMessage::PortProtocolSelected(index) => {
-            port::protocol_selected(&mut state.port, index);
+        DialogMessage::Source(message) => {
+            source::update(&mut state.source, message);
+            Outcome::default()
         }
-        DialogMessage::PortForwardDestIpChanged(value) => {
-            port::destination_address_changed(&mut state.port, value);
+        DialogMessage::Icmp(message) => icmp::update(
+            &mut state.icmp,
+            message,
+            icmp::Context {
+                selected_zone: context.selected_zone,
+                blocked_icmp: context.blocked_icmp,
+                operation_error: &mut state.operation_error,
+            },
+        ),
+        DialogMessage::RichRule(message) => {
+            rich_rule::update(&mut state.rich_rule, message);
+            Outcome::default()
         }
-        DialogMessage::PortForwardDestPortChanged(value) => {
-            port::destination_port_changed(&mut state.port, value);
+        DialogMessage::IpSet(message) => {
+            ipset::update(&mut state.ipset, message);
+            Outcome::default()
         }
-        DialogMessage::InterfaceSelected(index) => {
-            interface::selected(&mut state.interface, index, context.interfaces);
-        }
-        DialogMessage::InterfaceNameChanged(value) => {
-            interface::name_changed(&mut state.interface, value);
-        }
-        DialogMessage::SourceAddressChanged(value) => {
-            source::address_changed(&mut state.source, value);
-        }
-        DialogMessage::IcmpSearchChanged(value) => icmp::search_changed(&mut state.icmp, value),
-        DialogMessage::IcmpSelected(icmp) => {
-            let Some(zone) = selected_zone(state, context.selected_zone) else {
-                return Outcome::default();
-            };
-            if context.blocked_icmp.contains(&icmp) {
-                state.operation_error = Some(fl!("error-icmp-already-blocked"));
-                return Outcome::default();
-            }
-            return submit(Submission::Icmp { zone, icmp });
-        }
-        DialogMessage::RichRuleRawModeToggled(value) => {
-            rich_rule::raw_mode_toggled(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleRawChanged(value) => {
-            rich_rule::raw_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleFamilySelected(value) => {
-            rich_rule::family_selected(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleSourceChanged(value) => {
-            rich_rule::source_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleSourceInvertToggled(value) => {
-            rich_rule::source_invert_toggled(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleDestinationChanged(value) => {
-            rich_rule::destination_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleDestinationInvertToggled(value) => {
-            rich_rule::destination_invert_toggled(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleElementSelected(value) => {
-            rich_rule::element_selected(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleElementValueChanged(value) => {
-            rich_rule::element_value_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRulePortProtocolSelected(value) => {
-            rich_rule::port_protocol_selected(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleActionSelected(value) => {
-            rich_rule::action_selected(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleRejectTypeChanged(value) => {
-            rich_rule::reject_type_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::RichRuleMarkChanged(value) => {
-            rich_rule::mark_changed(&mut state.rich_rule, value);
-        }
-        DialogMessage::IpSetNameChanged(value) => ipset::name_changed(&mut state.ipset, value),
-        DialogMessage::IpSetTypeSelected(index) => {
-            ipset::type_selected(&mut state.ipset, index);
-        }
-        DialogMessage::IpSetEntriesChanged(value) => {
-            ipset::entries_changed(&mut state.ipset, value);
-        }
-        DialogMessage::Submit(kind) => return submit_form(state, kind, context.selected_zone),
+        DialogMessage::Submit(kind) => submit_form(state, kind, context.selected_zone),
         DialogMessage::Cancel(kind) => {
             state.reset(kind);
-            return Outcome::request(Request::CloseDrawer);
+            Outcome::request(Request::CloseDrawer)
         }
     }
-    Outcome::default()
 }
 
 fn submit_form(
@@ -327,7 +252,7 @@ fn submit_form(
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
             }
-            let Some(zone) = selected_zone(state, selected) else {
+            let Some(zone) = selected_zone(&mut state.operation_error, selected) else {
                 return Outcome::default();
             };
             submit(port::submission(&state.port, zone))
@@ -336,7 +261,7 @@ fn submit_form(
             if !interface::validate(&mut state.interface) {
                 return Outcome::default();
             }
-            let Some(zone) = selected_zone(state, selected) else {
+            let Some(zone) = selected_zone(&mut state.operation_error, selected) else {
                 return Outcome::default();
             };
             submit(Submission::Interface {
@@ -350,7 +275,7 @@ fn submit_form(
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
             }
-            let Some(zone) = selected_zone(state, selected) else {
+            let Some(zone) = selected_zone(&mut state.operation_error, selected) else {
                 return Outcome::default();
             };
             submit(Submission::Source {
@@ -363,7 +288,7 @@ fn submit_form(
                 state.operation_error = Some(fl!("validation-fix-fields"));
                 return Outcome::default();
             };
-            let Some(zone) = selected_zone(state, selected) else {
+            let Some(zone) = selected_zone(&mut state.operation_error, selected) else {
                 return Outcome::default();
             };
             submit(Submission::RichRule { zone, rule })
@@ -383,9 +308,9 @@ fn submit_form(
     }
 }
 
-fn selected_zone(state: &mut State, selected: Option<&str>) -> Option<String> {
+fn selected_zone(operation_error: &mut Option<String>, selected: Option<&str>) -> Option<String> {
     selected.map(str::to_string).or_else(|| {
-        state.operation_error = Some(fl!("error-select-zone-first"));
+        *operation_error = Some(fl!("error-select-zone-first"));
         None
     })
 }
@@ -400,10 +325,10 @@ pub(crate) fn effects(effect: Effect) -> cosmic::Task<DialogMessage> {
 }
 
 /// Adds a submission error above a drawer without introducing another scrollable.
-pub fn drawer_with_error<'a>(
-    content: cosmic::Element<'a, DialogMessage>,
+pub fn drawer_with_error<'a, Message: 'a>(
+    content: cosmic::Element<'a, Message>,
     error: Option<&'a str>,
-) -> cosmic::Element<'a, DialogMessage> {
+) -> cosmic::Element<'a, Message> {
     let mut column = widget::column::with_capacity(2).spacing(cosmic::theme::spacing().space_s);
     if let Some(error) = error {
         column = column.push(widget::text::caption(error));
@@ -522,6 +447,27 @@ mod tests {
             assert!(!dialogs.port.port_touched);
             assert!(dialogs.operation_error.is_none());
         }
+    }
+
+    #[test]
+    fn cancel_resets_only_the_requested_form_and_closes_the_drawer() {
+        let mut state = DialogState::default();
+        state.zone.name = "kept-zone".into();
+        state.source.source = "192.0.2.0/24".into();
+        state.source.touched = true;
+        state.operation_error = Some("failure".into());
+
+        let outcome = update(
+            &mut state,
+            DialogMessage::Cancel(DialogKind::Source),
+            context(),
+        );
+
+        assert_eq!(state.zone.name, "kept-zone");
+        assert!(state.source.source.is_empty());
+        assert!(!state.source.touched);
+        assert!(state.operation_error.is_none());
+        assert_eq!(outcome.requests, [Request::CloseDrawer]);
     }
 
     #[test]

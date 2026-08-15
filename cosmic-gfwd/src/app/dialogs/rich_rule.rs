@@ -5,7 +5,24 @@ use crate::core::{RichRuleAction, RichRuleElement, RichRuleError, RichRuleFamily
 use crate::fl;
 
 use super::port::PORT_PROTOCOLS;
-use super::{DialogMessage, protocol_from_index, protocol_index};
+use super::{protocol_from_index, protocol_index};
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    RawModeToggled(bool),
+    RawChanged(String),
+    FamilySelected(usize),
+    SourceChanged(String),
+    SourceInvertToggled(bool),
+    DestinationChanged(String),
+    DestinationInvertToggled(bool),
+    ElementSelected(usize),
+    ElementValueChanged(String),
+    PortProtocolSelected(usize),
+    ActionSelected(usize),
+    RejectTypeChanged(String),
+    MarkChanged(String),
+}
 
 /// State for structured generation and advanced raw rich-rule entry.
 #[derive(Debug, Clone)]
@@ -101,69 +118,36 @@ impl RichRuleFormState {
     }
 }
 
-pub(super) fn raw_mode_toggled(state: &mut RichRuleFormState, value: bool) {
-    state.raw_mode = value;
+pub(super) fn update(state: &mut RichRuleFormState, message: Message) {
+    match message {
+        Message::RawModeToggled(value) => state.raw_mode = value,
+        Message::RawChanged(value) => state.raw_rule = value,
+        Message::FamilySelected(value) => state.family = value,
+        Message::SourceChanged(value) => state.source = value,
+        Message::SourceInvertToggled(value) => state.source_invert = value,
+        Message::DestinationChanged(value) => state.destination = value,
+        Message::DestinationInvertToggled(value) => state.destination_invert = value,
+        Message::ElementSelected(value) => {
+            state.element = value;
+            state.element_value.clear();
+        }
+        Message::ElementValueChanged(value) => state.element_value = value,
+        Message::PortProtocolSelected(value) => {
+            state.port_protocol = protocol_from_index(value);
+        }
+        Message::ActionSelected(value) => state.action = value,
+        Message::RejectTypeChanged(value) => state.reject_type = value,
+        Message::MarkChanged(value) => state.mark = value,
+    }
 }
 
-pub(super) fn raw_changed(state: &mut RichRuleFormState, value: String) {
-    state.raw_rule = value;
-}
-
-pub(super) fn family_selected(state: &mut RichRuleFormState, value: usize) {
-    state.family = value;
-}
-
-pub(super) fn source_changed(state: &mut RichRuleFormState, value: String) {
-    state.source = value;
-}
-
-pub(super) fn source_invert_toggled(state: &mut RichRuleFormState, value: bool) {
-    state.source_invert = value;
-}
-
-pub(super) fn destination_changed(state: &mut RichRuleFormState, value: String) {
-    state.destination = value;
-}
-
-pub(super) fn destination_invert_toggled(state: &mut RichRuleFormState, value: bool) {
-    state.destination_invert = value;
-}
-
-pub(super) fn element_selected(state: &mut RichRuleFormState, value: usize) {
-    state.element = value;
-    state.element_value.clear();
-}
-
-pub(super) fn element_value_changed(state: &mut RichRuleFormState, value: String) {
-    state.element_value = value;
-}
-
-pub(super) fn port_protocol_selected(state: &mut RichRuleFormState, value: usize) {
-    state.port_protocol = protocol_from_index(value);
-}
-
-pub(super) fn action_selected(state: &mut RichRuleFormState, value: usize) {
-    state.action = value;
-}
-
-pub(super) fn reject_type_changed(state: &mut RichRuleFormState, value: String) {
-    state.reject_type = value;
-}
-
-pub(super) fn mark_changed(state: &mut RichRuleFormState, value: String) {
-    state.mark = value;
-}
-
-pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a, DialogMessage> {
+pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a, Message> {
     let mode = settings::section()
         .title(fl!("dialog-rich-rule-mode-section"))
         .add(
             settings::item::builder(fl!("dialog-rich-rule-raw-mode"))
                 .description(fl!("dialog-rich-rule-raw-description"))
-                .control(
-                    widget::toggler(state.raw_mode)
-                        .on_toggle(DialogMessage::RichRuleRawModeToggled),
-                ),
+                .control(widget::toggler(state.raw_mode).on_toggle(Message::RawModeToggled)),
         );
 
     if state.raw_mode {
@@ -175,7 +159,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                         fl!("dialog-rich-rule-placeholder"),
                         &state.raw_rule,
                     )
-                    .on_input(DialogMessage::RichRuleRawChanged)
+                    .on_input(Message::RawChanged)
                     .width(Length::Fill),
                 ),
             );
@@ -205,25 +189,20 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
         .title(fl!("rich-rule-addresses-section"))
         .add(
             settings::item::builder(fl!("rich-rule-family")).control(
-                dropdown(
-                    family_labels,
-                    Some(state.family),
-                    DialogMessage::RichRuleFamilySelected,
-                )
-                .width(Length::Fill),
+                dropdown(family_labels, Some(state.family), Message::FamilySelected)
+                    .width(Length::Fill),
             ),
         )
         .add(
             settings::item::builder(fl!("rich-rule-source")).control(
                 widget::text_input::text_input(fl!("rich-rule-address-placeholder"), &state.source)
-                    .on_input(DialogMessage::RichRuleSourceChanged)
+                    .on_input(Message::SourceChanged)
                     .width(Length::Fill),
             ),
         )
         .add(
             settings::item::builder(fl!("rich-rule-source-invert")).control(
-                widget::toggler(state.source_invert)
-                    .on_toggle(DialogMessage::RichRuleSourceInvertToggled),
+                widget::toggler(state.source_invert).on_toggle(Message::SourceInvertToggled),
             ),
         )
         .add(
@@ -232,14 +211,14 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                     fl!("rich-rule-address-placeholder"),
                     &state.destination,
                 )
-                .on_input(DialogMessage::RichRuleDestinationChanged)
+                .on_input(Message::DestinationChanged)
                 .width(Length::Fill),
             ),
         )
         .add(
             settings::item::builder(fl!("rich-rule-destination-invert")).control(
                 widget::toggler(state.destination_invert)
-                    .on_toggle(DialogMessage::RichRuleDestinationInvertToggled),
+                    .on_toggle(Message::DestinationInvertToggled),
             ),
         );
 
@@ -255,7 +234,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                 dropdown(
                     element_labels,
                     Some(state.element),
-                    DialogMessage::RichRuleElementSelected,
+                    Message::ElementSelected,
                 )
                 .width(Length::Fill),
             ),
@@ -266,7 +245,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                     fl!("rich-rule-element-placeholder"),
                     &state.element_value,
                 )
-                .on_input(DialogMessage::RichRuleElementValueChanged)
+                .on_input(Message::ElementValueChanged)
                 .width(Length::Fill),
             ),
         );
@@ -276,7 +255,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                 dropdown(
                     &PORT_PROTOCOLS,
                     protocol_index(&state.port_protocol),
-                    DialogMessage::RichRulePortProtocolSelected,
+                    Message::PortProtocolSelected,
                 )
                 .width(Length::Fill),
             ),
@@ -287,12 +266,8 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
         .title(fl!("rich-rule-action-section"))
         .add(
             settings::item::builder(fl!("rich-rule-action")).control(
-                dropdown(
-                    action_labels,
-                    Some(state.action),
-                    DialogMessage::RichRuleActionSelected,
-                )
-                .width(Length::Fill),
+                dropdown(action_labels, Some(state.action), Message::ActionSelected)
+                    .width(Length::Fill),
             ),
         );
     if state.action == 1 {
@@ -302,7 +277,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
                     fl!("rich-rule-reject-type-placeholder"),
                     &state.reject_type,
                 )
-                .on_input(DialogMessage::RichRuleRejectTypeChanged)
+                .on_input(Message::RejectTypeChanged)
                 .width(Length::Fill),
             ),
         );
@@ -310,7 +285,7 @@ pub fn rich_rule_drawer<'a>(state: &'a RichRuleFormState) -> cosmic::Element<'a,
         action = action.add(
             settings::item::builder(fl!("rich-rule-mark")).control(
                 widget::text_input::text_input(fl!("rich-rule-mark-placeholder"), &state.mark)
-                    .on_input(DialogMessage::RichRuleMarkChanged)
+                    .on_input(Message::MarkChanged)
                     .width(Length::Fill),
             ),
         );
@@ -353,23 +328,40 @@ mod tests {
 
     #[test]
     fn switching_modes_preserves_raw_input() {
-        let mut state = RichRuleFormState {
-            raw_mode: true,
-            raw_rule: "  <rule><drop/></rule>  ".to_string(),
-            ..RichRuleFormState::default()
-        };
+        let mut state = RichRuleFormState::default();
+        update(&mut state, Message::RawModeToggled(true));
+        update(
+            &mut state,
+            Message::RawChanged("  <rule><drop/></rule>  ".into()),
+        );
         assert_eq!(state.generated_rule().unwrap(), "<rule><drop/></rule>");
 
-        state.raw_mode = false;
-        state.element_value = "https".to_string();
+        update(&mut state, Message::RawModeToggled(false));
+        update(&mut state, Message::FamilySelected(1));
+        update(&mut state, Message::SourceChanged("192.0.2.0/24".into()));
+        update(&mut state, Message::SourceInvertToggled(true));
+        update(
+            &mut state,
+            Message::DestinationChanged("198.51.100.1".into()),
+        );
+        update(&mut state, Message::DestinationInvertToggled(true));
+        update(&mut state, Message::ElementSelected(0));
+        update(&mut state, Message::ElementValueChanged("https".into()));
+        update(&mut state, Message::PortProtocolSelected(1));
+        update(&mut state, Message::ActionSelected(0));
+        update(
+            &mut state,
+            Message::RejectTypeChanged("icmp-port-unreachable".into()),
+        );
+        update(&mut state, Message::MarkChanged("0x1".into()));
+
+        let generated = state.generated_rule().unwrap();
         assert!(
-            state
-                .generated_rule()
-                .unwrap()
-                .contains("<service name=\"https\"/>")
+            generated.contains("<service name=\"https\"/>")
+                && generated.contains("family=\"ipv4\"")
         );
 
-        state.raw_mode = true;
+        update(&mut state, Message::RawModeToggled(true));
         assert_eq!(state.raw_rule, "  <rule><drop/></rule>  ");
     }
 }

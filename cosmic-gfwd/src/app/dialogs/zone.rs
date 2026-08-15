@@ -4,7 +4,12 @@ use cosmic::widget::{self, dropdown, settings};
 use crate::fl;
 use crate::models::ZoneTarget;
 
-use super::DialogMessage;
+#[derive(Debug, Clone)]
+pub enum Message {
+    NameChanged(String),
+    DescriptionChanged(String),
+    TargetSelected(usize),
+}
 
 #[derive(Debug, Clone)]
 pub struct ZoneFormState {
@@ -23,19 +28,15 @@ impl Default for ZoneFormState {
     }
 }
 
-pub(super) fn name_changed(state: &mut ZoneFormState, value: String) {
-    state.name = value;
+pub(super) fn update(state: &mut ZoneFormState, message: Message) {
+    match message {
+        Message::NameChanged(value) => state.name = value,
+        Message::DescriptionChanged(value) => state.description = value,
+        Message::TargetSelected(index) => state.target = target_from_index(index),
+    }
 }
 
-pub(super) fn description_changed(state: &mut ZoneFormState, value: String) {
-    state.description = value;
-}
-
-pub(super) fn target_selected(state: &mut ZoneFormState, index: usize) {
-    state.target = target_from_index(index);
-}
-
-pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMessage> {
+pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, Message> {
     let target_labels = target_labels();
     let target_selected = Some(target_index(&state.target));
 
@@ -48,7 +49,7 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-zone-name-placeholder"),
                         &state.name,
                     )
-                    .on_input(DialogMessage::ZoneNameChanged)
+                    .on_input(Message::NameChanged)
                     .width(Length::Fill),
                 ),
             )
@@ -58,7 +59,7 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-zone-description-placeholder"),
                         &state.description,
                     )
-                    .on_input(DialogMessage::ZoneDescriptionChanged)
+                    .on_input(Message::DescriptionChanged)
                     .width(Length::Fill),
                 ),
             )
@@ -67,12 +68,8 @@ pub fn zone_drawer<'a>(state: &'a ZoneFormState) -> cosmic::Element<'a, DialogMe
             .title(fl!("dialog-zone-section-target"))
             .add(
                 settings::item::builder(fl!("dialog-zone-target-label")).control(
-                    dropdown(
-                        target_labels,
-                        target_selected,
-                        DialogMessage::ZoneTargetSelected,
-                    )
-                    .width(Length::Fill),
+                    dropdown(target_labels, target_selected, Message::TargetSelected)
+                        .width(Length::Fill),
                 ),
             )
             .into(),
@@ -107,4 +104,25 @@ fn target_labels() -> Vec<String> {
         fl!("dialog-target-drop"),
         fl!("dialog-target-reject"),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn messages_update_every_zone_field() {
+        let mut state = ZoneFormState::default();
+
+        update(&mut state, Message::NameChanged("work".into()));
+        update(
+            &mut state,
+            Message::DescriptionChanged("Office network".into()),
+        );
+        update(&mut state, Message::TargetSelected(2));
+
+        assert_eq!(state.name, "work");
+        assert_eq!(state.description, "Office network");
+        assert_eq!(state.target, ZoneTarget::Drop);
+    }
 }

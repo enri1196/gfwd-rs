@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 use super::dialogs::{
-    DialogKind, drawer_cancel_footer, drawer_footer_with_submit, drawer_with_error, icmp_drawer,
-    interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, service_drawer, source_drawer,
+    DialogKind, DialogMessage, drawer_cancel_footer, drawer_footer_with_submit, drawer_with_error,
+    icmp_drawer, interface_drawer, ipset_drawer, port_drawer, rich_rule_drawer, service_drawer,
+    source_drawer, zone_drawer,
 };
 use super::ipsets::view_ipset_content;
 use super::navigation::SidebarItem;
@@ -157,8 +158,8 @@ pub(crate) fn context_drawer(
         )
         .title(fl!("reconciliation-review-title")),
         ContextPage::AddZone => cosmic_context_drawer::context_drawer(
-            drawer_with_error(super::dialogs::zone_drawer(&app.dialogs.zone), error),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Zone),
+            drawer_with_error(zone_drawer(&app.dialogs.zone), error).map(DialogMessage::Zone),
+            DialogMessage::Cancel(DialogKind::Zone),
         )
         .title(fl!("drawer-title-zone"))
         .footer(drawer_footer_with_submit(
@@ -176,15 +177,16 @@ pub(crate) fn context_drawer(
                     app.catalogs.services.error(),
                 ),
                 error,
-            ),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Service),
+            )
+            .map(DialogMessage::Service),
+            DialogMessage::Cancel(DialogKind::Service),
         )
         .title(fl!("dialog-service-title"))
         .footer(drawer_cancel_footer(DialogKind::Service))
         .map(Message::Dialog),
         ContextPage::AddPort => cosmic_context_drawer::context_drawer(
-            drawer_with_error(port_drawer(&app.dialogs.port), error),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Port),
+            drawer_with_error(port_drawer(&app.dialogs.port), error).map(DialogMessage::Port),
+            DialogMessage::Cancel(DialogKind::Port),
         )
         .title(port_drawer_title(app.dialogs.port.kind))
         .footer(drawer_footer_with_submit(
@@ -201,8 +203,9 @@ pub(crate) fn context_drawer(
                     interface_error,
                 ),
                 error,
-            ),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Interface),
+            )
+            .map(DialogMessage::Interface),
+            DialogMessage::Cancel(DialogKind::Interface),
         )
         .title(fl!("drawer-title-interface"))
         .footer(drawer_footer_with_submit(
@@ -211,8 +214,8 @@ pub(crate) fn context_drawer(
         ))
         .map(Message::Dialog),
         ContextPage::AddSource => cosmic_context_drawer::context_drawer(
-            drawer_with_error(source_drawer(&app.dialogs.source), error),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Source),
+            drawer_with_error(source_drawer(&app.dialogs.source), error).map(DialogMessage::Source),
+            DialogMessage::Cancel(DialogKind::Source),
         )
         .title(fl!("drawer-title-source"))
         .footer(drawer_footer_with_submit(
@@ -230,15 +233,17 @@ pub(crate) fn context_drawer(
                     app.catalogs.icmp_types.error(),
                 ),
                 error,
-            ),
-            super::dialogs::DialogMessage::Cancel(DialogKind::Icmp),
+            )
+            .map(DialogMessage::Icmp),
+            DialogMessage::Cancel(DialogKind::Icmp),
         )
         .title(fl!("drawer-title-icmp"))
         .footer(drawer_cancel_footer(DialogKind::Icmp))
         .map(Message::Dialog),
         ContextPage::AddRichRule => cosmic_context_drawer::context_drawer(
-            drawer_with_error(rich_rule_drawer(&app.dialogs.rich_rule), error),
-            super::dialogs::DialogMessage::Cancel(DialogKind::RichRule),
+            drawer_with_error(rich_rule_drawer(&app.dialogs.rich_rule), error)
+                .map(DialogMessage::RichRule),
+            DialogMessage::Cancel(DialogKind::RichRule),
         )
         .title(fl!("drawer-title-rich-rule"))
         .footer(drawer_footer_with_submit(
@@ -247,8 +252,8 @@ pub(crate) fn context_drawer(
         ))
         .map(Message::Dialog),
         ContextPage::AddIpSet => cosmic_context_drawer::context_drawer(
-            drawer_with_error(ipset_drawer(&app.dialogs.ipset), error),
-            super::dialogs::DialogMessage::Cancel(DialogKind::IpSet),
+            drawer_with_error(ipset_drawer(&app.dialogs.ipset), error).map(DialogMessage::IpSet),
+            DialogMessage::Cancel(DialogKind::IpSet),
         )
         .title(fl!("drawer-title-ipset"))
         .footer(drawer_footer_with_submit(

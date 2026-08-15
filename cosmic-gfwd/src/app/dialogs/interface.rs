@@ -4,7 +4,13 @@ use cosmic::widget::{self, dropdown, settings};
 use crate::core::validate_interface_name;
 use crate::fl;
 
-use super::{DialogMessage, localized_validation_error};
+use super::localized_validation_error;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Selected(usize),
+    NameChanged(String),
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct InterfaceFormState {
@@ -12,19 +18,23 @@ pub struct InterfaceFormState {
     pub error: Option<String>,
 }
 
-pub(super) fn selected(state: &mut InterfaceFormState, index: usize, interfaces: &[String]) {
-    if index == 0 {
-        state.interface.clear();
-        state.error = None;
-    } else if let Some(interface) = interfaces.get(index - 1) {
-        state.interface = interface.clone();
-        validate(state);
+pub(super) fn update(state: &mut InterfaceFormState, message: Message, interfaces: &[String]) {
+    match message {
+        Message::Selected(0) => {
+            state.interface.clear();
+            state.error = None;
+        }
+        Message::Selected(index) => {
+            if let Some(interface) = interfaces.get(index - 1) {
+                state.interface = interface.clone();
+                validate(state);
+            }
+        }
+        Message::NameChanged(value) => {
+            state.interface = value;
+            validate(state);
+        }
     }
-}
-
-pub(super) fn name_changed(state: &mut InterfaceFormState, value: String) {
-    state.interface = value;
-    validate(state);
 }
 
 pub(super) fn validate(state: &mut InterfaceFormState) -> bool {
@@ -45,7 +55,7 @@ pub fn interface_drawer<'a>(
     interfaces: &'a [String],
     loading: bool,
     error: Option<&'a str>,
-) -> cosmic::Element<'a, DialogMessage> {
+) -> cosmic::Element<'a, Message> {
     let mut section = settings::section().title(fl!("dialog-interface-section"));
     let show_manual_entry = interfaces.is_empty() && !loading;
 
@@ -90,9 +100,8 @@ pub fn interface_drawer<'a>(
     };
 
     section = section.add(
-        settings::item::builder(fl!("dialog-interface-name-label")).control(
-            dropdown(options, selected, DialogMessage::InterfaceSelected).width(Length::Fill),
-        ),
+        settings::item::builder(fl!("dialog-interface-name-label"))
+            .control(dropdown(options, selected, Message::Selected).width(Length::Fill)),
     );
 
     if show_manual_entry {
@@ -102,7 +111,7 @@ pub fn interface_drawer<'a>(
                     fl!("dialog-interface-name-placeholder"),
                     &state.interface,
                 )
-                .on_input(DialogMessage::InterfaceNameChanged)
+                .on_input(Message::NameChanged)
                 .width(Length::Fill),
             ),
         );
@@ -111,4 +120,34 @@ pub fn interface_drawer<'a>(
     let content = settings::view_column(vec![section.into()]);
 
     content.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_and_manual_entry_share_validation() {
+        let interfaces = ["eth0".to_string(), "wlan0".to_string()];
+        let mut state = InterfaceFormState::default();
+
+        update(&mut state, Message::Selected(2), &interfaces);
+        assert_eq!(state.interface, "wlan0");
+        assert!(state.error.is_none());
+
+        update(
+            &mut state,
+            Message::NameChanged("bad interface".into()),
+            &[],
+        );
+        assert!(state.error.is_some());
+
+        update(&mut state, Message::NameChanged("wg0".into()), &[]);
+        assert_eq!(state.interface, "wg0");
+        assert!(state.error.is_none());
+
+        update(&mut state, Message::Selected(0), &interfaces);
+        assert!(state.interface.is_empty());
+        assert!(state.error.is_none());
+    }
 }

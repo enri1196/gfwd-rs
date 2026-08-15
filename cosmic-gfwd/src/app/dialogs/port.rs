@@ -4,7 +4,15 @@ use cosmic::widget::{self, dropdown, settings};
 use crate::core::{validate_forward_address, validate_port_protocol, validate_port_spec};
 use crate::fl;
 
-use super::{DialogMessage, Submission, localized_validation_error};
+use super::{Submission, localized_validation_error};
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    NumberChanged(String),
+    ProtocolSelected(usize),
+    ForwardDestIpChanged(String),
+    ForwardDestPortChanged(String),
+}
 
 pub(super) const PORT_PROTOCOLS: [&str; 4] = ["tcp", "udp", "sctp", "dccp"];
 
@@ -66,23 +74,22 @@ impl PortFormState {
     }
 }
 
-pub(super) fn number_changed(state: &mut PortFormState, value: String) {
-    state.port = value;
-    state.port_touched = true;
-}
-
-pub(super) fn protocol_selected(state: &mut PortFormState, index: usize) {
-    state.protocol = protocol_from_index(index);
-}
-
-pub(super) fn destination_address_changed(state: &mut PortFormState, value: String) {
-    state.dest_ip = value;
-    state.dest_ip_touched = true;
-}
-
-pub(super) fn destination_port_changed(state: &mut PortFormState, value: String) {
-    state.dest_port = value;
-    state.dest_port_touched = true;
+pub(super) fn update(state: &mut PortFormState, message: Message) {
+    match message {
+        Message::NumberChanged(value) => {
+            state.port = value;
+            state.port_touched = true;
+        }
+        Message::ProtocolSelected(index) => state.protocol = protocol_from_index(index),
+        Message::ForwardDestIpChanged(value) => {
+            state.dest_ip = value;
+            state.dest_ip_touched = true;
+        }
+        Message::ForwardDestPortChanged(value) => {
+            state.dest_port = value;
+            state.dest_port_touched = true;
+        }
+    }
 }
 
 pub(super) fn touch_submission_fields(state: &mut PortFormState) {
@@ -117,7 +124,7 @@ pub(super) fn submission(state: &PortFormState, zone: String) -> Submission {
     }
 }
 
-pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMessage> {
+pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, Message> {
     let protocol_selected = protocol_index(&state.protocol);
 
     let mut sections = Vec::new();
@@ -126,7 +133,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
         .add(
             settings::item::builder(fl!("dialog-port-label")).control(
                 widget::text_input::text_input(fl!("dialog-port-placeholder"), &state.port)
-                    .on_input(DialogMessage::PortNumberChanged)
+                    .on_input(Message::NumberChanged)
                     .width(Length::Fill),
             ),
         )
@@ -135,7 +142,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                 dropdown(
                     &PORT_PROTOCOLS,
                     protocol_selected,
-                    DialogMessage::PortProtocolSelected,
+                    Message::ProtocolSelected,
                 )
                 .width(Length::Fill),
             ),
@@ -159,7 +166,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-port-dest-ip-placeholder"),
                         &state.dest_ip,
                     )
-                    .on_input(DialogMessage::PortForwardDestIpChanged)
+                    .on_input(Message::ForwardDestIpChanged)
                     .width(Length::Fill),
                 ),
             )
@@ -169,7 +176,7 @@ pub fn port_drawer<'a>(state: &'a PortFormState) -> cosmic::Element<'a, DialogMe
                         fl!("dialog-port-dest-port-placeholder"),
                         &state.dest_port,
                     )
-                    .on_input(DialogMessage::PortForwardDestPortChanged)
+                    .on_input(Message::ForwardDestPortChanged)
                     .width(Length::Fill),
                 ),
             );
@@ -207,6 +214,31 @@ pub fn protocol_index(protocol: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn messages_preserve_protocol_and_forwarding_fields() {
+        let mut state = PortFormState {
+            kind: PortKind::Forward,
+            ..PortFormState::default()
+        };
+
+        update(&mut state, Message::NumberChanged("443".into()));
+        update(&mut state, Message::ProtocolSelected(1));
+        update(
+            &mut state,
+            Message::ForwardDestIpChanged("192.0.2.10".into()),
+        );
+        update(&mut state, Message::ForwardDestPortChanged("8443".into()));
+
+        assert_eq!(state.port, "443");
+        assert_eq!(state.protocol, "udp");
+        assert_eq!(state.dest_ip, "192.0.2.10");
+        assert_eq!(state.dest_port, "8443");
+        assert!(state.port_touched);
+        assert!(state.dest_ip_touched);
+        assert!(state.dest_port_touched);
+        assert!(state.is_valid());
+    }
 
     #[test]
     fn every_port_kind_shares_port_and_protocol_validation() {
