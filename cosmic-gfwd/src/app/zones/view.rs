@@ -75,6 +75,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
     watch_warning: Option<&'a str>,
+    last_checked_age_seconds: Option<u64>,
     mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -87,6 +88,7 @@ pub fn view_zone_content<'a, Message: 'static + Clone>(
             firewalld_status,
             reconciliation,
             watch_warning,
+            last_checked_age_seconds,
             mutation_pending,
             map,
         ))
@@ -101,6 +103,7 @@ fn zone_details<'a, Message: 'static + Clone>(
     firewalld_status: &'a FirewalldStatus,
     reconciliation: &'a ZoneReconciliationState,
     watch_warning: Option<&'a str>,
+    last_checked_age_seconds: Option<u64>,
     mutation_pending: bool,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
@@ -115,8 +118,12 @@ fn zone_details<'a, Message: 'static + Clone>(
         .spacing(space_s);
     let reconciliation_presentation =
         ReconciliationPresentation::from_state(reconciliation, mutation_pending);
-    let reconciliation_section =
-        reconciliation_banner(&reconciliation_presentation, watch_warning, map);
+    let reconciliation_section = reconciliation_banner(
+        &reconciliation_presentation,
+        watch_warning,
+        last_checked_age_seconds,
+        map,
+    );
 
     let masquerade = if mutation_pending {
         widget::toggler(details.masquerade)
@@ -351,37 +358,39 @@ fn zone_details<'a, Message: 'static + Clone>(
 fn reconciliation_banner<'a, Message: 'static + Clone>(
     presentation: &ReconciliationPresentation<'_>,
     watch_warning: Option<&'a str>,
+    last_checked_age_seconds: Option<u64>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let status = reconciliation_status(presentation.status);
-    let actions = widget::row::with_capacity(2)
-        .push(
-            button::standard(fl!("reconciliation-review")).on_press_maybe(
-                presentation
-                    .actions
-                    .can_review
-                    .then_some(map(ZoneViewAction::Reconciliation(
-                        ReconciliationAction::Review,
-                    ))),
-            ),
-        )
-        .push(
-            button::icon(icon::from_name(REFRESH_ICON))
-                .tooltip(fl!("reconciliation-refresh"))
-                .extra_small()
-                .on_press_maybe(presentation.actions.can_refresh.then_some(map(
-                    ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
-                ))),
-        )
-        .spacing(cosmic::theme::spacing().space_s);
+    let actions: cosmic::Element<'_, Message> = if presentation.actions.can_review {
+        button::standard(fl!("reconciliation-review"))
+            .on_press(map(ZoneViewAction::Reconciliation(
+                ReconciliationAction::Review,
+            )))
+            .into()
+    } else {
+        button::icon(icon::from_name(REFRESH_ICON))
+            .tooltip(fl!("reconciliation-refresh"))
+            .extra_small()
+            .on_press_maybe(presentation.actions.can_refresh.then_some(map(
+                ZoneViewAction::Reconciliation(ReconciliationAction::Refresh),
+            )))
+            .into()
+    };
 
-    let section = settings::section()
+    let mut section = settings::section()
         .title(fl!("reconciliation-section"))
         .add(
             settings::item::builder(status)
                 .description(fl!("reconciliation-banner-description"))
                 .control(actions),
         );
+    if let Some(seconds) = last_checked_age_seconds {
+        section = section.add(widget::text::caption(fl!(
+            "reconciliation-last-checked",
+            seconds = seconds
+        )));
+    }
     if let Some(error) = watch_warning {
         section
             .add(

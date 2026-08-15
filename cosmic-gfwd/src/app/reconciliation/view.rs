@@ -30,6 +30,7 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
     mutation_pending: bool,
     operation_error: Option<&'a str>,
     watch_warning: Option<&'a str>,
+    last_checked_age_seconds: Option<u64>,
     map: impl Fn(ZoneViewAction) -> Message + Copy + 'static,
 ) -> cosmic::Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
@@ -49,6 +50,12 @@ pub fn reconciliation_drawer<'a, Message: Clone + 'static>(
                 .description(fl!("reconciliation-refresh-description"))
                 .control(refresh),
         );
+    if let Some(seconds) = last_checked_age_seconds {
+        status = status.add(widget::text::caption(fl!(
+            "reconciliation-last-checked",
+            seconds = seconds
+        )));
+    }
     if let Some(error) = operation_error {
         status = status.add(
             settings::item::builder(fl!("reconciliation-operation-error-title"))

@@ -164,6 +164,7 @@ pub(crate) fn context_drawer(
                 app.mutation_pending(),
                 app.dialogs.operation_error.as_deref(),
                 app.reconciliation.watch_warning(),
+                app.reconciliation.last_checked_age_seconds(),
                 |action| Message::Zone(super::zones::Message::View(action)),
             ),
             Message::Navigation(super::navigation::Message::ToggleContextPage(
@@ -352,6 +353,7 @@ pub(crate) fn view(app: &AppModel) -> Element<'_, Message> {
             app.zones.firewalld_status(),
             app.reconciliation.state(),
             app.reconciliation.watch_warning(),
+            app.reconciliation.last_checked_age_seconds(),
             app.mutation_pending(),
             |action| Message::Zone(super::zones::Message::View(action)),
         ),

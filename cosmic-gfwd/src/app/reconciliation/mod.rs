@@ -97,11 +97,17 @@ pub(crate) enum Request {
 /// Owns selected-zone reconciliation state and pure refresh coordination.
 #[derive(Debug, Default)]
 pub(crate) struct State {
+    last_checked: Option<std::time::SystemTime>,
     state: ZoneReconciliationState,
     coordinator: ConfigurationRefreshCoordinator,
 }
 
 impl State {
+    pub(crate) fn last_checked_age_seconds(&self) -> Option<u64> {
+        self.last_checked
+            .and_then(|checked| checked.elapsed().ok())
+            .map(|elapsed| elapsed.as_secs())
+    }
     /// Return the current independently loaded reconciliation state.
     pub(crate) fn state(&self) -> &ZoneReconciliationState {
         &self.state
@@ -150,10 +156,14 @@ impl State {
             return false;
         }
 
+        let succeeded = result.is_ok();
         self.state = match result {
             Ok(data) => ZoneReconciliationState::from_data(zone, data),
             Err(message) => ZoneReconciliationState::Error { zone, message },
         };
+        if succeeded {
+            self.last_checked = Some(std::time::SystemTime::now());
+        }
         true
     }
 
