@@ -9,7 +9,7 @@ repository = "https://github.com/enri1196/gfwd-rs"
 [dependencies]
 zbus = "5.19.0"
 zbus_macros = "5.19.0"
-zvariant = "5.14.0"
+zvariant = "5.15.0"
 serde = { version = "1.0.229", features = ["derive"] }
 
 [features]
