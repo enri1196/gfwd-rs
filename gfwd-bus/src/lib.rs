@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[cfg_attr(docsrs, doc(cfg(feature = "config_direct")))]
 #[cfg(feature = "config_direct")]
 pub mod config_direct;

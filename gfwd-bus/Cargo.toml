@@ -1,10 +1,15 @@
 [package]
 name = "gfwd-bus"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "A firewalld dbus api crate"
 repository = "https://github.com/enri1196/gfwd-rs"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 zbus = "5.19.0"
