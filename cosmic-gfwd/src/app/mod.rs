@@ -692,10 +692,8 @@ impl AppModel {
                         zones::Mutation::StopFirewalld => fl!("operation-stop-firewalld"),
                     };
                     let operation = self
-                        .ipsets
-                        .selected
-                        .as_deref()
-                        .map(|ipset| format!("{operation} — {ipset}"))
+                        .current_zone_name()
+                        .map(|zone| format!("{operation} — {zone}"))
                         .unwrap_or(operation);
                     let _ = self.begin_mutation(operation);
                 }
