@@ -123,7 +123,7 @@ pub(crate) enum Message {
 pub(crate) fn update(
     state: &mut State,
     message: Message,
-    context: Context,
+    context: &Context,
 ) -> Outcome<Effect, Request> {
     match message {
         Message::View(action) => update_view(state, action, context),
@@ -165,7 +165,7 @@ pub(crate) fn update(
 fn update_view(
     state: &mut State,
     action: IpSetViewAction,
-    context: Context,
+    context: &Context,
 ) -> Outcome<Effect, Request> {
     if context.mutation_pending
         && matches!(

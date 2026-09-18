@@ -210,7 +210,7 @@ impl State {
 pub(crate) fn update(
     state: &mut State,
     message: Message,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     match message {
         Message::Action(action) => update_action(state, action, context),
@@ -287,7 +287,7 @@ pub(crate) fn update(
 fn update_action(
     state: &mut State,
     action: ReconciliationAction,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     match action {
         ReconciliationAction::Review => Outcome::request(Request::OpenReview),

@@ -380,7 +380,7 @@ impl AppModel {
         let outcome = catalogs::update(
             &mut self.catalogs,
             message,
-            catalogs::Context {
+            &catalogs::Context {
                 selected_interface: &selected_interface,
             },
         );
@@ -449,7 +449,7 @@ impl AppModel {
         let outcome = reconciliation::update(
             &mut self.reconciliation,
             message,
-            reconciliation::Context {
+            &reconciliation::Context {
                 selected_zone: selected_zone.as_deref(),
                 ready_zone: ready_zone.as_deref(),
                 firewalld_active: self.zones.firewalld_status() == &FirewalldStatus::Active,
@@ -621,7 +621,7 @@ impl AppModel {
         let outcome = zones::update(
             &mut self.zones,
             message,
-            zones::Context {
+            &zones::Context {
                 mutation_pending: self.operations.mutation_pending(),
                 selected_zone: selected_zone.as_deref(),
                 reconciliation_refreshing: self.reconciliation.is_refreshing(),
@@ -813,7 +813,7 @@ impl AppModel {
         let outcome = dialogs::update(
             &mut self.dialogs,
             message,
-            dialogs::Context {
+            &dialogs::Context {
                 selected_zone: selected_zone.as_deref(),
                 interfaces: self.catalogs.interfaces.items(),
                 enabled_services,
@@ -931,7 +931,7 @@ impl AppModel {
         let outcome = ipsets::update(
             &mut self.ipsets,
             message,
-            ipsets::Context {
+            &ipsets::Context {
                 mutation_pending: self.operations.mutation_pending(),
                 localize_validation: localized_validation_error,
             },

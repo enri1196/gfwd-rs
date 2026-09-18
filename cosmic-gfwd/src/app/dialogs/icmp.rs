@@ -27,7 +27,7 @@ pub(super) struct Context<'a> {
 pub(super) fn update(
     state: &mut IcmpFormState,
     message: Message,
-    context: Context<'_>,
+    context: &mut Context<'_>,
 ) -> Outcome<Effect, Request> {
     match message {
         Message::SearchChanged(value) => state.search = value,

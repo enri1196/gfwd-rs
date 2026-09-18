@@ -319,7 +319,7 @@ pub(crate) enum Request {
 pub(crate) fn update(
     state: &mut State,
     message: Message,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     match message {
         Message::View(action) => match action {
@@ -507,7 +507,7 @@ pub(crate) fn update(
     }
 }
 
-fn update_view(action: ZoneViewAction, context: Context<'_>) -> Outcome<Effect, Request> {
+fn update_view(action: ZoneViewAction, context: &Context<'_>) -> Outcome<Effect, Request> {
     if context.mutation_pending {
         return Outcome::default();
     }
@@ -669,7 +669,7 @@ fn finish_details(
     state: &mut State,
     zone: String,
     result: Result<ZoneDetails, BrokerError>,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     if context.selected_zone != Some(zone.as_str()) {
         return Outcome::default();
@@ -709,7 +709,7 @@ fn finish_details(
 fn finish_status(
     state: &mut State,
     result: Result<FirewalldStatus, BrokerError>,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     state.firewalld_status = match result {
         Ok(status) => status,
@@ -804,7 +804,7 @@ fn finish_delete(
 fn finish_item_change(
     zone: String,
     result: Result<(), BrokerError>,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     match result {
         Ok(()) => {

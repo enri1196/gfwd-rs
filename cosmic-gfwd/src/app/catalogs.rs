@@ -119,7 +119,7 @@ impl<T> CatalogState<T> {
 pub(crate) fn update(
     state: &mut State,
     message: Message,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     match message {
         Message::LoadInterfaces => {

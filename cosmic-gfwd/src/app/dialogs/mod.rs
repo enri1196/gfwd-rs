@@ -172,7 +172,7 @@ pub(crate) enum Request {
 pub(crate) fn update(
     state: &mut State,
     message: DialogMessage,
-    context: Context<'_>,
+    context: &Context<'_>,
 ) -> Outcome<Effect, Request> {
     if context.mutation_pending && matches!(message, DialogMessage::Submit(_)) {
         return Outcome::default();
@@ -185,7 +185,7 @@ pub(crate) fn update(
         DialogMessage::Service(message) => service::update(
             &mut state.service,
             message,
-            service::Context {
+            &mut service::Context {
                 selected_zone: context.selected_zone,
                 enabled_services: context.enabled_services,
                 operation_error: &mut state.operation_error,
@@ -206,7 +206,7 @@ pub(crate) fn update(
         DialogMessage::Icmp(message) => icmp::update(
             &mut state.icmp,
             message,
-            icmp::Context {
+            &mut icmp::Context {
                 selected_zone: context.selected_zone,
                 blocked_icmp: context.blocked_icmp,
                 operation_error: &mut state.operation_error,
