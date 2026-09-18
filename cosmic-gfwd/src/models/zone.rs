@@ -28,9 +28,7 @@ pub enum ZoneTarget {
 impl ZoneTarget {
     pub fn from_raw(value: String) -> Self {
         match value.as_str() {
-            "" => ZoneTarget::Default,
-            "default" => ZoneTarget::Default,
-            "DEFAULT" => ZoneTarget::Default,
+            "" | "default" | "DEFAULT" => ZoneTarget::Default,
             "ACCEPT" => ZoneTarget::Accept,
             "DROP" => ZoneTarget::Drop,
             "REJECT" => ZoneTarget::Reject,

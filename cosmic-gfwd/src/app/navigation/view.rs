@@ -129,7 +129,7 @@ impl Sidebar {
 
     pub fn zone_name_for_id(&self, id: nav_bar::Id) -> Option<String> {
         self.item_for_id(id)
-            .and_then(|item| item.zone_name().map(|name| name.to_string()))
+            .and_then(|item| item.zone_name().map(str::to_string))
     }
 
     /// Return the current navigation identifier for a materialized zone.

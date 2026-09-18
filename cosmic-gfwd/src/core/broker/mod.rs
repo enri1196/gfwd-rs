@@ -64,7 +64,7 @@ impl From<ZoneSettingsParseError> for BrokerError {
     }
 }
 
-/// Shared owner of all firewalld, systemd, and NetworkManager D-Bus proxies.
+/// Shared owner of all firewalld, systemd, and `NetworkManager` D-Bus proxies.
 #[derive(Debug)]
 pub struct FwdBroker {
     pub(super) conn: Connection,

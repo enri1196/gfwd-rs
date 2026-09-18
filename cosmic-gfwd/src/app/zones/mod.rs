@@ -541,9 +541,8 @@ fn update_view(action: ZoneViewAction, context: &Context<'_>) -> Outcome<Effect,
         ZoneViewAction::AddRichRule => {
             Outcome::request(Request::OpenContextPage(ContextPage::AddRichRule))
         }
-        ZoneViewAction::StartFirewalld => unreachable!("view commands are normalized first"),
-        ZoneViewAction::StopFirewalld => Outcome::request(Request::ConfirmStopFirewalld),
-        ZoneViewAction::SetMasquerade(_)
+        ZoneViewAction::StartFirewalld
+        | ZoneViewAction::SetMasquerade(_)
         | ZoneViewAction::SetIcmpBlockInversion(_)
         | ZoneViewAction::RemoveService(_)
         | ZoneViewAction::RemoveInterface(_)
@@ -553,6 +552,7 @@ fn update_view(action: ZoneViewAction, context: &Context<'_>) -> Outcome<Effect,
         | ZoneViewAction::RemoveSourcePort { .. }
         | ZoneViewAction::RemoveIcmpBlock(_)
         | ZoneViewAction::RemoveRichRule(_) => unreachable!("view commands are normalized first"),
+        ZoneViewAction::StopFirewalld => Outcome::request(Request::ConfirmStopFirewalld),
     }
 }
 

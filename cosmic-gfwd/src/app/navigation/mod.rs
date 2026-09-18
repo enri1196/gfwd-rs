@@ -176,14 +176,11 @@ fn zones_loaded(state: &mut State, result: Result<Vec<String>, String>) -> Outco
             state.set_zones(zones);
             let mut outcome = Outcome::request(Request::LoadDefaultZone);
             outcome.append(Outcome::request(Request::LoadActiveZones));
-            match state.active_item() {
-                Some(SidebarItem::Zone { name, .. }) => {
-                    outcome.append(Outcome::request(Request::LoadZone(name.clone())));
-                }
-                _ => {
-                    outcome.append(Outcome::request(Request::ClearSelectedZone));
-                    outcome.append(Outcome::request(Request::FinishConfigurationRefresh));
-                }
+            if let Some(SidebarItem::Zone { name, .. }) = state.active_item() {
+                outcome.append(Outcome::request(Request::LoadZone(name.clone())));
+            } else {
+                outcome.append(Outcome::request(Request::ClearSelectedZone));
+                outcome.append(Outcome::request(Request::FinishConfigurationRefresh));
             }
             outcome.append(Outcome::request(Request::RefreshTitle));
             outcome

@@ -88,7 +88,7 @@ impl FwdBroker {
         let settings: gfwd_bus::config_firewalld1::IPSetSettings = (
             "1.0".to_string(),
             name.to_string(),
-            "".to_string(),
+            String::new(),
             ipset_type.to_string(),
             std::collections::HashMap::new(),
             entries,
