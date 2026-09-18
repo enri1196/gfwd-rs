@@ -39,7 +39,7 @@ impl FwdBroker {
     pub async fn get_interfaces(&self) -> Result<Vec<String>, BrokerError> {
         match self.get_interfaces_from_networkmanager().await {
             Ok(interfaces) if !interfaces.is_empty() => Ok(interfaces),
-            Ok(_) | Err(_) => self.get_interfaces_from_sysfs().await,
+            Ok(_) | Err(_) => self.get_interfaces_from_sysfs(),
         }
     }
 
@@ -64,7 +64,7 @@ impl FwdBroker {
         Ok(interfaces)
     }
 
-    async fn get_interfaces_from_sysfs(&self) -> Result<Vec<String>, BrokerError> {
+    fn get_interfaces_from_sysfs(&self) -> Result<Vec<String>, BrokerError> {
         use std::fs;
 
         let entries = match fs::read_dir("/sys/class/net") {

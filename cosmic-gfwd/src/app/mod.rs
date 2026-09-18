@@ -808,8 +808,9 @@ impl AppModel {
         let (enabled_services, blocked_icmp) = self
             .zones
             .ready_detail()
-            .map(|details| (details.services.as_slice(), details.icmp_blocks.as_slice()))
-            .unwrap_or((&[][..], &[][..]));
+            .map_or((&[][..], &[][..]), |details| {
+                (details.services.as_slice(), details.icmp_blocks.as_slice())
+            });
         let outcome = dialogs::update(
             &mut self.dialogs,
             message,

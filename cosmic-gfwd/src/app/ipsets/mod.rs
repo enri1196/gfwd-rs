@@ -182,8 +182,7 @@ fn update_view(
             .selected
             .clone()
             .map(Effect::Details)
-            .map(Outcome::effect)
-            .unwrap_or_else(|| Outcome::effect(Effect::List)),
+            .map_or_else(|| Outcome::effect(Effect::List), Outcome::effect),
         IpSetViewAction::Create => Outcome::request(Request::OpenCreate),
         IpSetViewAction::Select(name) => {
             state.selected = Some(name.clone());

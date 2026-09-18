@@ -249,7 +249,7 @@ fn zone_details<'a, Message: 'static + Clone>(
             .cloned()
             .map(|(port, protocol)| {
                 (
-                    format!("{}/{}", port, protocol),
+                    format!("{port}/{protocol}"),
                     ZoneViewAction::RemovePort { port, protocol },
                 )
             })
@@ -274,9 +274,9 @@ fn zone_details<'a, Message: 'static + Clone>(
             .map(|(port, protocol, to_port, to_addr)| {
                 (
                     if to_addr.is_empty() {
-                        format!("{}/{} -> {}", port, protocol, to_port)
+                        format!("{port}/{protocol} -> {to_port}")
                     } else {
-                        format!("{}/{} -> {} ({})", port, protocol, to_port, to_addr)
+                        format!("{port}/{protocol} -> {to_port} ({to_addr})")
                     },
                     ZoneViewAction::RemoveForwardPort {
                         port,
@@ -426,9 +426,9 @@ fn reconciliation_status(status: ReconciliationPresentationStatus) -> String {
     }
 }
 
-fn zone_description<'a, Message: 'static>(
-    details: &'a ZoneDetails,
-) -> cosmic::Element<'a, Message> {
+fn zone_description<Message: 'static>(
+    details: &ZoneDetails,
+) -> cosmic::Element<'_, Message> {
     if details.description.trim().is_empty() {
         widget::text::caption(fl!("zone-description-fallback")).into()
     } else {

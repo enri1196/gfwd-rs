@@ -26,7 +26,7 @@ pub(super) fn update(state: &mut InterfaceFormState, message: Message, interface
         }
         Message::Selected(index) => {
             if let Some(interface) = interfaces.get(index - 1) {
-                state.interface = interface.clone();
+                state.interface.clone_from(interface);
                 validate(state);
             }
         }
@@ -86,7 +86,7 @@ pub fn interface_drawer<'a>(
     } else {
         fl!("dialog-interface-select-placeholder")
     };
-    options.push(placeholder.to_string());
+    options.push(placeholder.clone());
     options.extend(interfaces.iter().cloned());
 
     let selected = if state.interface.is_empty() {

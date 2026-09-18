@@ -32,7 +32,7 @@ impl Default for ZoneFormState {
 
 impl ZoneFormState {
     pub fn begin_rename(&mut self, zone: String) {
-        self.name = zone.clone();
+        self.name.clone_from(&zone);
         self.rename_from = Some(zone);
     }
 

@@ -70,8 +70,8 @@ pub enum RichRuleError {
 impl RichRuleSpec {
     /// Validates the spec and returns firewalld rich-rule XML.
     pub fn to_xml(&self) -> Result<String, RichRuleError> {
-        validate_optional_address(&self.source)?;
-        validate_optional_address(&self.destination)?;
+        validate_optional_address(self.source.as_ref())?;
+        validate_optional_address(self.destination.as_ref())?;
         validate_element(&self.element)?;
         validate_action(&self.action)?;
 
@@ -129,7 +129,7 @@ impl RichRuleSpec {
     }
 }
 
-fn validate_optional_address(address: &Option<(String, bool)>) -> Result<(), RichRuleError> {
+fn validate_optional_address(address: Option<&(String, bool)>) -> Result<(), RichRuleError> {
     if let Some((address, _)) = address {
         validate_source(address).map_err(|_| RichRuleError::InvalidAddress)?;
     }
