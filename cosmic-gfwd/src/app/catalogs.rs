@@ -269,7 +269,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Interfaces(Ok(vec!["eth0".into()])),
-            Context {
+            &Context {
                 selected_interface: "wlan0",
             },
         );
@@ -284,7 +284,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Interfaces(Ok(vec!["eth0".into()])),
-            Context {
+            &Context {
                 selected_interface: "eth0",
             },
         );

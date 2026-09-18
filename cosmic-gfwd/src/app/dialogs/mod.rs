@@ -462,7 +462,7 @@ mod tests {
         let outcome = update(
             &mut state,
             DialogMessage::Cancel(DialogKind::Source),
-            context(),
+            &context(),
         );
 
         assert_eq!(state.zone.name, "kept-zone");
@@ -516,7 +516,7 @@ mod tests {
             let outcome = update(
                 &mut state,
                 DialogMessage::Submit(DialogKind::Port),
-                context(),
+                &context(),
             );
             assert!(matches!(
                 outcome.requests.as_slice(),

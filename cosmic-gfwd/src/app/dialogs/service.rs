@@ -106,7 +106,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::SearchChanged("ssh".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 enabled_services: &[],
                 operation_error: &mut operation_error,
@@ -119,7 +119,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Selected("ssh".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 enabled_services: &enabled,
                 operation_error: &mut operation_error,
@@ -132,7 +132,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Selected("https".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 enabled_services: &enabled,
                 operation_error: &mut operation_error,

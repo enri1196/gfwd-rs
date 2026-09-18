@@ -105,7 +105,7 @@ mod tests {
         update(
             &mut state,
             Message::SearchChanged("echo".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 blocked_icmp: &[],
                 operation_error: &mut operation_error,
@@ -117,7 +117,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Selected("echo-request".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 blocked_icmp: &blocked,
                 operation_error: &mut operation_error,
@@ -130,7 +130,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::Selected("destination-unreachable".into()),
-            Context {
+            &mut Context {
                 selected_zone: Some("public"),
                 blocked_icmp: &blocked,
                 operation_error: &mut operation_error,

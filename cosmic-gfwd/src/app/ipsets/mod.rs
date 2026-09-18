@@ -498,7 +498,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::View(IpSetViewAction::Select("work".into())),
-            context(),
+            &context(),
         );
 
         assert_eq!(state.selected.as_deref(), Some("work"));
@@ -526,7 +526,7 @@ mod tests {
                     options: HashMap::new(),
                 }),
             },
-            context(),
+            &context(),
         );
 
         assert!(outcome.effects.is_empty());
@@ -548,7 +548,7 @@ mod tests {
                 ipset_name: "work".into(),
                 result: Ok(()),
             },
-            context(),
+            &context(),
         );
 
         assert!(state.selected.is_none());

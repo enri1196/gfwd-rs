@@ -553,12 +553,12 @@ mod tests {
         let apply = update(
             &mut controller,
             Message::Action(ReconciliationAction::ApplyPermanentToRuntime),
-            context(),
+            &context(),
         );
         let persist = update(
             &mut controller,
             Message::Action(ReconciliationAction::SaveRuntimeAsPermanent),
-            context(),
+            &context(),
         );
 
         assert!(matches!(
@@ -578,7 +578,7 @@ mod tests {
         let outcome = update(
             &mut controller,
             Message::PermanentApplied(Ok(())),
-            context(),
+            &context(),
         );
 
         assert!(matches!(

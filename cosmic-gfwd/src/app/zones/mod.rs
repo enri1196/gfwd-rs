@@ -874,7 +874,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::LoadDetails("public".into()),
-            context(Some("public")),
+            &context(Some("public")),
         );
 
         assert!(matches!(
@@ -897,7 +897,7 @@ mod tests {
         let outcome = update(
             &mut state,
             Message::SetDefault("public".into()),
-            Context {
+            &Context {
                 mutation_pending: true,
                 ..context(None)
             },
@@ -916,7 +916,7 @@ mod tests {
                 zone_name: "work".into(),
                 result: Ok(()),
             },
-            context(None),
+            &context(None),
         );
 
         assert!(matches!(
@@ -955,7 +955,7 @@ mod tests {
                     source_ports: Vec::new(),
                 })),
             },
-            context(Some("work")),
+            &context(Some("work")),
         );
 
         assert!(outcome.effects.is_empty());
@@ -972,7 +972,7 @@ mod tests {
                 zone_name: "public".into(),
                 result: Ok(()),
             },
-            Context {
+            &Context {
                 open_dialog: Some(DialogKind::Service),
                 ..context(Some("public"))
             },
@@ -996,7 +996,7 @@ mod tests {
         let service = update(
             &mut state,
             Message::View(ZoneViewAction::AddService),
-            context(None),
+            &context(None),
         );
         assert!(matches!(
             service.requests.as_slice(),
@@ -1008,7 +1008,7 @@ mod tests {
             Message::View(ZoneViewAction::AddPort {
                 kind: PortKind::Source,
             }),
-            context(None),
+            &context(None),
         );
         assert!(matches!(
             port.requests.as_slice(),
@@ -1025,7 +1025,7 @@ mod tests {
         let missing = update(
             &mut state,
             Message::View(ZoneViewAction::RemoveService("ssh".into())),
-            context(Some("public")),
+            &context(Some("public")),
         );
         assert!(missing.effects.is_empty());
         assert!(missing.requests.is_empty());
@@ -1034,7 +1034,7 @@ mod tests {
         let blocked = update(
             &mut state,
             Message::View(ZoneViewAction::SetMasquerade(true)),
-            Context {
+            &Context {
                 mutation_pending: true,
                 ..context(Some("public"))
             },
@@ -1045,7 +1045,7 @@ mod tests {
         let removal = update(
             &mut state,
             Message::View(ZoneViewAction::RemoveService("ssh".into())),
-            context(Some("public")),
+            &context(Some("public")),
         );
         assert!(matches!(
             removal.requests.as_slice(),
@@ -1064,7 +1064,7 @@ mod tests {
         let request = update(
             &mut state,
             Message::View(ZoneViewAction::StopFirewalld),
-            context(None),
+            &context(None),
         );
         assert!(matches!(
             request.requests.as_slice(),
@@ -1072,7 +1072,7 @@ mod tests {
         ));
         assert!(request.effects.is_empty());
 
-        let confirmed = update(&mut state, Message::ControlFirewalld(false), context(None));
+        let confirmed = update(&mut state, Message::ControlFirewalld(false), &context(None));
         assert_eq!(state.firewalld_status(), &FirewalldStatus::Loading);
         assert!(matches!(
             confirmed.requests.as_slice(),
@@ -1098,7 +1098,7 @@ mod tests {
                 zone_name: "public".into(),
                 result: Box::new(Ok(details("public"))),
             },
-            context(Some("public")),
+            &context(Some("public")),
         );
 
         assert!(matches!(
@@ -1120,7 +1120,7 @@ mod tests {
         let load = update(
             &mut state,
             Message::FirewalldStatusLoaded(Ok(FirewalldStatus::Active)),
-            context(Some("public")),
+            &context(Some("public")),
         );
         assert!(matches!(
             load.requests.as_slice(),
@@ -1130,7 +1130,7 @@ mod tests {
         let refreshing = update(
             &mut state,
             Message::FirewalldStatusLoaded(Ok(FirewalldStatus::Active)),
-            Context {
+            &Context {
                 reconciliation_refreshing: true,
                 ..context(Some("public"))
             },
@@ -1144,7 +1144,7 @@ mod tests {
     #[test]
     fn default_and_daemon_completions_finish_before_their_refreshes() {
         let mut state = State::default();
-        let default = update(&mut state, Message::DefaultSet(Ok(())), context(None));
+        let default = update(&mut state, Message::DefaultSet(Ok(())), &context(None));
         assert!(matches!(
             default.requests.as_slice(),
             [Request::FinishMutation(Ok(())), Request::RefreshDefault]
@@ -1153,7 +1153,7 @@ mod tests {
         let daemon = update(
             &mut state,
             Message::DaemonControlFinished(Ok(())),
-            context(None),
+            &context(None),
         );
         assert!(matches!(
             daemon.requests.as_slice(),
@@ -1173,7 +1173,7 @@ mod tests {
                 zone_name: "public".into(),
                 result: Ok(()),
             },
-            context(Some("public")),
+            &context(Some("public")),
         );
 
         assert!(matches!(state.detail(), ZoneViewState::Empty));
@@ -1197,7 +1197,7 @@ mod tests {
                 zone_name: "work".into(),
                 result: Ok(()),
             },
-            context(Some("public")),
+            &context(Some("public")),
         );
 
         assert!(matches!(

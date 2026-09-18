@@ -1312,7 +1312,7 @@ mod tests {
         let outcome = dialogs::update(
             &mut state,
             DialogMessage::Cancel(DialogKind::Zone),
-            dialog_context(false),
+            &dialog_context(false),
         );
         let mut router = router::Router::new(outcome);
         assert!(matches!(
@@ -1326,7 +1326,7 @@ mod tests {
         let outcome = dialogs::update(
             &mut state,
             DialogMessage::Submit(DialogKind::Zone),
-            dialog_context(true),
+            &dialog_context(true),
         );
         assert!(outcome.requests.is_empty());
     }
