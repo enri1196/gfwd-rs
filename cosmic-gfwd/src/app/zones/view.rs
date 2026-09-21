@@ -426,9 +426,7 @@ fn reconciliation_status(status: ReconciliationPresentationStatus) -> String {
     }
 }
 
-fn zone_description<Message: 'static>(
-    details: &ZoneDetails,
-) -> cosmic::Element<'_, Message> {
+fn zone_description<Message: 'static>(details: &ZoneDetails) -> cosmic::Element<'_, Message> {
     if details.description.trim().is_empty() {
         widget::text::caption(fl!("zone-description-fallback")).into()
     } else {

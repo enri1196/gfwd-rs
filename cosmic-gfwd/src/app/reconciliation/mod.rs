@@ -404,12 +404,12 @@ pub(crate) fn configuration_event_subscription(
 
 #[cfg(test)]
 mod tests {
+    use super::finish_refresh;
     use crate::core::{
         ComparisonCompleteness, ConfigurationEvent, RefreshRequest, ZoneReconciliationData,
         ZoneReconciliationState,
         reconciliation::{ZoneReconciliation, ZoneSettingsSnapshot},
     };
-    use super::finish_refresh;
 
     use super::{Context, Message, ReconciliationAction, Request, State, update};
 
