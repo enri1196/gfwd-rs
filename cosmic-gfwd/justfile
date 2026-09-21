@@ -3,6 +3,11 @@ name := 'cosmic-gfwd'
 # The unique ID of the application.
 appid := 'com.github.enri1196.cosmic-gfwd'
 
+# Resource filenames in the repository.
+appdata-src := 'app.metainfo.xml'
+desktop-src := 'app.desktop'
+icon-svg-src := 'icon.svg'
+
 # Path to root file system, which defaults to `/`.
 rootdir := ''
 # The prefix for the `/usr` directory.
@@ -63,13 +68,13 @@ run *args:
 # Installs files
 install:
     install -Dm0755 {{ cargo-target-dir / 'release' / name }} {{bin-dst}}
-    install -Dm0644 {{ 'resources' / desktop }} {{desktop-dst}}
-    install -Dm0644 {{ 'resources' / appdata }} {{appdata-dst}}
-    install -Dm0644 {{ 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'icon.svg' }} {{icon-svg-dst}}
+    install -Dm0644 {{ 'resources' / desktop-src }} {{desktop-dst}}
+    install -Dm0644 {{ 'resources' / appdata-src }} {{appdata-dst}}
+    install -Dm0644 {{ 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / icon-svg-src }} {{icon-svg-dst / icon-svg}}
 
 # Uninstalls installed files
 uninstall:
-    rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}}
+    rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst / icon-svg}}
 
 # Vendor dependencies locally
 vendor:
@@ -93,4 +98,3 @@ tag version:
     git commit -m 'release: {{version}}'
     git commit --amend
     git tag -a {{version}} -m ''
-

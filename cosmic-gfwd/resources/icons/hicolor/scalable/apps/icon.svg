@@ -1,2 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"/>
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="background" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12606a"/>
+      <stop offset="1" stop-color="#092c35"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="31" y1="20" x2="94" y2="107" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#47d5d5"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="54" y1="62" x2="75" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffe96a"/>
+      <stop offset="1" stop-color="#ff8a14"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="128" height="128" rx="12" fill="url(#background)"/>
+  <path
+    d="M64 14 105 31v27c0 27-16 45-41 56C39 103 23 85 23 58V31l41-17Z"
+    fill="#092459"
+    stroke="url(#shield)"
+    stroke-linejoin="miter"
+    stroke-miterlimit="4"
+    stroke-width="6"
+  />
+
+  <g fill="none" stroke="#f7ffff" stroke-linecap="round" stroke-width="4" filter="url(#glow)">
+    <path d="m64 36-18 18m18-18 18 18"/>
+  </g>
+  <g fill="#ffffff" stroke="#8cebec" stroke-width="2">
+    <circle cx="64" cy="34" r="7"/>
+    <circle cx="44" cy="56" r="7"/>
+    <circle cx="84" cy="56" r="7"/>
+  </g>
+
+  <path
+    d="M61 99c-10-6-12-16-7-25 2-4 6-8 11-13 1 7-1 11 2 15 5-4 7-9 8-15 8 9 10 17 6 25-3 6-9 11-20 13Zm4-7c6 0 10-4 10-9 0-3-2-6-5-8-1 5-4 8-8 10-1 2 0 5 3 7Z"
+    fill="url(#flame)"
+    filter="url(#glow)"
+  />
+</svg>
