@@ -1,3 +1,5 @@
+pub(crate) mod configuration_event_watcher;
+
 pub mod broker;
 pub mod events;
 pub mod reconciliation;
