@@ -284,7 +284,10 @@ impl cosmic::Application for AppModel {
                     Message::Navigation(navigation::Message::UpdateConfig(update.config))
                 }),
         ];
-        let selected_zone = self.current_zone_name();
+        let selected_zone = self.navigation.active_item().and_then(|item| match item {
+            SidebarItem::Zone { name, .. } => Some(name.clone()),
+            _ => None,
+        });
         subscriptions.push(
             Subscription::run_with(
                 selected_zone.clone(),
