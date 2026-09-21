@@ -73,7 +73,7 @@ impl FwdBroker {
                 .await
                 .map_err(BrokerError::from)?;
             let zone_names = config.get_zone_names().await.map_err(BrokerError::from)?;
-            if zone_names.iter().any(|name| name == zone_name) {
+            if selected_zone_exists(Some(zone_name), &zone_names) {
                 let path = config
                     .get_zone_by_name(zone_name)
                     .await
@@ -247,6 +247,10 @@ fn ensure_same_owner(initial_owner: &str, current_owner: &str) -> Result<(), Bro
     }
 }
 
+fn selected_zone_exists(selected_zone: Option<&str>, zone_names: &[String]) -> bool {
+    selected_zone.is_none_or(|selected| zone_names.iter().any(|name| name == selected))
+}
+
 fn signal_member(message: &zbus::Message) -> Option<String> {
     message
         .header()
@@ -267,4 +271,30 @@ fn first_signal_string(message: &zbus::Message) -> Result<String, BrokerError> {
         .downcast_ref()
         .map_err(|error| BrokerError::new(error.to_string()))?;
     Ok(value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_same_owner, selected_zone_exists};
+
+    #[test]
+    fn same_owner_keeps_session_alive() {
+        assert!(ensure_same_owner(":1.42", ":1.42").is_ok());
+    }
+
+    #[test]
+    fn changed_owner_invalidates_session() {
+        let error = ensure_same_owner(":1.42", ":1.43").expect_err("owner change must fail");
+
+        assert_eq!(error.to_string(), "firewalld owner changed");
+    }
+
+    #[test]
+    fn selected_zone_existence_matches_optional_selection() {
+        let zones = vec!["public".to_string(), "work".to_string()];
+
+        assert!(selected_zone_exists(None, &zones));
+        assert!(selected_zone_exists(Some("public"), &zones));
+        assert!(!selected_zone_exists(Some("deleted"), &zones));
+    }
 }

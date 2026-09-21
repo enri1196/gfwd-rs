@@ -405,9 +405,11 @@ pub(crate) fn configuration_event_subscription(
 #[cfg(test)]
 mod tests {
     use crate::core::{
-        ComparisonCompleteness, RefreshRequest, ZoneReconciliationData, ZoneReconciliationState,
+        ComparisonCompleteness, ConfigurationEvent, RefreshRequest, ZoneReconciliationData,
+        ZoneReconciliationState,
         reconciliation::{ZoneReconciliation, ZoneSettingsSnapshot},
     };
+    use super::finish_refresh;
 
     use super::{Context, Message, ReconciliationAction, Request, State, update};
 
@@ -515,8 +517,125 @@ mod tests {
         assert_eq!(controller.watch_warning(), Some("permission denied"));
         assert_eq!(controller.selected_zone(), Some("public"));
 
-        controller.handle_configuration_event(false);
+        let outcome = update(
+            &mut controller,
+            Message::ConfigurationWatcherReady,
+            &context(),
+        );
+
         assert_eq!(controller.watch_warning(), None);
+        assert_eq!(controller.selected_zone(), Some("public"));
+        assert!(matches!(
+            outcome.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+    }
+
+    #[test]
+    fn watcher_ready_clears_warning_and_requests_full_refresh() {
+        let mut controller = State::default();
+        controller.selection_changed(Some("public".into()));
+        controller.watcher_failed("system bus unavailable".into());
+
+        let outcome = update(
+            &mut controller,
+            Message::ConfigurationWatcherReady,
+            &context(),
+        );
+
+        assert_eq!(controller.watch_warning(), None);
+        assert_eq!(controller.selected_zone(), Some("public"));
+        assert!(outcome.effects.is_empty());
+        assert!(matches!(
+            outcome.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+    }
+
+    #[test]
+    fn watcher_ready_defers_refresh_during_mutation() {
+        let mut controller = State::default();
+        controller.selection_changed(Some("public".into()));
+        let started = update(
+            &mut controller,
+            Message::ConfigurationEvent(Ok(ConfigurationEvent::Reloaded)),
+            &context(),
+        );
+        assert!(matches!(
+            started.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+
+        controller.watcher_failed("temporary watcher outage".into());
+        let outcome = update(
+            &mut controller,
+            Message::ConfigurationWatcherReady,
+            &Context {
+                mutation_pending: true,
+                ..context()
+            },
+        );
+
+        assert_eq!(controller.watch_warning(), None);
+        assert!(outcome.effects.is_empty());
+        assert!(outcome.requests.is_empty());
+
+        let released = finish_refresh(&mut controller);
+        assert!(matches!(
+            released.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+    }
+
+    #[test]
+    fn watcher_ready_defers_refresh_during_load() {
+        let mut controller = State::default();
+        controller.selection_changed(Some("public".into()));
+        let started = update(
+            &mut controller,
+            Message::ConfigurationEvent(Ok(ConfigurationEvent::Reloaded)),
+            &context(),
+        );
+        assert!(matches!(
+            started.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+
+        let generation = controller.begin_load("public".into());
+        controller.watcher_failed("temporary watcher outage".into());
+        let outcome = update(
+            &mut controller,
+            Message::ConfigurationWatcherReady,
+            &context(),
+        );
+
+        assert_eq!(controller.watch_warning(), None);
+        assert!(outcome.effects.is_empty());
+        assert!(outcome.requests.is_empty());
+        assert!(controller.complete_load("public".into(), generation, Ok(in_sync_data())));
+
+        let released = finish_refresh(&mut controller);
+        assert!(matches!(
+            released.requests.as_slice(),
+            [Request::ConfigurationRefresh(ConfigurationEvent::Reloaded)]
+        ));
+    }
+
+    #[test]
+    fn watcher_failure_preserves_selected_zone_and_manual_state() {
+        let mut controller = State::default();
+        controller.selection_changed(Some("public".into()));
+
+        let outcome = update(
+            &mut controller,
+            Message::ConfigurationEvent(Err("permission denied".into())),
+            &context(),
+        );
+
+        assert_eq!(controller.watch_warning(), Some("permission denied"));
+        assert_eq!(controller.selected_zone(), Some("public"));
+        assert!(outcome.effects.is_empty());
+        assert!(outcome.requests.is_empty());
     }
 
     #[test]
