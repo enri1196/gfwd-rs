@@ -11,6 +11,9 @@ mod view;
 pub(crate) use model::{ReconciliationPresentation, ReconciliationPresentationStatus};
 pub(crate) use view::{ReconciliationAction, reconciliation_drawer};
 
+use crate::core::configuration_event_watcher::{
+    ConfigurationEventWatcher, ConfigurationWatchEvent,
+};
 use crate::core::{
     BrokerError, ConfigurationEvent, ConfigurationRefreshCoordinator, FwdBroker, RefreshRequest,
     ZoneReconciliationData, ZoneReconciliationState,
@@ -23,6 +26,7 @@ use super::outcome::Outcome;
 /// Reconciliation-specific messages delivered to the application.
 #[derive(Clone, Debug)]
 pub(crate) enum Message {
+    ConfigurationWatcherReady,
     /// Handle an action shared by the banner and review drawer.
     Action(ReconciliationAction),
     /// Begin loading the selected-zone comparison.
@@ -238,6 +242,15 @@ pub(crate) fn update(
                 Outcome::default()
             }
         },
+        Message::ConfigurationWatcherReady => {
+            let blocked = context.mutation_pending || state.is_loading();
+            match state.handle_configuration_event(blocked) {
+                RefreshRequest::Start => {
+                    Outcome::request(Request::ConfigurationRefresh(ConfigurationEvent::Reloaded))
+                }
+                RefreshRequest::Coalesced => Outcome::default(),
+            }
+        }
         Message::LoadCompleted {
             zone,
             generation,
@@ -369,23 +382,17 @@ async fn persist_runtime() -> Result<(), BrokerError> {
 }
 
 fn configuration_event_messages(selected_zone: Option<String>) -> BoxStream<'static, Message> {
-    Box::pin(async_stream::stream! {
-        let broker = match FwdBroker::get().await {
-            Ok(broker) => broker,
-            Err(error) => {
-                yield Message::ConfigurationEvent(Err(error.to_string()));
-                return;
-            }
-        };
-        let mut events = broker.configuration_events(selected_zone);
-        while let Some(event) = events.next().await {
-            let failed = event.is_err();
-            yield Message::ConfigurationEvent(event.map_err(|error| error.to_string()));
-            if failed {
-                return;
-            }
-        }
-    })
+    Box::pin(
+        ConfigurationEventWatcher::new(selected_zone)
+            .into_stream()
+            .map(|event| match event {
+                ConfigurationWatchEvent::Ready => Message::ConfigurationWatcherReady,
+                ConfigurationWatchEvent::Changed(event) => Message::ConfigurationEvent(Ok(event)),
+                ConfigurationWatchEvent::Unavailable(error) => {
+                    Message::ConfigurationEvent(Err(error))
+                }
+            }),
+    )
 }
 
 /// Build the selected-zone configuration event stream for a keyed subscription.
