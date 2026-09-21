@@ -11,7 +11,7 @@ mod ipset;
 mod zone;
 
 use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
-use tokio::sync::OnceCell;
+use tokio::sync::Mutex;
 use zbus::Connection;
 
 use super::reconciliation::ZoneSettingsParseError;
@@ -65,22 +65,29 @@ impl From<ZoneSettingsParseError> for BrokerError {
 }
 
 /// Shared owner of all firewalld, systemd, and `NetworkManager` D-Bus proxies.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct FwdBroker {
     pub(super) conn: Connection,
 }
 
-static BROKER: OnceCell<FwdBroker> = OnceCell::const_new();
+static BROKER: Mutex<Option<FwdBroker>> = Mutex::const_new(None);
 
 impl FwdBroker {
+    pub(crate) async fn connect() -> Result<Self, BrokerError> {
+        let conn = Connection::system().await.map_err(BrokerError::from)?;
+        Ok(Self { conn })
+    }
+
     /// Returns the lazily initialized system-bus broker.
-    pub async fn get() -> Result<&'static FwdBroker, BrokerError> {
-        BROKER
-            .get_or_try_init(|| async {
-                let conn = Connection::system().await.map_err(BrokerError::from)?;
-                Ok(FwdBroker { conn })
-            })
-            .await
+    pub async fn get() -> Result<FwdBroker, BrokerError> {
+        let mut broker = BROKER.lock().await;
+        if broker.is_none() {
+            *broker = Some(Self::connect().await?);
+        }
+        Ok(broker
+            .as_ref()
+            .expect("broker cache is initialized")
+            .clone())
     }
 
     pub(super) async fn config(&self) -> Result<ConfigFirewalld1Proxy<'_>, BrokerError> {
@@ -148,6 +155,7 @@ mod tests {
 
     #[test]
     fn broker_public_call_surface_is_preserved() {
+        let _ = FwdBroker::connect;
         let _ = FwdBroker::get;
         let _ = assert_public_call_surface;
     }
