@@ -65,6 +65,8 @@ impl From<ZoneSettingsParseError> for BrokerError {
 }
 
 /// Shared owner of all firewalld, systemd, and `NetworkManager` D-Bus proxies.
+pub(crate) use events::{ConfigurationSignal, ConfigurationWatchSession};
+
 #[derive(Clone, Debug)]
 pub struct FwdBroker {
     pub(super) conn: Connection,
@@ -88,6 +90,10 @@ impl FwdBroker {
             .as_ref()
             .expect("broker cache is initialized")
             .clone())
+    }
+
+    pub(crate) async fn publish_configuration_connection(&self) {
+        *BROKER.lock().await = Some(self.clone());
     }
 
     pub(super) async fn config(&self) -> Result<ConfigFirewalld1Proxy<'_>, BrokerError> {
@@ -157,6 +163,9 @@ mod tests {
     fn broker_public_call_surface_is_preserved() {
         let _ = FwdBroker::connect;
         let _ = FwdBroker::get;
+        let _ = FwdBroker::open_configuration_watch;
+        let _ = super::ConfigurationSignal::Healthy;
+        let _: Option<super::ConfigurationWatchSession> = None;
         let _ = assert_public_call_surface;
     }
 }

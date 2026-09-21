@@ -1,92 +1,119 @@
 //! Firewalld root, runtime-zone, and selected permanent-zone signal streams.
 
+use std::time::Duration;
+
 use futures_util::{StreamExt, stream::BoxStream};
 use gfwd_bus::config_firewalld1::ConfigFirewalld1Proxy;
 use gfwd_bus::config_zone::ConfigZoneProxy;
 use gfwd_bus::firewalld1::FirewallD1Proxy;
 use gfwd_bus::zone::ZoneProxy;
+use zbus::fdo::DBusProxy;
 
 use crate::core::ConfigurationEvent;
 
 use super::{BrokerError, FwdBroker};
 
+const FIREWALLD_DESTINATION: &str = "org.fedoraproject.FirewallD1";
+const OWNER_CHECK_INTERVAL: Duration = Duration::from_secs(5);
+const OWNER_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(crate) enum ConfigurationSignal {
+    Changed(ConfigurationEvent),
+    Healthy,
+}
+
+pub(crate) struct ConfigurationWatchSession {
+    pub(crate) signals: BoxStream<'static, Result<ConfigurationSignal, BrokerError>>,
+}
+
 impl FwdBroker {
-    /// Produce a broker-owned stream of global, runtime-zone, and selected
-    /// permanent-zone configuration events.
-    pub fn configuration_events(
+    /// Establish a complete broker-owned configuration watch session.
+    pub(crate) async fn open_configuration_watch(
         &self,
         selected_zone: Option<String>,
-    ) -> BoxStream<'static, Result<ConfigurationEvent, BrokerError>> {
+    ) -> Result<ConfigurationWatchSession, BrokerError> {
         let conn = self.conn.clone();
-        Box::pin(async_stream::stream! {
-            let root = match FirewallD1Proxy::new(&conn).await {
-                Ok(proxy) => proxy,
-                Err(error) => {
-                    yield Err(BrokerError::from(error));
-                    return;
-                }
-            };
-            let runtime = match ZoneProxy::new(&conn).await {
-                Ok(proxy) => proxy,
-                Err(error) => {
-                    yield Err(BrokerError::from(error));
-                    return;
-                }
-            };
-            let mut root_signals = match root.inner().receive_all_signals().await {
-                Ok(stream) => stream,
-                Err(error) => {
-                    yield Err(BrokerError::from(error));
-                    return;
-                }
-            };
-            let mut runtime_signals = match runtime.inner().receive_all_signals().await {
-                Ok(stream) => stream,
-                Err(error) => {
-                    yield Err(BrokerError::from(error));
-                    return;
-                }
-            };
+        let dbus = DBusProxy::new(&conn).await.map_err(BrokerError::from)?;
+        let firewalld_name = zbus::names::BusName::try_from(FIREWALLD_DESTINATION)
+            .map_err(|error| BrokerError::new(error.to_string()))?;
+        let initial_owner = dbus
+            .get_name_owner(firewalld_name.clone())
+            .await
+            .map_err(|error| BrokerError::new(error.to_string()))?
+            .to_string();
 
-            let mut permanent_signals = if let Some(zone_name) = selected_zone.as_deref() {
-                let config = match ConfigFirewalld1Proxy::new(&conn).await {
-                    Ok(proxy) => proxy,
-                    Err(error) => {
-                        yield Err(BrokerError::from(error));
-                        return;
-                    }
-                };
-                let path = match config.get_zone_by_name(zone_name).await {
-                    Ok(path) => path,
-                    Err(error) => {
-                        yield Err(BrokerError::from(error));
-                        return;
-                    }
-                };
-                let proxy = match ConfigZoneProxy::builder(&conn).path(path) {
-                    Ok(builder) => match builder.build().await {
-                        Ok(proxy) => proxy,
-                        Err(error) => {
-                            yield Err(BrokerError::from(error));
-                            return;
-                        }
-                    },
-                    Err(error) => {
-                        yield Err(BrokerError::from(error));
-                        return;
-                    }
-                };
-                match proxy.inner().receive_all_signals().await {
-                    Ok(stream) => Some(stream),
-                    Err(error) => {
-                        yield Err(BrokerError::from(error));
-                        return;
-                    }
-                }
+        let root = FirewallD1Proxy::builder(&conn)
+            .destination(initial_owner.as_str())
+            .map_err(BrokerError::from)?
+            .build()
+            .await
+            .map_err(BrokerError::from)?;
+        let runtime = ZoneProxy::builder(&conn)
+            .destination(initial_owner.as_str())
+            .map_err(BrokerError::from)?
+            .build()
+            .await
+            .map_err(BrokerError::from)?;
+        let mut root_signals = root
+            .inner()
+            .receive_all_signals()
+            .await
+            .map_err(BrokerError::from)?;
+        let mut runtime_signals = runtime
+            .inner()
+            .receive_all_signals()
+            .await
+            .map_err(BrokerError::from)?;
+
+        let mut permanent_signals = if let Some(zone_name) = selected_zone.as_deref() {
+            let config = ConfigFirewalld1Proxy::builder(&conn)
+                .destination(initial_owner.as_str())
+                .map_err(BrokerError::from)?
+                .build()
+                .await
+                .map_err(BrokerError::from)?;
+            let zone_names = config.get_zone_names().await.map_err(BrokerError::from)?;
+            if zone_names.iter().any(|name| name == zone_name) {
+                let path = config
+                    .get_zone_by_name(zone_name)
+                    .await
+                    .map_err(BrokerError::from)?;
+                let proxy = ConfigZoneProxy::builder(&conn)
+                    .destination(initial_owner.clone())
+                    .map_err(BrokerError::from)?
+                    .path(path)
+                    .map_err(BrokerError::from)?
+                    .build()
+                    .await
+                    .map_err(BrokerError::from)?;
+                Some(
+                    proxy
+                        .inner()
+                        .receive_all_signals()
+                        .await
+                        .map_err(BrokerError::from)?,
+                )
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
+        let current_owner = dbus
+            .get_name_owner(firewalld_name.clone())
+            .await
+            .map_err(|error| BrokerError::new(error.to_string()))?
+            .to_string();
+        ensure_same_owner(&initial_owner, &current_owner)?;
+
+        let mut owner_checks = tokio::time::interval_at(
+            tokio::time::Instant::now() + OWNER_CHECK_INTERVAL,
+            OWNER_CHECK_INTERVAL,
+        );
+        owner_checks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let initial_owner_for_stream = initial_owner.clone();
+        let signals = Box::pin(async_stream::stream! {
             loop {
                 tokio::select! {
                     signal = root_signals.next() => {
@@ -95,7 +122,7 @@ impl FwdBroker {
                             return;
                         };
                         if signal_member(&message).as_deref() == Some("Reloaded") {
-                            yield Ok(ConfigurationEvent::Reloaded);
+                            yield Ok(ConfigurationSignal::Changed(ConfigurationEvent::Reloaded));
                         }
                     }
                     signal = runtime_signals.next() => {
@@ -110,9 +137,9 @@ impl FwdBroker {
                             first_signal_string(&message),
                             Ok(zone) if zone == selected
                         ) {
-                            yield Ok(ConfigurationEvent::RuntimeZoneChanged {
+                            yield Ok(ConfigurationSignal::Changed(ConfigurationEvent::RuntimeZoneChanged {
                                 zone: selected.to_string(),
-                            });
+                            }));
                         }
                     }
                     signal = async {
@@ -130,21 +157,21 @@ impl FwdBroker {
                         };
                         match signal_member(&message).as_deref() {
                             Some("Updated") => {
-                                yield Ok(ConfigurationEvent::PermanentZoneUpdated {
+                                yield Ok(ConfigurationSignal::Changed(ConfigurationEvent::PermanentZoneUpdated {
                                     zone: zone.to_string(),
-                                });
+                                }));
                             }
                             Some("Removed") => {
-                                yield Ok(ConfigurationEvent::PermanentZoneRemoved {
+                                yield Ok(ConfigurationSignal::Changed(ConfigurationEvent::PermanentZoneRemoved {
                                     zone: zone.to_string(),
-                                });
+                                }));
                             }
                             Some("Renamed") => match first_signal_string(&message) {
                                 Ok(new_zone) => {
-                                    yield Ok(ConfigurationEvent::PermanentZoneRenamed {
+                                    yield Ok(ConfigurationSignal::Changed(ConfigurationEvent::PermanentZoneRenamed {
                                         old_zone: zone.to_string(),
                                         new_zone,
-                                    });
+                                    }));
                                 }
                                 Err(error) => {
                                     yield Err(error);
@@ -154,9 +181,69 @@ impl FwdBroker {
                             _ => {}
                         }
                     }
+                    _ = owner_checks.tick() => {
+                        let current_owner = match tokio::time::timeout(
+                            OWNER_CHECK_TIMEOUT,
+                            dbus.get_name_owner(firewalld_name.clone()),
+                        ).await {
+                            Ok(Ok(owner)) => owner.to_string(),
+                            Ok(Err(error)) => {
+                                yield Err(BrokerError::new(error.to_string()));
+                                return;
+                            }
+                            Err(_) => {
+                                yield Err(BrokerError::new("firewalld owner check timed out"));
+                                return;
+                            }
+                        };
+                        if let Err(error) = ensure_same_owner(&initial_owner_for_stream, &current_owner) {
+                            yield Err(error);
+                            return;
+                        }
+                        yield Ok(ConfigurationSignal::Healthy);
+                    }
+                }
+            }
+        });
+
+        self.publish_configuration_connection().await;
+        Ok(ConfigurationWatchSession { signals })
+    }
+
+    /// Produce a broker-owned stream of global, runtime-zone, and selected
+    /// permanent-zone configuration events.
+    pub fn configuration_events(
+        &self,
+        selected_zone: Option<String>,
+    ) -> BoxStream<'static, Result<ConfigurationEvent, BrokerError>> {
+        let broker = self.clone();
+        Box::pin(async_stream::stream! {
+            let mut session = match broker.open_configuration_watch(selected_zone).await {
+                Ok(session) => session,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
+            while let Some(signal) = session.signals.next().await {
+                match signal {
+                    Ok(ConfigurationSignal::Changed(event)) => yield Ok(event),
+                    Ok(ConfigurationSignal::Healthy) => {}
+                    Err(error) => {
+                        yield Err(error);
+                        return;
+                    }
                 }
             }
         })
+    }
+}
+
+fn ensure_same_owner(initial_owner: &str, current_owner: &str) -> Result<(), BrokerError> {
+    if initial_owner == current_owner {
+        Ok(())
+    } else {
+        Err(BrokerError::new("firewalld owner changed"))
     }
 }
 
