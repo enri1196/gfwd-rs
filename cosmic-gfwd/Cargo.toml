@@ -47,6 +47,9 @@ features = [
     "wgpu",
 ]
 
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["test-util"] }
+
 # Uncomment to test a locally-cloned libcosmic
 # [patch.'https://github.com/pop-os/libcosmic']
 # libcosmic = { path = "../libcosmic" }

@@ -1,13 +1,16 @@
 use std::time::Duration;
 
 use async_stream::stream;
-use futures_util::{future::BoxFuture, stream::BoxStream, StreamExt};
-use tokio::time::{sleep, timeout, Instant};
+use futures_util::{StreamExt, future::BoxFuture, stream::BoxStream};
+use tokio::time::{Instant, sleep, timeout};
 
 use super::{
     broker::{BrokerError, ConfigurationSignal, ConfigurationWatchSession, FwdBroker},
     events::ConfigurationEvent,
 };
+
+#[cfg(test)]
+mod tests;
 
 const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
